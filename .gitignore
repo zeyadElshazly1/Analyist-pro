@@ -1,0 +1,33 @@
+# Node
+node_modules
+.next
+out
+dist
+build
+pnpm-lock.yaml
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Coverage
+coverage/
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
