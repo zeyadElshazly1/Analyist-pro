@@ -1,58 +1,97 @@
 import pandas as pd
 import numpy as np
 from scipy import stats
-from itertools import combinations
+
+
+def _bh_correct(p_values: list) -> list:
+    """Benjamini-Hochberg FDR correction."""
+    n = len(p_values)
+    if n == 0:
+        return []
+    indexed = sorted(enumerate(p_values), key=lambda x: x[1])
+    adjusted = [0.0] * n
+    prev = 1.0
+    for rank, (orig_idx, p) in enumerate(reversed(indexed), 1):
+        adj = min(prev, p * n / (n - rank + 1))
+        adjusted[orig_idx] = adj
+        prev = adj
+    return adjusted
+
+
+def _strength_label(r: float) -> str:
+    a = abs(r)
+    if a < 0.1:
+        return "Negligible"
+    if a < 0.3:
+        return "Weak"
+    if a < 0.5:
+        return "Moderate"
+    if a < 0.7:
+        return "Strong"
+    return "Very strong"
 
 
 def build_correlation_matrix(df: pd.DataFrame) -> dict:
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    numeric_cols = [
-        c for c in numeric_cols
-        if not ("id" in c.lower() and df[c].nunique() > len(df) * 0.9)
-    ]
-
     if len(numeric_cols) < 2:
-        return {"columns": numeric_cols, "matrix": [], "pairs": []}
+        raise ValueError("Need at least 2 numeric columns for correlation analysis")
 
-    sub = df[numeric_cols].dropna()
-    corr = sub.corr(method="pearson")
+    # Limit to 20 columns to keep response manageable
+    cols = numeric_cols[:20]
+    sub = df[cols].dropna()
 
-    matrix = []
-    for col_a in numeric_cols:
-        row = {"column": col_a}
-        for col_b in numeric_cols:
-            row[col_b] = round(float(corr.loc[col_a, col_b]), 3)
-        matrix.append(row)
+    if len(sub) < 5:
+        raise ValueError("Not enough complete rows for correlation analysis")
 
+    # Pearson matrix
+    pearson_matrix: dict[str, dict[str, float]] = {}
+    spearman_matrix: dict[str, dict[str, float]] = {}
     pairs = []
-    for col_a, col_b in combinations(numeric_cols, 2):
-        clean = df[[col_a, col_b]].dropna()
-        if len(clean) < 5:
-            continue
-        r, p = stats.pearsonr(clean[col_a], clean[col_b])
-        abs_r = abs(r)
 
-        if abs_r < 0.1:
-            strength = "Negligible"
-        elif abs_r < 0.3:
-            strength = "Weak"
-        elif abs_r < 0.5:
-            strength = "Moderate"
-        elif abs_r < 0.7:
-            strength = "Strong"
-        else:
-            strength = "Very strong"
+    for col in cols:
+        pearson_matrix[col] = {}
+        spearman_matrix[col] = {}
 
-        pairs.append({
-            "col_a": col_a,
-            "col_b": col_b,
-            "r": round(float(r), 3),
-            "p_value": round(float(p), 4),
-            "strength": strength,
-            "direction": "positive" if r > 0 else "negative",
-            "significant": bool(p < 0.05),
-        })
+    for i, c1 in enumerate(cols):
+        for j, c2 in enumerate(cols):
+            pair_data = df[[c1, c2]].dropna()
+            if len(pair_data) < 5:
+                pearson_matrix[c1][c2] = None
+                spearman_matrix[c1][c2] = None
+                continue
+            p_r, p_p = stats.pearsonr(pair_data[c1], pair_data[c2])
+            s_r, s_p = stats.spearmanr(pair_data[c1], pair_data[c2])
+            pearson_matrix[c1][c2] = round(float(p_r), 4)
+            spearman_matrix[c1][c2] = round(float(s_r), 4)
+            if i < j:
+                pairs.append({
+                    "col_a": c1,
+                    "col_b": c2,
+                    "pearson_r": round(float(p_r), 4),
+                    "pearson_p": round(float(p_p), 6),
+                    "spearman_r": round(float(s_r), 4),
+                    "spearman_p": round(float(s_p), 6),
+                    "n": len(pair_data),
+                })
 
-    pairs.sort(key=lambda x: abs(x["r"]), reverse=True)
+    # BH correction on Pearson p-values
+    if pairs:
+        pvals = [pair["pearson_p"] for pair in pairs]
+        adj_pvals = _bh_correct(pvals)
+        for pair, adj_p in zip(pairs, adj_pvals):
+            pair["adj_p"] = round(adj_p, 6)
+            pair["is_significant"] = bool(adj_p < 0.05)
+            pair["strength"] = _strength_label(pair["pearson_r"])
+            pair["direction"] = "positive" if pair["pearson_r"] > 0 else "negative"
 
-    return {"columns": numeric_cols, "matrix": matrix, "pairs": pairs[:20]}
+    # Sort pairs by abs Pearson r descending
+    pairs.sort(key=lambda x: abs(x["pearson_r"]), reverse=True)
+
+    return {
+        "columns": cols,
+        "pearson_matrix": pearson_matrix,
+        "spearman_matrix": spearman_matrix,
+        "pairs": pairs,
+        "top_pairs": [p for p in pairs if p.get("is_significant", False)][:10],
+        "n_significant": sum(1 for p in pairs if p.get("is_significant", False)),
+    }

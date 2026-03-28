@@ -1,55 +1,136 @@
-const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 
-async function post(path: string, body: object) {
-  const res = await fetch(`${BASE}${path}`, {
+async function get<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_BASE_URL}${path}`, { cache: "no-store" });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `GET ${path} failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+async function post<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) throw new Error(await res.text() || `Request failed: ${path}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `POST ${path} failed: ${res.status}`);
+  }
   return res.json();
 }
 
-export async function getProjects() {
-  const res = await fetch(`${BASE}/projects`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to fetch projects");
-  return res.json();
+// ── Projects ──────────────────────────────────────────────────────────────────
+
+export function getProjects() {
+  return get<{ id: number; name: string; status?: string }[]>("/projects");
 }
 
-export const createProject = (name: string) => post("/projects", { name });
-export const runAnalysis = (project_id: number) => post("/analysis/run", { project_id });
-export const getSuggestedChart = (project_id: number) => post("/charts/suggest", { project_id });
+export function createProject(name: string) {
+  return post<{ id: number; name: string }>("/projects", { name });
+}
+
+// ── Upload ────────────────────────────────────────────────────────────────────
 
 export async function uploadFile(projectId: number, file: File) {
-  const form = new FormData();
-  form.append("project_id", String(projectId));
-  form.append("file", file);
-  const res = await fetch(`${BASE}/upload`, { method: "POST", body: form });
-  if (!res.ok) throw new Error(`Upload failed: ${await res.text()}`);
+  const formData = new FormData();
+  formData.append("project_id", String(projectId));
+  formData.append("file", file);
+  const res = await fetch(`${API_BASE_URL}/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Upload failed: ${text}`);
+  }
   return res.json();
 }
 
-// Explore
-export const getTimeseriesColumns = (project_id: number) =>
-  post("/explore/timeseries/columns", { project_id });
-export const runTimeseries = (project_id: number, date_col: string, value_col: string) =>
-  post("/explore/timeseries/run", { project_id, date_col, value_col });
+// ── Analysis ──────────────────────────────────────────────────────────────────
 
-export const getDuplicates = (project_id: number) =>
-  post("/explore/duplicates", { project_id });
+export function runAnalysis(projectId: number) {
+  return post<Record<string, unknown>>("/analysis/run", { project_id: projectId });
+}
 
-export const getOutlierColumns = (project_id: number) =>
-  post("/explore/outliers/columns", { project_id });
-export const runOutlierAnalysis = (project_id: number, column: string) =>
-  post("/explore/outliers/run", { project_id, column });
+// ── Charts ────────────────────────────────────────────────────────────────────
 
-export const getCorrelations = (project_id: number) =>
-  post("/explore/correlations", { project_id });
+export function getSuggestedCharts(projectId: number) {
+  return post<{ charts: unknown[] }>("/charts/suggest", { project_id: projectId });
+}
 
-export const getCompareColumns = (project_id: number) =>
-  post("/explore/compare-columns/columns", { project_id });
-export const runColumnCompare = (project_id: number, col_a: string, col_b: string) =>
-  post("/explore/compare-columns/run", { project_id, col_a, col_b });
+/** @deprecated use getSuggestedCharts */
+export function getSuggestedChart(projectId: number) {
+  return getSuggestedCharts(projectId);
+}
 
-export const runMultifileCompare = (project_id_a: number, project_id_b: number) =>
-  post("/explore/multifile", { project_id_a, project_id_b });
+// ── Explore: Time Series ──────────────────────────────────────────────────────
+
+export function getTimeseriesColumns(projectId: number) {
+  return get<{ date_columns: string[]; value_columns: string[] }>(
+    `/explore/timeseries/columns?project_id=${projectId}`
+  );
+}
+
+export function runTimeseries(projectId: number, dateCol: string, valueCol: string) {
+  return post<Record<string, unknown>>("/explore/timeseries/run", {
+    project_id: projectId,
+    date_col: dateCol,
+    value_col: valueCol,
+  });
+}
+
+// ── Explore: Duplicates ───────────────────────────────────────────────────────
+
+export function getDuplicates(projectId: number) {
+  return post<Record<string, unknown>>("/explore/duplicates", { project_id: projectId });
+}
+
+// ── Explore: Outliers ─────────────────────────────────────────────────────────
+
+export function getOutlierColumns(projectId: number) {
+  return get<{ numeric_columns: string[] }>(
+    `/explore/outliers/columns?project_id=${projectId}`
+  );
+}
+
+export function runOutlierAnalysis(projectId: number, column: string) {
+  return post<Record<string, unknown>>("/explore/outliers/run", {
+    project_id: projectId,
+    column,
+  });
+}
+
+// ── Explore: Correlations ─────────────────────────────────────────────────────
+
+export function getCorrelations(projectId: number) {
+  return post<Record<string, unknown>>("/explore/correlations", { project_id: projectId });
+}
+
+// ── Explore: Column Compare ───────────────────────────────────────────────────
+
+export function getCompareColumnOptions(projectId: number) {
+  return get<{ columns: string[] }>(
+    `/explore/compare-columns/columns?project_id=${projectId}`
+  );
+}
+
+export function runColumnCompare(projectId: number, colA: string, colB: string) {
+  return post<Record<string, unknown>>("/explore/compare-columns/run", {
+    project_id: projectId,
+    col_a: colA,
+    col_b: colB,
+  });
+}
+
+// ── Explore: Multi-file Compare ───────────────────────────────────────────────
+
+export function runMultifileCompare(projectIdA: number, projectIdB: number) {
+  return post<Record<string, unknown>>("/explore/multifile", {
+    project_id_a: projectIdA,
+    project_id_b: projectIdB,
+  });
+}

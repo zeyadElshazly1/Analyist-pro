@@ -1,12 +1,11 @@
 import os
 from fastapi import APIRouter, UploadFile, File, Form
+from app.state import PROJECT_FILES
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-PROJECT_FILES = {}
 
 
 @router.post("")

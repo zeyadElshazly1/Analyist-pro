@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
 from app.schemas.analysis import AnalysisRequest
-from app.routes.upload import PROJECT_FILES
+from app.state import PROJECT_FILES
 from app.services.file_loader import load_dataset
 from app.services.cleaner import clean_dataset
 from app.services.profiler import profile_dataset, calculate_health_score
