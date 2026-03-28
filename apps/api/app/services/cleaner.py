@@ -1,25 +1,30 @@
+import re
 import pandas as pd
 import numpy as np
 from scipy import stats
 from scipy.stats import pointbiserialr
 
+# ── Canonical mappings for boolean/truthy categoricals ───────────────────────
+_BOOL_TRUE = {"yes", "y", "true", "t", "1", "on", "oui", "si", "ja", "да"}
+_BOOL_FALSE = {"no", "n", "false", "f", "0", "off", "non", "nein", "нет"}
+
+# ── Regex patterns for smart type detection ───────────────────────────────────
+_CURRENCY_RE = re.compile(r"^[€$£¥₹]?\s*-?[\d,]+\.?\d*\s*[€$£¥₹]?$")
+_PERCENT_RE = re.compile(r"^-?\d+\.?\d*\s*%$")
+_DATE_FORMATS = [
+    "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%m-%d-%Y",
+    "%Y/%m/%d", "%d.%m.%Y", "%m.%d.%Y", "%B %d, %Y", "%d %B %Y",
+    "%b %d, %Y", "%d %b %Y", "%Y%m%d",
+]
+
 
 def _classify_missingness(df: pd.DataFrame, col: str) -> tuple[str, float]:
-    """
-    Classify missing data mechanism for a column:
-      - MCAR: missingness uncorrelated with other variables
-      - MAR:  missingness correlated with other observed variables
-      - MNAR: column's own value predicts its own missingness
-
-    Returns (mechanism, max_correlation).
-    """
+    """Classify missing data mechanism: MCAR / MAR / MNAR."""
     missing_indicator = df[col].isnull().astype(float)
     if missing_indicator.sum() < 3:
         return "mcar", 0.0
 
-    numeric_others = df.select_dtypes(include=[np.number]).columns.tolist()
-    numeric_others = [c for c in numeric_others if c != col]
-
+    numeric_others = [c for c in df.select_dtypes(include=[np.number]).columns if c != col]
     max_corr = 0.0
     for other_col in numeric_others[:15]:
         other_clean = df[other_col].fillna(df[other_col].median())
@@ -30,13 +35,9 @@ def _classify_missingness(df: pd.DataFrame, col: str) -> tuple[str, float]:
         except Exception:
             pass
 
-    # Check if column's own non-missing values predict missingness (MNAR proxy)
-    # Compare distribution of non-missing values vs overall: if mean differs a lot, likely MNAR
+    # MNAR proxy: previous-row value predicts current missingness
     non_missing = df[col].dropna()
     if len(non_missing) >= 10 and pd.api.types.is_numeric_dtype(df[col]):
-        # Use a simple heuristic: MNAR if top/bottom 20% values have disproportionate missingness
-        # We can't observe missing values directly, but we can check quantile patterns
-        # Use "neighboring rows" heuristic — if previous value correlates with current missingness
         shifted = df[col].shift(1).dropna()
         aligned_missing = missing_indicator[shifted.index]
         try:
@@ -52,40 +53,31 @@ def _classify_missingness(df: pd.DataFrame, col: str) -> tuple[str, float]:
 
 
 def _knn_impute_column(df: pd.DataFrame, col: str, n_neighbors: int = 5) -> pd.Series:
-    """KNN imputation using all numeric columns as features."""
     try:
         from sklearn.impute import KNNImputer
     except ImportError:
         return df[col].fillna(df[col].median())
-
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     if col not in numeric_cols:
         return df[col].fillna(df[col].median())
-
     sub = df[numeric_cols].copy()
     imputer = KNNImputer(n_neighbors=n_neighbors, weights="distance")
     imputed = imputer.fit_transform(sub)
-    col_idx = numeric_cols.index(col)
-    return pd.Series(imputed[:, col_idx], index=df.index)
+    return pd.Series(imputed[:, numeric_cols.index(col)], index=df.index)
 
 
 def _iterative_impute_column(df: pd.DataFrame, col: str) -> pd.Series:
-    """MICE-style iterative imputation using BayesianRidge as estimator."""
     try:
         from sklearn.experimental import enable_iterative_imputer  # noqa
         from sklearn.impute import IterativeImputer
         from sklearn.linear_model import BayesianRidge
     except ImportError:
         return _knn_impute_column(df, col)
-
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     predictors = [c for c in numeric_cols if c != col and df[c].isnull().mean() < 0.5]
-
     if len(predictors) < 2:
-        # Fall back to KNN when too few predictor columns
         return _knn_impute_column(df, col)
-
-    cols_to_use = [col] + predictors[:9]  # cap at 10 columns for performance
+    cols_to_use = [col] + predictors[:9]
     sub = df[cols_to_use].copy()
     imputer = IterativeImputer(estimator=BayesianRidge(), max_iter=10, random_state=42)
     imputed = imputer.fit_transform(sub)
@@ -93,14 +85,88 @@ def _iterative_impute_column(df: pd.DataFrame, col: str) -> pd.Series:
 
 
 def _simple_impute_value(series: pd.Series) -> tuple[float, str]:
-    """Return (fill_value, method_name). Uses mean for symmetric, median for skewed."""
     clean = series.dropna()
     if len(clean) < 3:
         return float(clean.median()), "median"
-    skew = abs(float(clean.skew()))
-    if skew > 1.0:
+    if abs(float(clean.skew())) > 1.0:
         return float(clean.median()), "median"
     return float(clean.mean()), "mean"
+
+
+def _try_parse_currency(series: pd.Series) -> tuple[pd.Series | None, int]:
+    """Try to parse currency strings like '$1,234.56' → 1234.56.
+    Returns (parsed_series, n_converted) or (None, 0) if not applicable."""
+    sample = series.dropna().head(100).astype(str)
+    matches = sample.str.match(_CURRENCY_RE).sum()
+    if matches / max(len(sample), 1) < 0.7:
+        return None, 0
+    cleaned = (
+        series.astype(str)
+        .str.replace(r"[€$£¥₹,\s]", "", regex=True)
+        .str.replace(r"[()]", "", regex=True)
+    )
+    numeric = pd.to_numeric(cleaned, errors="coerce")
+    n_converted = int(numeric.notna().sum())
+    return numeric, n_converted
+
+
+def _try_parse_percentage(series: pd.Series) -> tuple[pd.Series | None, int]:
+    """Try to parse percentage strings like '45%' → 45.0 (keeps raw number)."""
+    sample = series.dropna().head(100).astype(str)
+    matches = sample.str.match(_PERCENT_RE).sum()
+    if matches / max(len(sample), 1) < 0.7:
+        return None, 0
+    cleaned = series.astype(str).str.replace(r"\s*%", "", regex=True)
+    numeric = pd.to_numeric(cleaned, errors="coerce")
+    n_converted = int(numeric.notna().sum())
+    return numeric, n_converted
+
+
+def _standardize_booleans(series: pd.Series) -> tuple[pd.Series | None, str | None, int]:
+    """
+    Detect columns where values are synonyms for True/False
+    (e.g. yes/YES/y/1/True/on) and unify them.
+    Returns (standardized_series, canonical_pair, n_changed) or (None, None, 0).
+    """
+    clean = series.dropna().astype(str).str.strip().str.lower()
+    unique_vals = set(clean.unique())
+    is_true = unique_vals.issubset(_BOOL_TRUE | _BOOL_FALSE)
+    if not is_true or len(unique_vals) < 2:
+        return None, None, 0
+
+    # Already standardized?
+    if unique_vals == {"yes", "no"} or unique_vals == {"true", "false"} or unique_vals == {"1", "0"}:
+        return None, None, 0
+
+    mapping = {v: "yes" if v in _BOOL_TRUE else "no" for v in unique_vals}
+    standardized = series.astype(str).str.strip().str.lower().map(mapping).where(series.notna(), other=None)
+    n_changed = int((standardized.fillna("") != series.astype(str).str.strip().str.lower().fillna("")).sum())
+    return standardized, "yes/no", n_changed
+
+
+def _harmonize_date_formats(series: pd.Series) -> tuple[pd.Series | None, int, list[str]]:
+    """
+    Detect columns with mixed date format strings and standardize to ISO.
+    Returns (parsed_series, n_converted, formats_detected).
+    """
+    clean_str = series.dropna().astype(str).head(200)
+    detected_formats = []
+    for fmt in _DATE_FORMATS:
+        try:
+            parsed = pd.to_datetime(clean_str, format=fmt, errors="coerce")
+            match_rate = parsed.notna().mean()
+            if match_rate > 0.5:
+                detected_formats.append(fmt)
+        except Exception:
+            pass
+
+    if len(detected_formats) <= 1:
+        return None, 0, []
+
+    # Multiple formats detected — harmonize with mixed format inference
+    result = pd.to_datetime(series, infer_datetime_format=True, errors="coerce")
+    n_converted = int(result.notna().sum())
+    return result, n_converted, detected_formats
 
 
 def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
@@ -149,35 +215,94 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
             "impact": "medium",
         })
 
-    # 4. Fix data types (numeric + datetime detection)
+    # 4. Smart string type parsing (currency, percentage, datetime, numeric)
     for col in list(df_clean.columns):
         if df_clean[col].dtype != object:
             continue
-        converted = pd.to_numeric(df_clean[col], errors="coerce")
-        non_null_converted = converted.notna().sum()
         non_null_original = df_clean[col].notna().sum()
-        if non_null_original > 0 and non_null_converted / non_null_original > 0.9:
-            df_clean[col] = converted
+        if non_null_original == 0:
+            continue
+
+        # 4a. Try currency
+        parsed, n_conv = _try_parse_currency(df_clean[col])
+        if parsed is not None and n_conv / non_null_original > 0.8:
+            df_clean[col] = parsed
             report.append({
-                "step": f"Convert to numeric: {col}",
-                "detail": f"Converted '{col}' from text to numeric ({non_null_converted} valid numbers detected)",
+                "step": f"Parse currency: {col}",
+                "detail": f"Converted {n_conv} currency strings in '{col}' to numeric (e.g. '$1,234.56' → 1234.56)",
                 "impact": "high",
             })
             continue
+
+        # 4b. Try percentage
+        parsed, n_conv = _try_parse_percentage(df_clean[col])
+        if parsed is not None and n_conv / non_null_original > 0.8:
+            df_clean[col] = parsed
+            report.append({
+                "step": f"Parse percentage: {col}",
+                "detail": f"Converted {n_conv} percentage strings in '{col}' to numeric (e.g. '45%' → 45.0)",
+                "impact": "high",
+            })
+            continue
+
+        # 4c. Try numeric
+        converted = pd.to_numeric(df_clean[col], errors="coerce")
+        if non_null_original > 0 and converted.notna().sum() / non_null_original > 0.9:
+            df_clean[col] = converted
+            report.append({
+                "step": f"Convert to numeric: {col}",
+                "detail": f"Converted '{col}' from text to numeric ({int(converted.notna().sum())} valid numbers detected)",
+                "impact": "high",
+            })
+            continue
+
+        # 4d. Try date format harmonization (mixed formats)
+        harmonized, n_conv, formats_found = _harmonize_date_formats(df_clean[col])
+        if harmonized is not None and n_conv / non_null_original > 0.8:
+            df_clean[col] = harmonized
+            fmts = ", ".join(formats_found[:3])
+            report.append({
+                "step": f"Harmonize date formats: {col}",
+                "detail": (
+                    f"Standardized {n_conv} values in '{col}' to ISO dates. "
+                    f"Mixed formats detected: {fmts}"
+                ),
+                "impact": "high",
+            })
+            continue
+
+        # 4e. Try datetime
         try:
             converted_dt = pd.to_datetime(df_clean[col], errors="coerce", infer_datetime_format=True)
-            non_null_dt = converted_dt.notna().sum()
-            if non_null_original > 0 and non_null_dt / non_null_original > 0.9:
+            if non_null_original > 0 and converted_dt.notna().sum() / non_null_original > 0.9:
                 df_clean[col] = converted_dt
                 report.append({
                     "step": f"Convert to datetime: {col}",
                     "detail": f"Converted '{col}' from text to datetime",
                     "impact": "medium",
                 })
+                continue
         except Exception:
             pass
 
-    # 5. Handle missing values with missingness mechanism awareness
+    # 5. Categorical standardization (yes/YES/y/1/True → yes/no)
+    for col in list(df_clean.columns):
+        if df_clean[col].dtype != object:
+            continue
+        standardized, canonical, n_changed = _standardize_booleans(df_clean[col])
+        if standardized is not None and n_changed > 0:
+            df_clean[col] = standardized
+            old_vals = df_clean[col].dropna().unique()
+            report.append({
+                "step": f"Standardize boolean: {col}",
+                "detail": (
+                    f"Unified {n_changed} values in '{col}' to canonical '{canonical}' form. "
+                    f"Previously had mixed representations (e.g. Yes/YES/y/1/True)."
+                ),
+                "impact": "medium",
+            })
+
+    # 6. Handle missing values with missingness mechanism awareness
     for col in list(df_clean.columns):
         missing = int(df_clean[col].isnull().sum())
         if missing == 0:
@@ -197,7 +322,6 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
             mechanism, max_corr = _classify_missingness(df_clean, col)
 
             if mechanism == "mnar":
-                # MNAR: create binary flag column, then median-fill the original
                 flag_col = f"{col}_was_missing"
                 df_clean[flag_col] = df_clean[col].isnull().astype(int)
                 fill_val, fill_method = _simple_impute_value(df_clean[col])
@@ -212,11 +336,10 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
                 })
 
             elif mechanism == "mar" and missing_pct <= 30:
-                # MAR with moderate missingness: use MICE (iterative) or KNN imputation
                 try:
                     if len(df_clean.select_dtypes(include=[np.number]).columns) >= 4:
                         imputed = _iterative_impute_column(df_clean, col)
-                        method_name = "MICE (iterative)"
+                        method_name = "MICE (iterative regression)"
                     else:
                         imputed = _knn_impute_column(df_clean, col)
                         method_name = "KNN"
@@ -224,7 +347,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
                     report.append({
                         "step": f"Impute missing (MAR): {col}",
                         "detail": (
-                            f"Detected MAR pattern in '{col}' (correlation with other columns={max_corr:.2f}). "
+                            f"Detected MAR pattern in '{col}' (max cross-column correlation={max_corr:.2f}). "
                             f"Used {method_name} imputation to fill {missing} values."
                         ),
                         "impact": "medium",
@@ -242,15 +365,13 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
                     })
 
             else:
-                # MCAR or high missingness MAR: simple mean/median imputation
                 fill_val, fill_method = _simple_impute_value(df_clean[col])
                 df_clean[col] = df_clean[col].fillna(fill_val)
-                mech_label = mechanism.upper()
                 report.append({
-                    "step": f"Impute missing ({mech_label}): {col}",
+                    "step": f"Impute missing ({mechanism.upper()}): {col}",
                     "detail": (
                         f"Filled {missing} missing values in '{col}' with {fill_method} ({fill_val:.4g}). "
-                        f"Mechanism: {mech_label} — data appears to be missing at random."
+                        f"Mechanism: {mechanism.upper()} — data appears to be missing at random."
                     ),
                     "impact": "medium",
                 })
@@ -265,7 +386,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
                 "impact": "medium",
             })
 
-    # 6. Adaptive winsorization: IQR-based for skewed, sigma-based for normal
+    # 7. Adaptive winsorization: IQR-based for skewed, sigma-based for normal
     numeric_cols = df_clean.select_dtypes(include=[np.number]).columns.tolist()
     for col in numeric_cols:
         col_data = df_clean[col].dropna()
@@ -273,7 +394,6 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
             continue
         skew = abs(float(col_data.skew()))
         if skew > 1.0:
-            # Heavily skewed: use wider IQR fence (Tukey's outer fence)
             q1, q3 = float(col_data.quantile(0.25)), float(col_data.quantile(0.75))
             iqr = q3 - q1
             lower = q1 - 3.0 * iqr
@@ -281,7 +401,6 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
             outside = int(((col_data < lower) | (col_data > upper)).sum())
             method_desc = "3×IQR fence (skewed distribution)"
         else:
-            # Approximately normal: ±4σ clip (less aggressive than 3σ to reduce false positives)
             mean, std = float(col_data.mean()), float(col_data.std())
             lower = mean - 4 * std
             upper = mean + 4 * std
@@ -299,7 +418,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
                 "impact": "medium",
             })
 
-    # 7. Strip whitespace from string columns
+    # 8. Strip whitespace from string columns
     str_cols = df_clean.select_dtypes(include="object").columns.tolist()
     total_stripped = 0
     cols_stripped = []
@@ -320,7 +439,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
             "impact": "low",
         })
 
-    # 8. Normalize string casing (lowercase all-uppercase columns)
+    # 9. Normalize string casing (lowercase all-uppercase columns)
     for col in df_clean.select_dtypes(include="object").columns:
         sample = df_clean[col].dropna().head(50)
         if len(sample) > 0:
@@ -334,8 +453,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
                 })
 
     final_shape = df_clean.shape
-    # Estimate time saved: each step ~ 5 min manual, complex steps (MICE/KNN) ~ 15 min
-    complex_steps = sum(1 for r in report if "MICE" in r["detail"] or "KNN" in r["detail"] or "MNAR" in r["detail"])
+    complex_steps = sum(1 for r in report if any(kw in r["detail"] for kw in ["MICE", "KNN", "MNAR", "currency", "percentage", "Harmonize"]))
     simple_steps = len(report) - complex_steps
     time_saved = simple_steps * 5 + complex_steps * 15
 

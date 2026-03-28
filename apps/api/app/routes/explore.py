@@ -44,13 +44,14 @@ class TimeseriesRequest(BaseModel):
     project_id: int
     date_col: str
     value_col: str
+    aggregation: str = "mean"
 
 
 @router.post("/timeseries/run")
 def timeseries_run(payload: TimeseriesRequest):
     df = _load(payload.project_id)
     try:
-        result = run_timeseries(df, payload.date_col, payload.value_col)
+        result = run_timeseries(df, payload.date_col, payload.value_col, payload.aggregation)
         return to_jsonable(result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

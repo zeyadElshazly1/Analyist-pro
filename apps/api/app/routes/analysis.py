@@ -47,7 +47,7 @@ def run_analysis(payload: AnalysisRequest):
 
         profile = profile_dataset(df_clean)
         health_score = calculate_health_score(df_clean)
-        insights = analyze_dataset(df_clean)
+        insights, narrative = analyze_dataset(df_clean)
         dataset_summary = get_dataset_summary(df_clean)
 
         return {
@@ -58,6 +58,7 @@ def run_analysis(payload: AnalysisRequest):
             "health_score": to_jsonable(health_score),
             "profile": to_jsonable(profile),
             "insights": to_jsonable(insights),
+            "narrative": narrative,
         }
 
     except HTTPException:
