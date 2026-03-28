@@ -36,16 +36,15 @@ def build_correlation_matrix(df: pd.DataFrame) -> dict:
     if len(numeric_cols) < 2:
         raise ValueError("Need at least 2 numeric columns for correlation analysis")
 
-    # Limit to 20 columns to keep response manageable
+    # Limit to 20 columns for performance
     cols = numeric_cols[:20]
     sub = df[cols].dropna()
 
     if len(sub) < 5:
         raise ValueError("Not enough complete rows for correlation analysis")
 
-    # Pearson matrix
-    pearson_matrix: dict[str, dict[str, float]] = {}
-    spearman_matrix: dict[str, dict[str, float]] = {}
+    pearson_matrix: dict[str, dict] = {}
+    spearman_matrix: dict[str, dict] = {}
     pairs = []
 
     for col in cols:
@@ -80,18 +79,35 @@ def build_correlation_matrix(df: pd.DataFrame) -> dict:
         adj_pvals = _bh_correct(pvals)
         for pair, adj_p in zip(pairs, adj_pvals):
             pair["adj_p"] = round(adj_p, 6)
-            pair["is_significant"] = bool(adj_p < 0.05)
+            # Require BOTH minimum effect size |r| > 0.3 AND statistical significance
+            has_effect = abs(pair["pearson_r"]) > 0.3
+            pair["is_significant"] = bool(adj_p < 0.05 and has_effect)
             pair["strength"] = _strength_label(pair["pearson_r"])
             pair["direction"] = "positive" if pair["pearson_r"] > 0 else "negative"
 
+            # Which correlation method is more appropriate?
+            # If Pearson and Spearman differ substantially, flag as non-linear
+            r_diff = abs(pair["pearson_r"] - pair["spearman_r"])
+            if r_diff > 0.15 and abs(pair["spearman_r"]) > abs(pair["pearson_r"]):
+                pair["method_note"] = "Spearman stronger — possible monotonic non-linear relationship"
+                pair["recommended_method"] = "spearman"
+            else:
+                pair["method_note"] = "Pearson and Spearman agree — linear relationship likely"
+                pair["recommended_method"] = "pearson"
+
     # Sort pairs by abs Pearson r descending
     pairs.sort(key=lambda x: abs(x["pearson_r"]), reverse=True)
+
+    # Top pairs: significant AND |r| > 0.3
+    top_pairs = [p for p in pairs if p.get("is_significant", False)][:10]
 
     return {
         "columns": cols,
         "pearson_matrix": pearson_matrix,
         "spearman_matrix": spearman_matrix,
         "pairs": pairs,
-        "top_pairs": [p for p in pairs if p.get("is_significant", False)][:10],
-        "n_significant": sum(1 for p in pairs if p.get("is_significant", False)),
+        "top_pairs": top_pairs,
+        "n_significant": len(top_pairs),
+        "minimum_effect_threshold": 0.3,
+        "fdr_alpha": 0.05,
     }
