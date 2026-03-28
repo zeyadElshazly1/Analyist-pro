@@ -75,6 +75,8 @@ def _partial_correlation(df: pd.DataFrame, col_a: str, col_b: str, control_col: 
             return None
         # Residualize both columns on the control
         def _residualize(y: np.ndarray, x: np.ndarray) -> np.ndarray:
+            if np.std(x) < 1e-10:
+                return y  # can't residualize on a constant
             coeffs = np.polyfit(x, y, 1)
             return y - np.polyval(coeffs, x)
 
@@ -116,19 +118,36 @@ def build_correlation_matrix(df: pd.DataFrame) -> dict:
                 pearson_matrix[c1][c2] = None
                 spearman_matrix[c1][c2] = None
                 continue
-            p_r, p_p = stats.pearsonr(pair_data[c1], pair_data[c2])
-            s_r, s_p = stats.spearmanr(pair_data[c1], pair_data[c2])
-            pearson_matrix[c1][c2] = round(float(p_r), 4)
-            spearman_matrix[c1][c2] = round(float(s_r), 4)
+            # Skip constant columns — correlations are undefined
+            if pair_data[c1].std() < 1e-10 or pair_data[c2].std() < 1e-10:
+                pearson_matrix[c1][c2] = None
+                spearman_matrix[c1][c2] = None
+                continue
+            try:
+                p_r, p_p = stats.pearsonr(pair_data[c1].values, pair_data[c2].values)
+                p_r, p_p = float(np.asarray(p_r).flat[0]), float(np.asarray(p_p).flat[0])
+            except Exception:
+                pearson_matrix[c1][c2] = None
+                spearman_matrix[c1][c2] = None
+                continue
+            try:
+                spear = stats.spearmanr(pair_data[c1].values, pair_data[c2].values)
+                # scipy >= 1.9 returns SpearmanrResult; older returns (r, p) tuple
+                s_r = float(np.asarray(getattr(spear, "statistic", spear[0])).flat[0])
+                s_p = float(np.asarray(getattr(spear, "pvalue", spear[1])).flat[0])
+            except Exception:
+                s_r, s_p = p_r, p_p  # fall back to Pearson values
+            pearson_matrix[c1][c2] = round(p_r, 4)
+            spearman_matrix[c1][c2] = round(s_r, 4)
             if i < j:
                 num_pairs.append({
                     "col_a": c1,
                     "col_b": c2,
                     "type": "num_num",
-                    "pearson_r": round(float(p_r), 4),
-                    "pearson_p": round(float(p_p), 6),
-                    "spearman_r": round(float(s_r), 4),
-                    "spearman_p": round(float(s_p), 6),
+                    "pearson_r": round(p_r, 4),
+                    "pearson_p": round(p_p, 6),
+                    "spearman_r": round(s_r, 4),
+                    "spearman_p": round(s_p, 6),
                     "n": len(pair_data),
                 })
 
