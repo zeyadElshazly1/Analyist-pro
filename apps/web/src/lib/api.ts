@@ -1,86 +1,55 @@
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+const BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+
+async function post(path: string, body: object) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text() || `Request failed: ${path}`);
+  return res.json();
+}
 
 export async function getProjects() {
-  const response = await fetch(`${API_BASE_URL}/projects`, {
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to fetch projects");
-  }
-
-  return response.json();
+  const res = await fetch(`${BASE}/projects`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch projects");
+  return res.json();
 }
 
-export async function createProject(name: string) {
-  const response = await fetch(`${API_BASE_URL}/projects`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ name }),
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to create project");
-  }
-
-  return response.json();
-}
+export const createProject = (name: string) => post("/projects", { name });
+export const runAnalysis = (project_id: number) => post("/analysis/run", { project_id });
+export const getSuggestedChart = (project_id: number) => post("/charts/suggest", { project_id });
 
 export async function uploadFile(projectId: number, file: File) {
-  const formData = new FormData();
-  formData.append("project_id", String(projectId));
-  formData.append("file", file);
-
-  const response = await fetch(`${API_BASE_URL}/upload`, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Upload failed: ${errorText}`);
-  }
-
-  return response.json();
+  const form = new FormData();
+  form.append("project_id", String(projectId));
+  form.append("file", file);
+  const res = await fetch(`${BASE}/upload`, { method: "POST", body: form });
+  if (!res.ok) throw new Error(`Upload failed: ${await res.text()}`);
+  return res.json();
 }
 
-export async function runAnalysis(projectId: number) {
-  const response = await fetch(`${API_BASE_URL}/analysis/run`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      project_id: projectId,
-    }),
-  });
+// Explore
+export const getTimeseriesColumns = (project_id: number) =>
+  post("/explore/timeseries/columns", { project_id });
+export const runTimeseries = (project_id: number, date_col: string, value_col: string) =>
+  post("/explore/timeseries/run", { project_id, date_col, value_col });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to run analysis: ${errorText}`);
-  }
+export const getDuplicates = (project_id: number) =>
+  post("/explore/duplicates", { project_id });
 
-  return response.json();
-}
+export const getOutlierColumns = (project_id: number) =>
+  post("/explore/outliers/columns", { project_id });
+export const runOutlierAnalysis = (project_id: number, column: string) =>
+  post("/explore/outliers/run", { project_id, column });
 
-export async function getSuggestedChart(projectId: number) {
-  const response = await fetch(`${API_BASE_URL}/charts/suggest`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      project_id: projectId,
-    }),
-  });
+export const getCorrelations = (project_id: number) =>
+  post("/explore/correlations", { project_id });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to load chart: ${errorText}`);
-  }
+export const getCompareColumns = (project_id: number) =>
+  post("/explore/compare-columns/columns", { project_id });
+export const runColumnCompare = (project_id: number, col_a: string, col_b: string) =>
+  post("/explore/compare-columns/run", { project_id, col_a, col_b });
 
-  return response.json();
-}
+export const runMultifileCompare = (project_id_a: number, project_id_b: number) =>
+  post("/explore/multifile", { project_id_a, project_id_b });

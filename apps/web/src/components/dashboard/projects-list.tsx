@@ -3,16 +3,16 @@
 import Link from "next/link";
 import { useEffect, useImperativeHandle, useState, forwardRef } from "react";
 import { getProjects } from "@/lib/api";
-import { Button } from "@/components/ui/button";
+import { ArrowRight, FolderOpen } from "lucide-react";
 
-type Project = {
-  id: number;
-  name: string;
-  status: string;
-};
+type Project = { id: number; name: string; status: string };
 
-export type ProjectsListHandle = {
-  reload: () => Promise<void>;
+export type ProjectsListHandle = { reload: () => Promise<void> };
+
+const STATUS_COLOR: Record<string, string> = {
+  ready:      "bg-emerald-500/15 text-emerald-400",
+  created:    "bg-white/10 text-white/50",
+  processing: "bg-amber-500/15 text-amber-400",
 };
 
 export const ProjectsList = forwardRef<ProjectsListHandle>(function ProjectsList(_, ref) {
@@ -24,9 +24,7 @@ export const ProjectsList = forwardRef<ProjectsListHandle>(function ProjectsList
     try {
       setLoading(true);
       setError("");
-
-      const data = await getProjects();
-      setProjects(data);
+      setProjects(await getProjects());
     } catch {
       setError("Failed to load projects.");
     } finally {
@@ -34,46 +32,48 @@ export const ProjectsList = forwardRef<ProjectsListHandle>(function ProjectsList
     }
   }
 
-  useEffect(() => {
-    loadProjects();
-  }, []);
-
-  useImperativeHandle(ref, () => ({
-    reload: loadProjects,
-  }));
+  useEffect(() => { loadProjects(); }, []);
+  useImperativeHandle(ref, () => ({ reload: loadProjects }));
 
   if (loading) {
-    return <p className="text-sm text-white/50">Loading projects...</p>;
+    return (
+      <div className="space-y-2">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="h-14 animate-pulse rounded-xl bg-white/5" />
+        ))}
+      </div>
+    );
   }
 
-  if (error) {
-    return <p className="text-sm text-red-400">{error}</p>;
-  }
+  if (error) return <p className="text-sm text-red-400">{error}</p>;
 
   if (projects.length === 0) {
-    return <p className="text-sm text-white/50">No projects yet.</p>;
+    return (
+      <div className="flex flex-col items-center gap-2 py-8 text-center">
+        <FolderOpen className="h-8 w-8 text-white/20" />
+        <p className="text-sm text-white/40">No projects yet.</p>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="divide-y divide-white/[0.06]">
       {projects.map((project) => (
-        <div
+        <Link
           key={project.id}
-          className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 p-4"
+          href={`/projects/${project.id}`}
+          className="group flex items-center justify-between py-3"
         >
-          <div>
-            <p className="font-medium text-white">{project.name}</p>
-            <p className="text-sm text-white/50">Status: {project.status}</p>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-white group-hover:text-indigo-300 transition-colors">
+              {project.name}
+            </p>
+            <span className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_COLOR[project.status] ?? "bg-white/10 text-white/50"}`}>
+              {project.status}
+            </span>
           </div>
-
-          <Button
-            asChild
-            variant="outline"
-            className="border-white/10 text-white hover:bg-white/5"
-          >
-            <Link href={`/projects/${project.id}`}>Open</Link>
-          </Button>
-        </div>
+          <ArrowRight className="h-4 w-4 flex-shrink-0 text-white/20 transition-colors group-hover:text-indigo-400" />
+        </Link>
       ))}
     </div>
   );

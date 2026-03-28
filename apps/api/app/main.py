@@ -5,6 +5,7 @@ from app.routes.projects import router as projects_router
 from app.routes.upload import router as upload_router
 from app.routes.analysis import router as analysis_router
 from app.routes.charts import router as charts_router
+from app.routes.explore import router as explore_router
 
 app = FastAPI(title="Analyst Pro API")
 
@@ -20,6 +21,7 @@ app.include_router(projects_router)
 app.include_router(upload_router)
 app.include_router(analysis_router)
 app.include_router(charts_router)
+app.include_router(explore_router)
 
 
 @app.get("/health")

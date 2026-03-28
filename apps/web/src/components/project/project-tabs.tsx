@@ -1,32 +1,35 @@
 "use client";
 
-type Props = {
-  value: string;
-  onChange: (v: string) => void;
-};
+type Props = { value: string; onChange: (v: string) => void };
 
-const tabs = [
-  { id: "overview", label: "Overview" },
-  { id: "columns", label: "Columns" },
-  { id: "insights", label: "Insights" },
-  { id: "cleaning", label: "Cleaning" },
-  { id: "charts", label: "Charts" },
+const TABS = [
+  { id: "overview",      label: "Overview" },
+  { id: "profile",       label: "Profile" },
+  { id: "insights",      label: "Insights" },
+  { id: "cleaning",      label: "Cleaning" },
+  { id: "charts",        label: "Charts" },
+  { id: "timeseries",    label: "Time Series" },
+  { id: "duplicates",    label: "Duplicates" },
+  { id: "outliers",      label: "Outliers" },
+  { id: "correlations",  label: "Correlations" },
+  { id: "compare",       label: "Compare Cols" },
+  { id: "multifile",     label: "Compare Files" },
 ];
 
 export function ProjectTabs({ value, onChange }: Props) {
   return (
-    <div className="flex flex-wrap gap-2 border-b border-white/10 pb-2">
-      {tabs.map((t) => (
+    <div className="flex gap-1 overflow-x-auto rounded-xl border border-white/[0.07] bg-white/[0.03] p-1 [scrollbar-width:none]">
+      {TABS.map((tab) => (
         <button
-          key={t.id}
-          onClick={() => onChange(t.id)}
-          className={`rounded-lg px-4 py-2 text-sm transition ${
-            value === t.id
-              ? "bg-white/10 text-white"
-              : "text-white/60 hover:text-white"
+          key={tab.id}
+          onClick={() => onChange(tab.id)}
+          className={`flex-shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+            value === tab.id
+              ? "bg-indigo-600 text-white shadow-sm"
+              : "text-white/50 hover:text-white"
           }`}
         >
-          {t.label}
+          {tab.label}
         </button>
       ))}
     </div>

@@ -4,6 +4,7 @@ python-multipart
 pandas
 numpy
 scikit-learn
+scipy
 openpyxl
 xlsxwriter
 pydantic

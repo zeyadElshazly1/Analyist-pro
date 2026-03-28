@@ -1,64 +1,45 @@
-type CleaningItem =
-  | string
-  | {
-      column?: string;
-      action?: string;
-      details?: string;
-      before?: string | number;
-      after?: string | number;
-    };
-
-type Props = {
-  items: CleaningItem[];
+type CleaningItem = {
+  step: string;
+  detail: string;
+  impact: "high" | "medium" | "low";
 };
 
-function renderItem(item: CleaningItem, idx: number) {
-  if (typeof item === "string") {
+type Props = { items: CleaningItem[] };
+
+const IMPACT_STYLE = {
+  high:   "bg-rose-500/10 text-rose-400 border-rose-500/20",
+  medium: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  low:    "bg-white/5 text-white/40 border-white/10",
+};
+
+export function CleaningReport({ items }: Props) {
+  if (!items || items.length === 0) {
     return (
-      <div
-        key={idx}
-        className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/80"
-      >
-        {item}
-      </div>
+      <p className="text-sm text-emerald-400">
+        No cleaning actions needed — dataset was already clean.
+      </p>
     );
   }
 
   return (
-    <div
-      key={idx}
-      className="rounded-xl border border-white/10 bg-white/5 p-4"
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-white">
-          {item.action ?? "Cleaning action"}
-        </span>
-
-        {item.column ? (
-          <span className="text-sm font-medium text-white">
-            {item.column}
-          </span>
-        ) : null}
-      </div>
-
-      {item.details ? (
-        <p className="mt-2 text-sm text-white/70">{item.details}</p>
-      ) : null}
-
-      {(item.before !== undefined || item.after !== undefined) ? (
-        <div className="mt-2 flex flex-wrap gap-4 text-xs text-white/50">
-          {item.before !== undefined ? <span>Before: {String(item.before)}</span> : null}
-          {item.after !== undefined ? <span>After: {String(item.after)}</span> : null}
+    <div className="space-y-2">
+      {items.map((item, i) => (
+        <div
+          key={i}
+          className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3"
+        >
+          <span className="mt-0.5 text-xs text-white/30 w-4 flex-shrink-0">{i + 1}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-sm font-medium text-white">{item.step}</p>
+              <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${IMPACT_STYLE[item.impact] ?? IMPACT_STYLE.low}`}>
+                {item.impact} impact
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-white/50">{item.detail}</p>
+          </div>
         </div>
-      ) : null}
+      ))}
     </div>
   );
-}
-
-export function CleaningReport({ items }: Props) {
-  if (!items || items.length === 0) {
-    return <p className="text-sm text-white/60">No cleaning actions recorded.</p>;
-  }
-
-  return <div className="space-y-3">{items.map(renderItem)}</div>;
 }
