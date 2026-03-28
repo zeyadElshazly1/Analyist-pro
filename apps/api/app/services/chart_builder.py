@@ -266,28 +266,37 @@ def build_chart_data(df: pd.DataFrame) -> list[dict]:
         pair_corrs.sort(key=lambda x: abs(x[2]), reverse=True)
 
         for col1, col2, corr, pval, clean in pair_corrs[:2]:
+            # Skip degenerate pairs (near-constant columns cause SVD failures in polyfit)
+            if float(clean[col1].std()) < 1e-10 or float(clean[col2].std()) < 1e-10:
+                continue
+
             sample = clean.sample(min(len(clean), 300), random_state=42)
 
-            # Mark anomalous points (far from regression line)
-            coeffs = np.polyfit(clean[col1], clean[col2], 1)
-            predicted = np.polyval(coeffs, sample[col1])
-            residuals = sample[col2].values - predicted
-            residual_std = float(np.std(residuals))
-
-            data = [
-                {
-                    "x": float(row[col1]),
-                    "y": float(row[col2]),
-                    "is_anomaly": bool(abs(residuals[i]) > 2 * residual_std),
-                }
-                for i, (_, row) in enumerate(sample.iterrows())
-            ]
-
-            x_min, x_max = float(clean[col1].min()), float(clean[col1].max())
-            regression = [
-                {"x": x_min, "y_hat": float(np.polyval(coeffs, x_min))},
-                {"x": x_max, "y_hat": float(np.polyval(coeffs, x_max))},
-            ]
+            # Regression + anomaly flagging — guarded against LinAlgError
+            try:
+                coeffs = np.polyfit(clean[col1].values, clean[col2].values, 1)
+                predicted = np.polyval(coeffs, sample[col1].values)
+                residuals = sample[col2].values - predicted
+                residual_std = float(np.std(residuals))
+                data = [
+                    {
+                        "x": float(row[col1]),
+                        "y": float(row[col2]),
+                        "is_anomaly": bool(residual_std > 0 and abs(residuals[i]) > 2 * residual_std),
+                    }
+                    for i, (_, row) in enumerate(sample.iterrows())
+                ]
+                x_min, x_max = float(clean[col1].min()), float(clean[col1].max())
+                regression = [
+                    {"x": x_min, "y_hat": float(np.polyval(coeffs, x_min))},
+                    {"x": x_max, "y_hat": float(np.polyval(coeffs, x_max))},
+                ]
+            except (np.linalg.LinAlgError, Exception):
+                data = [
+                    {"x": float(row[col1]), "y": float(row[col2]), "is_anomaly": False}
+                    for _, row in sample.iterrows()
+                ]
+                regression = []
 
             narration = _narrate_scatter(col1, col2, corr, pval)
             significance_badge = "significant" if pval < 0.05 else "not significant"
