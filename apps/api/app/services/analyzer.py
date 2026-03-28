@@ -3,55 +3,149 @@ import numpy as np
 from scipy import stats
 from itertools import combinations
 
-def analyze_dataset(df):
+
+def _bh_correct(p_values: list[float]) -> list[float]:
+    """Benjamini-Hochberg FDR correction. Returns adjusted p-values."""
+    n = len(p_values)
+    if n == 0:
+        return []
+    indexed = sorted(enumerate(p_values), key=lambda x: x[1])
+    adjusted = [0.0] * n
+    prev = 1.0
+    for rank, (orig_idx, p) in enumerate(reversed(indexed), 1):
+        adj = min(prev, p * n / (n - rank + 1))
+        adjusted[orig_idx] = adj
+        prev = adj
+    return adjusted
+
+
+def _normality_test(series: pd.Series) -> bool:
+    """Returns True if series is approximately normal."""
+    clean = series.dropna()
+    if len(clean) < 8:
+        return True  # too small to test
+    if len(clean) <= 5000:
+        _, p = stats.shapiro(clean.sample(min(len(clean), 2000), random_state=42))
+    else:
+        _, p = stats.normaltest(clean)
+    return bool(p > 0.05)
+
+
+def analyze_dataset(df: pd.DataFrame) -> list[dict]:
     insights = []
 
-    # Exclude ID-like columns
-    id_cols = [col for col in df.columns if 'id' in col.lower()]
+    # Exclude ID-like columns (very high unique ratio)
+    id_cols = [
+        col for col in df.columns
+        if 'id' in col.lower() and df[col].nunique() / max(len(df), 1) > 0.95
+    ]
     df = df.drop(columns=id_cols, errors='ignore')
 
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     categorical_cols = [
         col for col in df.select_dtypes(include=['object', 'category']).columns
-        if df[col].nunique() < 20
+        if df[col].nunique() < 50
     ]
 
-    # 1. Correlation insights
-    if len(numeric_cols) >= 2:
-        for col1, col2 in combinations(numeric_cols, 2):
-            clean = df[[col1, col2]].dropna()
-            if len(clean) < 10:
-                continue
+    # ── 1. Correlation insights (Pearson or Spearman based on normality) ──────
+    pairs = list(combinations(numeric_cols, 2))
+    raw_corr_data = []
+    for col1, col2 in pairs:
+        clean = df[[col1, col2]].dropna()
+        if len(clean) < 10:
+            continue
+        is_normal = _normality_test(clean[col1]) and _normality_test(clean[col2])
+        if is_normal:
             corr, pvalue = stats.pearsonr(clean[col1], clean[col2])
-            if abs(corr) > 0.5 and pvalue < 0.05:
+            method = "Pearson"
+        else:
+            corr, pvalue = stats.spearmanr(clean[col1], clean[col2])
+            method = "Spearman"
+        if abs(corr) > 0.4:
+            raw_corr_data.append((col1, col2, corr, pvalue, method))
+
+    # Apply BH correction to correlation p-values
+    if raw_corr_data:
+        pvals = [x[3] for x in raw_corr_data]
+        adj_pvals = _bh_correct(pvals)
+        for (col1, col2, corr, _, method), adj_p in zip(raw_corr_data, adj_pvals):
+            if abs(corr) > 0.4 and adj_p < 0.05:
                 direction = "positively" if corr > 0 else "negatively"
-                strength = "strongly" if abs(corr) > 0.8 else "moderately"
+                strength = (
+                    "very strongly" if abs(corr) > 0.9
+                    else "strongly" if abs(corr) > 0.7
+                    else "moderately"
+                )
+                severity = "high" if abs(corr) > 0.7 else "medium"
                 insights.append({
                     "type": "correlation",
+                    "severity": severity,
                     "confidence": round(abs(corr) * 100, 1),
-                    "title": f"Hidden relationship: {col1} and {col2}",
-                    "finding": f"{col1} and {col2} are {strength} {direction} correlated (r={corr:.2f}). When {col1} increases, {col2} tends to {'increase' if corr > 0 else 'decrease'}.",
-                    "action": f"Investigate whether {col1} is driving {col2} — this relationship could be exploited strategically."
+                    "title": f"Relationship detected: {col1} & {col2}",
+                    "finding": (
+                        f"{col1} and {col2} are {strength} {direction} correlated "
+                        f"(r={corr:.2f}, {method}). When {col1} increases, {col2} tends to "
+                        f"{'increase' if corr > 0 else 'decrease'}."
+                    ),
+                    "evidence": f"{method} r={corr:.3f}, adjusted p={adj_p:.4f}, n={len(df[[col1, col2]].dropna())}",
+                    "action": (
+                        f"Investigate whether {col1} drives {col2}. Consider multicollinearity "
+                        f"if both are used as model features."
+                    ),
                 })
 
-    # 2. Anomaly detection
+    # ── 2. Anomaly detection (Z-score) ────────────────────────────────────────
     for col in numeric_cols:
         col_data = df[col].dropna()
         if len(col_data) < 10:
             continue
         z_scores = np.abs(stats.zscore(col_data))
-        outlier_count = (z_scores > 3).sum()
+        outlier_count = int((z_scores > 3).sum())
         if outlier_count > 0:
             outlier_pct = round(outlier_count / len(col_data) * 100, 1)
+            worst_z = round(float(z_scores.max()), 1)
+            severity = "high" if outlier_pct > 5 else "medium"
             insights.append({
                 "type": "anomaly",
-                "confidence": round(min(95, 70 + outlier_pct * 2), 1),
-                "title": f"Anomalies detected in {col}",
-                "finding": f"{outlier_count} records ({outlier_pct}% of data) in {col} are statistical outliers — more than 3 standard deviations from the mean.",
-                "action": f"Review these {outlier_count} records in {col}. They could represent errors, fraud, or your most extreme customers."
+                "severity": severity,
+                "confidence": round(min(97, 75 + outlier_pct * 2), 1),
+                "title": f"Anomalies in {col}",
+                "finding": (
+                    f"{outlier_count} records ({outlier_pct}% of data) in '{col}' are statistical "
+                    f"outliers — more than 3 standard deviations from the mean."
+                ),
+                "evidence": f"Max Z-score: {worst_z}. Mean: {col_data.mean():.2f}, Std: {col_data.std():.2f}",
+                "action": (
+                    f"Review the {outlier_count} extreme values in '{col}'. "
+                    f"They could represent data entry errors, fraud, or your most extreme cases."
+                ),
             })
 
-    # 3. Categorical vs numeric — churn rate style analysis
+    # ── 3. Distribution skewness insights ─────────────────────────────────────
+    for col in numeric_cols:
+        col_data = df[col].dropna()
+        if len(col_data) < 20:
+            continue
+        skew = float(col_data.skew())
+        if abs(skew) > 1.5:
+            direction = "right (positive)" if skew > 0 else "left (negative)"
+            insights.append({
+                "type": "distribution",
+                "severity": "medium",
+                "confidence": round(min(95, 60 + abs(skew) * 8), 1),
+                "title": f"Skewed distribution: {col}",
+                "finding": (
+                    f"'{col}' is heavily skewed {direction} (skewness={skew:.2f}). "
+                    f"Most values cluster at the {'low' if skew > 0 else 'high'} end."
+                ),
+                "evidence": f"Skewness={skew:.3f}, Mean={col_data.mean():.2f}, Median={col_data.median():.2f}",
+                "action": (
+                    f"Consider log-transforming '{col}' before modeling or statistical tests. "
+                    f"The gap between mean ({col_data.mean():.2f}) and median ({col_data.median():.2f}) confirms skew."
+                ),
+            })
+
+    # ── 4. Segment gap analysis (cat vs numeric) ──────────────────────────────
     for cat_col in categorical_cols:
         for num_col in numeric_cols:
             groups = df.groupby(cat_col)[num_col].mean().dropna()
@@ -63,20 +157,37 @@ def analyze_dataset(df):
                 continue
             ratio = groups[max_group] / groups[min_group]
             if ratio > 1.5:
-                insights.append({
-                    "type": "segment",
-                    "confidence": round(min(95, 55 + ratio * 4), 1),
-                    "title": f"Segment gap: {cat_col} vs {num_col}",
-                    "finding": f"'{max_group}' has {ratio:.1f}x higher average {num_col} than '{min_group}' ({groups[max_group]:.2f} vs {groups[min_group]:.2f}).",
-                    "action": f"Prioritize segments like '{max_group}' — they significantly outperform '{min_group}' on {num_col}."
-                })
+                # ANOVA test for statistical significance
+                group_arrays = [grp.dropna().values for _, grp in df.groupby(cat_col)[num_col] if len(grp.dropna()) >= 3]
+                if len(group_arrays) >= 2:
+                    _, anova_p = stats.f_oneway(*group_arrays)
+                    if anova_p >= 0.05:
+                        continue  # not statistically significant
+                    severity = "high" if ratio > 3 else "medium"
+                    insights.append({
+                        "type": "segment",
+                        "severity": severity,
+                        "confidence": round(min(95, 55 + ratio * 4), 1),
+                        "title": f"Segment gap: {cat_col} → {num_col}",
+                        "finding": (
+                            f"'{max_group}' has {ratio:.1f}x higher average {num_col} than '{min_group}' "
+                            f"({groups[max_group]:.2f} vs {groups[min_group]:.2f})."
+                        ),
+                        "evidence": f"ANOVA p={anova_p:.4f}, ratio={ratio:.2f}x, {len(groups)} groups",
+                        "action": (
+                            f"Prioritize or investigate '{max_group}' in '{cat_col}' — "
+                            f"it significantly outperforms '{min_group}' on {num_col}."
+                        ),
+                    })
 
-    # 4. Binary categorical churn-style rates
+    # ── 5. Binary categorical rate analysis ───────────────────────────────────
     binary_cols = [col for col in categorical_cols if df[col].nunique() == 2]
     for target_col in binary_cols:
-        vals = df[target_col].unique()
+        vals = df[target_col].dropna().unique()
+        if len(vals) != 2:
+            continue
         for cat_col in categorical_cols:
-            if cat_col == target_col:
+            if cat_col == target_col or df[cat_col].nunique() < 2:
                 continue
             rates = df.groupby(cat_col)[target_col].apply(
                 lambda x: (x == vals[0]).mean()
@@ -91,35 +202,91 @@ def analyze_dataset(df):
             if ratio > 1.8:
                 insights.append({
                     "type": "segment",
+                    "severity": "high" if ratio > 4 else "medium",
                     "confidence": round(min(95, 55 + ratio * 5), 1),
-                    "title": f"Rate gap: {cat_col} vs {target_col}",
-                    "finding": f"'{max_group}' has {ratio:.1f}x higher '{vals[0]}' rate than '{min_group}' ({rates[max_group]:.1%} vs {rates[min_group]:.1%}).",
-                    "action": f"Segment '{max_group}' shows dramatically different {target_col} behavior — worth targeting separately."
+                    "title": f"Rate gap: {cat_col} → {target_col}",
+                    "finding": (
+                        f"'{max_group}' has {ratio:.1f}x higher '{vals[0]}' rate than '{min_group}' "
+                        f"({rates[max_group]:.1%} vs {rates[min_group]:.1%})."
+                    ),
+                    "evidence": f"Rate ratio={ratio:.2f}x across {len(rates)} segments",
+                    "action": (
+                        f"'{max_group}' in '{cat_col}' shows dramatically different '{target_col}' behavior "
+                        f"— consider targeting it separately."
+                    ),
                 })
 
-    # 5. Missing data patterns
+    # ── 6. High-cardinality categorical columns ───────────────────────────────
+    for col in df.select_dtypes(include=['object', 'category']).columns:
+        n_unique = df[col].nunique()
+        n_rows = len(df)
+        ratio = n_unique / n_rows
+        if ratio > 0.8 and n_unique > 50:
+            insights.append({
+                "type": "data_quality",
+                "severity": "low",
+                "confidence": 90.0,
+                "title": f"High-cardinality column: {col}",
+                "finding": (
+                    f"'{col}' has {n_unique} unique values ({ratio:.0%} of rows). "
+                    f"This column may be an identifier or free-text field."
+                ),
+                "evidence": f"{n_unique} unique values out of {n_rows} rows",
+                "action": (
+                    f"Consider whether '{col}' should be excluded from analysis, "
+                    f"or if it needs to be bucketed/encoded."
+                ),
+            })
+
+    # ── 7. Missing data patterns ──────────────────────────────────────────────
     missing = df.isnull().sum()
     for col, count in missing[missing > 0].items():
         pct = round(count / len(df) * 100, 1)
         if pct > 5:
+            severity = "high" if pct > 30 else "medium"
             insights.append({
                 "type": "data_quality",
+                "severity": severity,
                 "confidence": 99.0,
-                "title": f"Data gap in {col}",
-                "finding": f"{count} records ({pct}% of data) are missing values in {col}.",
-                "action": f"Investigate why {col} is missing for {pct}% of records — this could be hiding a pattern."
+                "title": f"Missing data in {col}",
+                "finding": (
+                    f"{count} records ({pct}% of data) are missing values in '{col}'."
+                ),
+                "evidence": f"{count}/{len(df)} rows missing ({pct}%)",
+                "action": (
+                    f"Investigate why '{col}' is missing for {pct}% of records. "
+                    f"{'Drop this column or impute carefully.' if pct > 40 else 'Impute with median/mode or model-based imputation.'}"
+                ),
             })
 
-    # Sort by confidence and return top 10
-    insights.sort(key=lambda x: x["confidence"], reverse=True)
-    return insights[:10]
+    # ── 8. Constant / near-constant columns ──────────────────────────────────
+    for col in numeric_cols:
+        col_data = df[col].dropna()
+        if len(col_data) < 5:
+            continue
+        if col_data.std() < 1e-6:
+            insights.append({
+                "type": "data_quality",
+                "severity": "medium",
+                "confidence": 100.0,
+                "title": f"Constant column: {col}",
+                "finding": f"'{col}' has zero variance — all values are identical ({col_data.iloc[0]}).",
+                "evidence": f"Std={col_data.std():.2e}, unique values={col_data.nunique()}",
+                "action": f"Remove '{col}' from any model or analysis — it carries no information.",
+            })
+
+    # Sort: high severity first, then by confidence
+    severity_order = {"high": 0, "medium": 1, "low": 2}
+    insights.sort(key=lambda x: (severity_order.get(x.get("severity", "low"), 2), -x["confidence"]))
+    return insights[:15]
 
 
-def get_dataset_summary(df):
+def get_dataset_summary(df: pd.DataFrame) -> dict:
     return {
         "rows": len(df),
         "columns": len(df.columns),
         "numeric_cols": len(df.select_dtypes(include=[np.number]).columns),
         "categorical_cols": len(df.select_dtypes(include=['object']).columns),
-        "missing_pct": round(df.isnull().sum().sum() / (len(df) * len(df.columns)) * 100, 1)
+        "datetime_cols": len(df.select_dtypes(include=['datetime64']).columns),
+        "missing_pct": round(df.isnull().sum().sum() / max(len(df) * len(df.columns), 1) * 100, 1),
     }

@@ -2,18 +2,19 @@
 
 import { useState } from "react";
 import { runAnalysis } from "@/lib/api";
-import { Play, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Loader2, Play } from "lucide-react";
 
 import { StatsCards } from "@/components/analysis/stats-cards";
 import { InsightsList } from "@/components/analysis/insights-list";
 import { HealthScore } from "@/components/analysis/health-score";
 import { ProjectTabs } from "./project-tabs";
-import { ProfileView } from "@/components/analysis/profile-view";
 import { CleaningReport } from "@/components/analysis/cleaning-report";
 import { CleaningSummaryCards } from "@/components/analysis/cleaning-summary-cards";
 import { InsightHighlights } from "@/components/analysis/insight-highlights";
 import { RecommendedAction } from "@/components/analysis/recommended-action";
 import { ChartViewer } from "@/components/analysis/chart-viewer";
+import { ProfileView } from "@/components/analysis/profile-view";
 import { TimeseriesView } from "@/components/analysis/timeseries-view";
 import { DuplicatesView } from "@/components/analysis/duplicates-view";
 import { OutlierView } from "@/components/analysis/outlier-view";
@@ -21,144 +22,186 @@ import { CorrelationMatrix } from "@/components/analysis/correlation-matrix";
 import { ColumnCompare } from "@/components/analysis/column-compare";
 import { MultifileCompare } from "@/components/analysis/multifile-compare";
 
-type Props = { projectId: number };
+type Props = {
+  projectId: number;
+};
+
+function TabPanel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
+      {children}
+    </div>
+  );
+}
 
 export function RunAnalysis({ projectId }: Props) {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<any | null>(null);
   const [tab, setTab] = useState("overview");
   const [error, setError] = useState("");
 
   async function handleRun() {
-    setLoading(true); setError("");
-    try { setResult(await runAnalysis(projectId)); }
-    catch (e) { setError(e instanceof Error ? e.message : "Analysis failed."); }
-    finally { setLoading(false); }
+    try {
+      setLoading(true);
+      setError("");
+      const data = await runAnalysis(projectId);
+      setResult(data);
+      setTab("overview");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Analysis failed.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <button onClick={handleRun} disabled={loading}
-          className="flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-60">
-          {loading
-            ? <><Loader2 className="h-4 w-4 animate-spin" />Running analysis…</>
-            : <><Play className="h-4 w-4" />{result ? "Re-run analysis" : "Run analysis"}</>}
-        </button>
+        <Button
+          onClick={handleRun}
+          disabled={loading}
+          className="bg-indigo-600 hover:bg-indigo-500 text-white gap-2"
+        >
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Analyzing…
+            </>
+          ) : (
+            <>
+              <Play className="h-4 w-4" />
+              Run Analysis
+            </>
+          )}
+        </Button>
         {result && !loading && (
-          <p className="text-xs text-white/30">
-            {result.dataset_summary?.rows?.toLocaleString()} rows · {result.dataset_summary?.columns} columns
-          </p>
+          <span className="text-xs text-white/40">
+            Analysis complete — explore tabs below
+          </span>
         )}
       </div>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error ? (
+        <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+          {error}
+        </div>
+      ) : null}
 
-      {result && (
-        <div className="space-y-5">
+      {result ? (
+        <div className="space-y-4">
           <ProjectTabs value={tab} onChange={setTab} />
 
+          {/* ── Overview ─────────────────────────────────────────────── */}
           {tab === "overview" && (
             <div className="space-y-4">
               <StatsCards summary={result.dataset_summary} />
-              <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-                <HealthScore score={result.health_score} />
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <TabPanel>
+                  <HealthScore score={result.health_score} />
+                </TabPanel>
+                <TabPanel>
+                  <h2 className="mb-4 text-sm font-semibold text-white/70 uppercase tracking-wider">
+                    Cleaning Summary
+                  </h2>
+                  <CleaningSummaryCards summary={result.cleaning_summary} />
+                </TabPanel>
               </div>
-              <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-                <h2 className="mb-4 text-sm font-semibold text-white/80">Top insights</h2>
+
+              <TabPanel>
+                <h2 className="mb-4 font-semibold text-white">Top Highlights</h2>
                 <InsightHighlights insights={result.insights} />
-              </div>
+              </TabPanel>
+
               <RecommendedAction insights={result.insights} />
-              <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-                <h2 className="mb-4 text-sm font-semibold text-white/80">Cleaning summary</h2>
-                <CleaningSummaryCards summary={result.cleaning_summary} />
-              </div>
             </div>
           )}
 
+          {/* ── Profile ──────────────────────────────────────────────── */}
           {tab === "profile" && (
-            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-              <h2 className="mb-1 text-sm font-semibold text-white/80">Column profiles</h2>
-              <p className="mb-4 text-xs text-white/35">Click any row to expand full stats.</p>
+            <TabPanel>
+              <h2 className="mb-4 font-semibold text-white">Column Profiles</h2>
               <ProfileView profile={result.profile} />
-            </div>
+            </TabPanel>
           )}
 
+          {/* ── Insights ─────────────────────────────────────────────── */}
           {tab === "insights" && (
-            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-              <h2 className="mb-4 text-sm font-semibold text-white/80">Blind spot finder</h2>
+            <TabPanel>
+              <h2 className="mb-4 font-semibold text-white">All Insights</h2>
               <InsightsList insights={result.insights} />
-            </div>
+            </TabPanel>
           )}
 
+          {/* ── Cleaning ─────────────────────────────────────────────── */}
           {tab === "cleaning" && (
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-                <h2 className="mb-4 text-sm font-semibold text-white/80">Summary</h2>
-                <CleaningSummaryCards summary={result.cleaning_summary} />
-              </div>
-              <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-                <h2 className="mb-4 text-sm font-semibold text-white/80">Step-by-step report</h2>
-                <CleaningReport items={result.cleaning_report} />
-              </div>
-            </div>
+            <TabPanel>
+              <h2 className="mb-4 font-semibold text-white">Cleaning Report</h2>
+              <CleaningReport items={result.cleaning_report} />
+            </TabPanel>
           )}
 
+          {/* ── Charts ───────────────────────────────────────────────── */}
           {tab === "charts" && (
-            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-              <h2 className="mb-4 text-sm font-semibold text-white/80">Auto-generated charts</h2>
+            <TabPanel>
+              <h2 className="mb-4 font-semibold text-white">Charts</h2>
               <ChartViewer projectId={projectId} autoLoad />
-            </div>
+            </TabPanel>
           )}
 
+          {/* ── Time Series ──────────────────────────────────────────── */}
           {tab === "timeseries" && (
-            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-              <h2 className="mb-1 text-sm font-semibold text-white/80">Time series</h2>
-              <p className="mb-4 text-xs text-white/35">Pick a date column and a metric to plot over time.</p>
+            <TabPanel>
               <TimeseriesView projectId={projectId} />
-            </div>
+            </TabPanel>
           )}
 
+          {/* ── Duplicates ───────────────────────────────────────────── */}
           {tab === "duplicates" && (
-            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-              <h2 className="mb-1 text-sm font-semibold text-white/80">Duplicate detector</h2>
-              <p className="mb-4 text-xs text-white/35">Scans for exact and near-duplicate rows.</p>
+            <TabPanel>
               <DuplicatesView projectId={projectId} />
-            </div>
+            </TabPanel>
           )}
 
+          {/* ── Outliers ─────────────────────────────────────────────── */}
           {tab === "outliers" && (
-            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-              <h2 className="mb-1 text-sm font-semibold text-white/80">Outlier explorer</h2>
-              <p className="mb-4 text-xs text-white/35">Z-score outlier detection per column (threshold: |Z| &gt; 3).</p>
+            <TabPanel>
               <OutlierView projectId={projectId} />
-            </div>
+            </TabPanel>
           )}
 
+          {/* ── Correlations ─────────────────────────────────────────── */}
           {tab === "correlations" && (
-            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-              <h2 className="mb-1 text-sm font-semibold text-white/80">Correlation matrix</h2>
-              <p className="mb-4 text-xs text-white/35">Pearson correlation between all numeric columns.</p>
+            <TabPanel>
               <CorrelationMatrix projectId={projectId} />
-            </div>
+            </TabPanel>
           )}
 
-          {tab === "compare" && (
-            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-              <h2 className="mb-1 text-sm font-semibold text-white/80">Column comparison</h2>
-              <p className="mb-4 text-xs text-white/35">Auto-detects column types and picks the right chart.</p>
+          {/* ── Compare Columns ──────────────────────────────────────── */}
+          {tab === "compare-cols" && (
+            <TabPanel>
               <ColumnCompare projectId={projectId} />
-            </div>
+            </TabPanel>
           )}
 
-          {tab === "multifile" && (
-            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-              <h2 className="mb-1 text-sm font-semibold text-white/80">Compare files</h2>
-              <p className="mb-4 text-xs text-white/35">Compare datasets from two different projects side-by-side.</p>
-              <MultifileCompare />
-            </div>
+          {/* ── Compare Files ────────────────────────────────────────── */}
+          {tab === "compare-files" && (
+            <TabPanel>
+              <MultifileCompare currentProjectId={projectId} />
+            </TabPanel>
           )}
         </div>
+      ) : (
+        !loading && (
+          <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-12 text-center">
+            <div className="mx-auto mb-4 h-12 w-12 rounded-xl bg-indigo-500/10 flex items-center justify-center">
+              <Play className="h-5 w-5 text-indigo-400" />
+            </div>
+            <p className="text-white/50 text-sm">
+              Upload a dataset and click <span className="text-white/80">Run Analysis</span> to get started
+            </p>
+          </div>
+        )
       )}
     </div>
   );

@@ -1,195 +1,240 @@
 "use client";
 
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
-import { getCompareColumns, runColumnCompare } from "@/lib/api";
+import { useState, useEffect } from "react";
+import { getCompareColumnOptions, runColumnCompare } from "@/lib/api";
+import { AlertCircle } from "lucide-react";
 import {
-  ScatterChart, Scatter, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, BarChart, Bar,
+  ScatterChart,
+  Scatter,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+  Line,
+  LineChart,
+  BarChart,
+  Bar,
+  Legend,
 } from "recharts";
 
 type Props = { projectId: number };
 
-const TS = { background: "#111113", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px", color: "#f5f7fa", fontSize: 12 };
-const tick = { fill: "#6b7280", fontSize: 11 };
-const grid = { strokeDasharray: "3 3", strokeOpacity: 0.08 };
+const DARK_TOOLTIP = {
+  contentStyle: {
+    background: "#111118",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 8,
+    color: "#fff",
+  },
+};
 
 export function ColumnCompare({ projectId }: Props) {
   const [columns, setColumns] = useState<string[]>([]);
   const [colA, setColA] = useState("");
   const [colB, setColB] = useState("");
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
-  const [colsLoading, setColsLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    getCompareColumns(projectId)
-      .then((d) => {
-        const cols = d.columns ?? [];
-        setColumns(cols);
-        if (cols[0]) setColA(cols[0]);
-        if (cols[1]) setColB(cols[1]);
+    getCompareColumnOptions(projectId)
+      .then((data) => {
+        setColumns(data.columns);
+        if (data.columns.length >= 2) {
+          setColA(data.columns[0]);
+          setColB(data.columns[1]);
+        }
       })
-      .catch(() => setError("Failed to load columns"))
-      .finally(() => setColsLoading(false));
+      .catch(() => setError("Failed to load columns."));
   }, [projectId]);
 
-  async function run() {
-    if (!colA || !colB || colA === colB) return;
-    setLoading(true); setError("");
-    try { setResult(await runColumnCompare(projectId, colA, colB)); }
-    catch (e) { setError(e instanceof Error ? e.message : "Failed"); }
-    finally { setLoading(false); }
+  async function handleRun() {
+    if (!colA || !colB) return;
+    setLoading(true);
+    setError("");
+    try {
+      const data = await runColumnCompare(projectId, colA, colB);
+      setResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Comparison failed.");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  if (colsLoading) return <p className="text-sm text-white/40">Loading columns…</p>;
-
-  const columnSelectors: [string, string, Dispatch<SetStateAction<string>>][] = [
-    ["Column A", colA, setColA],
-    ["Column B", colB, setColB],
-  ];
-
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
+      <h2 className="font-semibold text-white">Column Comparison</h2>
+
+      {error && (
+        <div className="flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+          <AlertCircle className="h-4 w-4" />
+          {error}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-end gap-3">
-        {columnSelectors.map(([label, val, set]) => (
-          <div key={label} className="space-y-1">
-            <label className="text-xs text-white/40">{label}</label>
-            <select value={val} onChange={(e) => set(e.target.value)}
-              className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
+        {["A", "B"].map((label, idx) => (
+          <div key={label}>
+            <p className="mb-1 text-xs text-white/40">Column {label}</p>
+            <select
+              value={idx === 0 ? colA : colB}
+              onChange={(e) => idx === 0 ? setColA(e.target.value) : setColB(e.target.value)}
+              className="rounded-lg border border-white/[0.08] bg-white/[0.05] px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
               {columns.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
         ))}
-        <button onClick={run} disabled={loading || colA === colB}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60">
+        <button
+          onClick={handleRun}
+          disabled={loading || !colA || !colB || colA === colB}
+          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 transition-colors"
+        >
           {loading ? "Comparing…" : "Compare"}
         </button>
-        {colA === colB && <p className="text-xs text-white/30">Select two different columns</p>}
       </div>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
-      {result && <CompareResult result={result} />}
-    </div>
-  );
-}
-
-function CompareResult({ result }: { result: any }) {
-  if (result.type === "numeric_vs_numeric") {
-    return (
-      <div className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Stat label="Pearson r" value={result.correlation} color={Math.abs(result.correlation) > 0.5 ? "text-indigo-400" : "text-white"} />
-          <Stat label="P-value" value={result.p_value} />
-          <Stat label="Significant" value={result.significant ? "Yes (p < 0.05)" : "No (p ≥ 0.05)"} color={result.significant ? "text-emerald-400" : "text-white/50"} />
-        </div>
-        <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-          <p className="mb-4 text-sm font-medium text-white/80">Scatter plot: {result.col_a} vs {result.col_b}</p>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <ScatterChart>
-                <CartesianGrid {...grid} />
-                <XAxis dataKey={result.col_a} name={result.col_a} tick={tick} />
-                <YAxis dataKey={result.col_b} name={result.col_b} tick={tick} />
-                <Tooltip contentStyle={TS} />
-                <Scatter data={result.scatter_data} fill="#6366f1" fillOpacity={0.6} />
-              </ScatterChart>
-            </ResponsiveContainer>
+      {result && (
+        <>
+          {/* Interpretation banner */}
+          <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-200">
+            {result.interpretation}
           </div>
-        </div>
-      </div>
-    );
-  }
 
-  if (result.type === "numeric_vs_categorical") {
-    return (
-      <div className="space-y-4">
-        <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-          <p className="mb-4 text-sm font-medium text-white/80">Mean {result.num_col} by {result.cat_col}</p>
-          <div className="h-[260px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={result.group_stats}>
-                <CartesianGrid {...grid} />
-                <XAxis dataKey="category" tick={tick} />
-                <YAxis tick={tick} />
-                <Tooltip contentStyle={TS} />
-                <Bar dataKey="mean" fill="#6366f1" radius={[4, 4, 0, 0]} name="Mean" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-        <div className="overflow-x-auto rounded-xl border border-white/[0.07]">
-          <table className="min-w-full text-left text-xs">
-            <thead className="border-b border-white/[0.06] bg-white/[0.03]">
-              <tr>{["Category", "Mean", "Median", "Std", "Count"].map((h) => (
-                <th key={h} className="px-4 py-2 font-medium text-white/35">{h}</th>
-              ))}</tr>
-            </thead>
-            <tbody>
-              {result.group_stats.map((row: any, i: number) => (
-                <tr key={i} className="border-b border-white/[0.04]">
-                  <td className="px-4 py-2 font-medium text-white">{row.category}</td>
-                  <td className="px-4 py-2 text-white/65">{row.mean}</td>
-                  <td className="px-4 py-2 text-white/65">{row.median}</td>
-                  <td className="px-4 py-2 text-white/65">{row.std}</td>
-                  <td className="px-4 py-2 text-white/65">{row.count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  }
-
-  if (result.type === "categorical_vs_categorical") {
-    const { heatmap_data, col_a_values, col_b_values } = result;
-    return (
-      <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-        <p className="mb-4 text-sm font-medium text-white/80">Cross-tabulation (row %)</p>
-        <div className="overflow-x-auto">
-          <table className="text-xs">
-            <thead>
-              <tr>
-                <th className="px-2 py-1 text-white/30" />
-                {col_b_values.map((v: string) => (
-                  <th key={v} className="px-2 py-1 font-medium text-white/40">{v}</th>
+          {/* Numeric × Numeric */}
+          {result.type === "num_num" && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                  { label: "Pearson r", value: result.pearson_r?.toFixed(3) },
+                  { label: "Pearson p", value: result.pearson_p?.toFixed(5) },
+                  { label: "Spearman r", value: result.spearman_r?.toFixed(3) },
+                  { label: "n pairs", value: result.n },
+                ].map(({ label, value }) => (
+                  <div key={label} className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-3 text-center">
+                    <p className="text-xs text-white/40">{label}</p>
+                    <p className="mt-1 text-lg font-semibold text-white">{value}</p>
+                  </div>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {col_a_values.map((rowVal: string) => (
-                <tr key={rowVal}>
-                  <td className="pr-3 py-1 text-right font-medium text-white/50">{rowVal}</td>
-                  {col_b_values.map((colVal: string) => {
-                    const cell = heatmap_data.find((d: any) => d.y === rowVal && d.x === colVal);
-                    const val = cell?.value ?? 0;
-                    return (
-                      <td key={colVal} className="p-0.5">
-                        <div className="flex h-8 w-14 items-center justify-center rounded text-[11px] font-semibold text-white"
-                          style={{ background: `rgba(99,102,241,${val * 0.9 + 0.05})` }}>
-                          {(val * 100).toFixed(0)}%
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  }
+              </div>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ScatterChart>
+                    <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.1} />
+                    <XAxis dataKey="x" name={result.col_a} tick={{ fill: "#6b7280", fontSize: 11 }} label={{ value: result.col_a, position: "insideBottom", offset: -5, fill: "#9ca3af", fontSize: 11 }} />
+                    <YAxis dataKey="y" name={result.col_b} tick={{ fill: "#6b7280", fontSize: 11 }} label={{ value: result.col_b, angle: -90, position: "insideLeft", fill: "#9ca3af", fontSize: 11 }} />
+                    <Tooltip {...DARK_TOOLTIP} cursor={{ strokeDasharray: "3 3" }} />
+                    <Scatter data={result.scatter ?? []} fill="#6366f1" fillOpacity={0.5} r={3} />
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
 
-  return null;
-}
+          {/* Numeric × Categorical */}
+          {result.type === "num_cat" && result.group_stats && (
+            <div className="space-y-4">
+              {result.anova_p != null && (
+                <p className="text-xs text-white/40">
+                  ANOVA p={result.anova_p} —{" "}
+                  <span className={result.is_significant ? "text-green-400" : "text-amber-400"}>
+                    {result.is_significant ? "statistically significant" : "not significant"}
+                  </span>
+                </p>
+              )}
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={result.group_stats}>
+                    <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.1} />
+                    <XAxis dataKey="category" tick={{ fill: "#6b7280", fontSize: 11 }} />
+                    <YAxis tick={{ fill: "#6b7280", fontSize: 11 }} />
+                    <Tooltip {...DARK_TOOLTIP} />
+                    <Legend wrapperStyle={{ color: "#9ca3af", fontSize: 12 }} />
+                    <Bar dataKey="mean" fill="#6366f1" radius={[4, 4, 0, 0]} name={`Mean ${result.num_col}`} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="overflow-x-auto rounded-xl border border-white/[0.07]">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-white/[0.07] bg-white/[0.03]">
+                      {["Category", "Count", "Mean", "Median", "Std Dev", "Min", "Max"].map((h) => (
+                        <th key={h} className="px-3 py-2 text-white/40 font-medium">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.group_stats.map((g: any, i: number) => (
+                      <tr key={i} className="border-b border-white/[0.04] hover:bg-white/[0.02]">
+                        <td className="px-3 py-2 font-medium text-white">{g.category}</td>
+                        <td className="px-3 py-2 text-white/60">{g.count}</td>
+                        <td className="px-3 py-2 text-white/60">{g.mean?.toFixed(3)}</td>
+                        <td className="px-3 py-2 text-white/60">{g.median?.toFixed(3)}</td>
+                        <td className="px-3 py-2 text-white/60">{g.std?.toFixed(3)}</td>
+                        <td className="px-3 py-2 text-white/60">{g.min?.toFixed(3)}</td>
+                        <td className="px-3 py-2 text-white/60">{g.max?.toFixed(3)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
-function Stat({ label, value, color }: { label: string; value: React.ReactNode; color?: string }) {
-  return (
-    <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-4">
-      <p className="text-xs text-white/40">{label}</p>
-      <p className={`mt-1.5 text-lg font-semibold ${color ?? "text-white"}`}>{value}</p>
+          {/* Categorical × Categorical */}
+          {result.type === "cat_cat" && result.heatmap && (
+            <div className="space-y-3">
+              {result.chi2_p != null && (
+                <p className="text-xs text-white/40">
+                  Chi-square p={result.chi2_p} —{" "}
+                  <span className={result.is_significant ? "text-green-400" : "text-amber-400"}>
+                    {result.is_significant ? "significant association" : "no significant association"}
+                  </span>
+                </p>
+              )}
+              <div className="overflow-x-auto">
+                <table className="border-separate border-spacing-0.5 text-xs">
+                  <thead>
+                    <tr>
+                      <th className="px-2 py-1 text-white/30 text-left">{result.col_a} \\ {result.col_b}</th>
+                      {(result.col_labels ?? []).map((label: string) => (
+                        <th key={label} className="px-2 py-1 text-white/50 text-center">{label.slice(0, 10)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(result.row_labels ?? []).map((rowLabel: string) => {
+                      const rowCells = result.heatmap.filter((c: any) => c.row === rowLabel);
+                      const maxInRow = Math.max(...rowCells.map((c: any) => c.value));
+                      return (
+                        <tr key={rowLabel}>
+                          <td className="px-2 py-1 text-white/50 text-right">{rowLabel.slice(0, 12)}</td>
+                          {(result.col_labels ?? []).map((colLabel: string) => {
+                            const cell = result.heatmap.find((c: any) => c.row === rowLabel && c.col === colLabel);
+                            const val = cell?.value ?? 0;
+                            const opacity = maxInRow > 0 ? 0.15 + (val / maxInRow) * 0.7 : 0.1;
+                            return (
+                              <td
+                                key={colLabel}
+                                className="h-8 w-16 rounded text-center"
+                                style={{ background: `rgba(99,102,241,${opacity})`, color: opacity > 0.5 ? "#fff" : "rgba(255,255,255,0.6)" }}
+                              >
+                                {val}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

@@ -5,69 +5,97 @@ from app.services.cleaner import clean_dataset
 from app.services.profiler import calculate_health_score
 
 
-def compare_files(path_a: str, path_b: str) -> dict:
-    df_a, _, _ = clean_dataset(load_dataset(path_a))
-    df_b, _, _ = clean_dataset(load_dataset(path_b))
+def compare_files(path_a: str, path_b: str, label_a: str = "File A", label_b: str = "File B") -> dict:
+    # Load and clean both files
+    df_a_raw = load_dataset(path_a)
+    df_b_raw = load_dataset(path_b)
+    df_a, _, _ = clean_dataset(df_a_raw)
+    df_b, _, _ = clean_dataset(df_b_raw)
 
-    cols_a = set(df_a.columns)
-    cols_b = set(df_b.columns)
-    shared = cols_a & cols_b
+    cols_a = set(df_a.columns.tolist())
+    cols_b = set(df_b.columns.tolist())
+    shared = sorted(cols_a & cols_b)
+    only_a = sorted(cols_a - cols_b)
+    only_b = sorted(cols_b - cols_a)
 
-    health_a = calculate_health_score(df_a)
-    health_b = calculate_health_score(df_b)
+    # Health scores
+    score_a = calculate_health_score(df_a)
+    score_b = calculate_health_score(df_b)
 
-    shared_numeric = [
-        c for c in shared
-        if pd.api.types.is_numeric_dtype(df_a[c]) and pd.api.types.is_numeric_dtype(df_b[c])
+    # Numeric stats comparison on shared columns
+    numeric_shared = [
+        col for col in shared
+        if pd.api.types.is_numeric_dtype(df_a[col]) and pd.api.types.is_numeric_dtype(df_b[col])
     ]
-
-    column_comparison = []
-    for col in shared_numeric:
-        column_comparison.append({
+    stats_table = []
+    for col in numeric_shared[:15]:
+        a_vals = df_a[col].dropna()
+        b_vals = df_b[col].dropna()
+        stats_table.append({
             "column": col,
-            "file_a": {
-                "mean": round(float(df_a[col].mean()), 3),
-                "median": round(float(df_a[col].median()), 3),
-                "std": round(float(df_a[col].std()), 3),
-                "min": round(float(df_a[col].min()), 3),
-                "max": round(float(df_a[col].max()), 3),
-            },
-            "file_b": {
-                "mean": round(float(df_b[col].mean()), 3),
-                "median": round(float(df_b[col].median()), 3),
-                "std": round(float(df_b[col].std()), 3),
-                "min": round(float(df_b[col].min()), 3),
-                "max": round(float(df_b[col].max()), 3),
-            },
+            "a_mean": round(float(a_vals.mean()), 4) if len(a_vals) > 0 else None,
+            "b_mean": round(float(b_vals.mean()), 4) if len(b_vals) > 0 else None,
+            "a_std": round(float(a_vals.std()), 4) if len(a_vals) > 1 else None,
+            "b_std": round(float(b_vals.std()), 4) if len(b_vals) > 1 else None,
+            "a_median": round(float(a_vals.median()), 4) if len(a_vals) > 0 else None,
+            "b_median": round(float(b_vals.median()), 4) if len(b_vals) > 0 else None,
+            "mean_diff_pct": (
+                round((float(b_vals.mean()) - float(a_vals.mean())) / abs(float(a_vals.mean())) * 100, 2)
+                if len(a_vals) > 0 and len(b_vals) > 0 and float(a_vals.mean()) != 0
+                else None
+            ),
         })
 
-    histograms = {}
-    for col in shared_numeric[:3]:
-        all_vals = list(df_a[col].dropna()) + list(df_b[col].dropna())
-        bins = np.linspace(min(all_vals), max(all_vals), 11)
-        hist_a, _ = np.histogram(df_a[col].dropna(), bins=bins)
-        hist_b, _ = np.histogram(df_b[col].dropna(), bins=bins)
-        histograms[col] = [
-            {"label": f"{bins[i]:.1f}–{bins[i+1]:.1f}", "file_a": int(hist_a[i]), "file_b": int(hist_b[i])}
-            for i in range(len(hist_a))
-        ]
+    # Overlay histograms for top 3 shared numeric columns
+    histograms = []
+    for col in numeric_shared[:3]:
+        a_vals = df_a[col].dropna()
+        b_vals = df_b[col].dropna()
+        combined_min = min(float(a_vals.min()), float(b_vals.min()))
+        combined_max = max(float(a_vals.max()), float(b_vals.max()))
+        bins = np.linspace(combined_min, combined_max, 12)
+        a_counts, _ = np.histogram(a_vals, bins=bins)
+        b_counts, _ = np.histogram(b_vals, bins=bins)
+        hist_data = []
+        for i in range(len(a_counts)):
+            hist_data.append({
+                "label": f"{bins[i]:.3g}–{bins[i+1]:.3g}",
+                "a_count": int(a_counts[i]),
+                "b_count": int(b_counts[i]),
+            })
+        histograms.append({"column": col, "bins": hist_data})
 
-    row_overlap = None
+    # Row overlap estimate (hash-based on shared cols)
+    overlap_count = 0
+    overlap_pct = None
     if shared:
         try:
-            row_overlap = len(pd.merge(df_a[list(shared)], df_b[list(shared)], how="inner"))
+            hash_a = set(df_a[shared].apply(lambda r: hash(tuple(r)), axis=1))
+            hash_b = set(df_b[shared].apply(lambda r: hash(tuple(r)), axis=1))
+            overlap_count = len(hash_a & hash_b)
+            overlap_pct = round(overlap_count / max(len(hash_a), 1) * 100, 2)
         except Exception:
             pass
 
     return {
-        "file_a": {"rows": len(df_a), "columns": len(df_a.columns), "health_score": health_a["total"], "health_grade": health_a["grade"]},
-        "file_b": {"rows": len(df_b), "columns": len(df_b.columns), "health_score": health_b["total"], "health_grade": health_b["grade"]},
+        "label_a": label_a,
+        "label_b": label_b,
+        "rows": {"a": len(df_a), "b": len(df_b), "diff": len(df_b) - len(df_a)},
+        "columns": {"a": len(df_a.columns), "b": len(df_b.columns)},
         "schema": {
-            "shared_columns": sorted(list(shared)),
-            "only_in_a": sorted(list(cols_a - cols_b)),
-            "only_in_b": sorted(list(cols_b - cols_a)),
+            "shared": shared,
+            "only_a": only_a,
+            "only_b": only_b,
+            "shared_count": len(shared),
         },
-        "column_comparison": column_comparison,
+        "health_scores": {
+            "a": {"total": score_a["total"], "grade": score_a["grade"], "label": score_a["label"]},
+            "b": {"total": score_b["total"], "grade": score_b["grade"], "label": score_b["label"]},
+        },
+        "stats_comparison": stats_table,
         "histograms": histograms,
-        "row_overlap": row_overlap,
+        "row_overlap": {
+            "count": overlap_count,
+            "pct_of_a": overlap_pct,
+        },
     }

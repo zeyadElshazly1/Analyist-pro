@@ -2,100 +2,155 @@
 
 import { useEffect, useState } from "react";
 import { getDuplicates } from "@/lib/api";
-import { Copy, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Copy, AlertCircle } from "lucide-react";
 
 type Props = { projectId: number };
 
+function SummaryCard({ label, value, sub, accent }: { label: string; value: React.ReactNode; sub?: string; accent?: string }) {
+  return (
+    <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-4">
+      <p className="text-xs text-white/40">{label}</p>
+      <p className={`mt-1 text-2xl font-bold ${accent ?? "text-white"}`}>{value}</p>
+      {sub && <p className="mt-0.5 text-xs text-white/30">{sub}</p>}
+    </div>
+  );
+}
+
+function SampleRow({ row, cols }: { row: Record<string, unknown>; cols: string[] }) {
+  return (
+    <tr className="border-b border-white/[0.04] hover:bg-white/[0.02]">
+      {cols.map((col) => (
+        <td key={col} className="px-3 py-2 text-xs text-white/70 truncate max-w-[120px]">
+          {String(row[col] ?? "—")}
+        </td>
+      ))}
+    </tr>
+  );
+}
+
 export function DuplicatesView({ projectId }: Props) {
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    getDuplicates(projectId).then(setData).catch((e) => setError(e.message)).finally(() => setLoading(false));
+    getDuplicates(projectId)
+      .then(setData)
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load duplicate data"))
+      .finally(() => setLoading(false));
   }, [projectId]);
 
-  if (loading) return <p className="text-sm text-white/40">Scanning for duplicates…</p>;
-  if (error) return <p className="text-sm text-red-400">{error}</p>;
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <h2 className="font-semibold text-white">Duplicate Detector</h2>
+        <div className="grid grid-cols-3 gap-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-20 rounded-xl bg-white/[0.04] animate-pulse" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+        <AlertCircle className="h-4 w-4" />
+        {error}
+      </div>
+    );
+  }
+
   if (!data) return null;
+
+  const exactRows: Record<string, unknown>[] = data.exact?.sample_rows ?? [];
+  const cols = exactRows.length > 0 ? Object.keys(exactRows[0]) : [];
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Card icon={<Copy className="h-4 w-4 text-white/40" />} label="Total rows" value={data.total_rows.toLocaleString()} />
-        <Card
-          icon={<AlertTriangle className="h-4 w-4 text-amber-400" />}
-          label="Exact duplicates"
-          value={`${data.exact_duplicates.count} (${data.exact_duplicates.pct}%)`}
-          warn={data.exact_duplicates.count > 0}
+      <h2 className="font-semibold text-white">Duplicate Detector</h2>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <SummaryCard
+          label="Exact Duplicates"
+          value={data.exact?.count ?? 0}
+          sub={`${data.exact?.pct ?? 0}% of rows`}
+          accent={data.exact?.count > 0 ? "text-red-400" : "text-green-400"}
         />
-        <Card
-          icon={<AlertTriangle className="h-4 w-4 text-orange-400" />}
-          label="Near duplicates"
-          value={String(data.near_duplicates.count)}
-          warn={data.near_duplicates.count > 0}
+        <SummaryCard
+          label="Near Duplicates"
+          value={data.near_duplicates?.count ?? 0}
+          sub="similar numeric rows"
+          accent={data.near_duplicates?.count > 0 ? "text-amber-400" : "text-green-400"}
+        />
+        <SummaryCard
+          label="Total Affected"
+          value={data.impact?.total_affected ?? 0}
+          sub={`${data.impact?.impact_pct ?? 0}% of dataset`}
+        />
+        <SummaryCard
+          label="Total Rows"
+          value={data.total_rows?.toLocaleString() ?? "—"}
         />
       </div>
 
-      <Section title="Exact duplicates" subtitle="Rows identical across all columns.">
-        {data.exact_duplicates.count === 0
-          ? <Good text="No exact duplicates found." />
-          : <SampleTable rows={data.exact_duplicates.sample_rows} />}
-      </Section>
+      {/* Recommendation */}
+      {data.impact?.recommendation && (
+        <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-300">
+          {data.impact.recommendation}
+        </div>
+      )}
 
-      <Section
-        title="Near duplicates"
-        subtitle={`Numerically similar rows (KNN distance < 0.1). Columns used: ${data.near_duplicates.numeric_cols_used?.join(", ") || "—"}`}
-      >
-        {data.near_duplicates.count === 0
-          ? <Good text="No near duplicates found." />
-          : <SampleTable rows={data.near_duplicates.sample_rows} />}
-      </Section>
-    </div>
-  );
-}
+      {/* Exact duplicate sample */}
+      {exactRows.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-sm font-semibold text-white/70">Sample Duplicate Rows</h3>
+          <div className="overflow-x-auto rounded-xl border border-white/[0.07]">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-white/[0.07] bg-white/[0.03]">
+                  {cols.slice(0, 8).map((col) => (
+                    <th key={col} className="px-3 py-2 text-xs font-medium text-white/40 truncate max-w-[120px]">
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {exactRows.slice(0, 10).map((row, i) => (
+                  <SampleRow key={i} row={row} cols={cols.slice(0, 8)} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
-function Card({ icon, label, value, warn }: { icon: React.ReactNode; label: string; value: string; warn?: boolean }) {
-  return (
-    <div className={`rounded-xl border p-4 ${warn ? "border-amber-500/20 bg-amber-500/5" : "border-white/[0.07] bg-white/[0.03]"}`}>
-      <div className="flex items-center gap-2 mb-2">{icon}<p className="text-xs text-white/40">{label}</p></div>
-      <p className={`text-xl font-semibold ${warn ? "text-amber-400" : "text-white"}`}>{value}</p>
-    </div>
-  );
-}
+      {/* Near duplicate groups */}
+      {data.near_duplicates?.groups?.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-sm font-semibold text-white/70">
+            Near-Duplicate Groups ({data.near_duplicates.groups.length})
+          </h3>
+          <div className="space-y-2">
+            {data.near_duplicates.groups.slice(0, 8).map((group: any, i: number) => (
+              <div key={i} className="flex items-center gap-3 rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                <Copy className="h-3.5 w-3.5 text-white/30" />
+                <span className="text-xs text-white/50">
+                  Rows {group.indices?.join(", ")} — distance: {group.distance}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
-function Good({ text }: { text: string }) {
-  return <p className="flex items-center gap-2 text-sm text-emerald-400"><CheckCircle2 className="h-4 w-4" />{text}</p>;
-}
-
-function Section({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5">
-      <h3 className="mb-1 text-sm font-semibold text-white">{title}</h3>
-      <p className="mb-4 text-xs text-white/40">{subtitle}</p>
-      {children}
-    </div>
-  );
-}
-
-function SampleTable({ rows }: { rows: Record<string, any>[] }) {
-  if (!rows?.length) return null;
-  const cols = Object.keys(rows[0]).slice(0, 6);
-  return (
-    <div className="overflow-x-auto">
-      <table className="min-w-full text-xs">
-        <thead className="border-b border-white/[0.06]">
-          <tr>{cols.map((c) => <th key={c} className="px-3 py-2 font-medium text-white/35">{c}</th>)}</tr>
-        </thead>
-        <tbody>
-          {rows.slice(0, 10).map((row, i) => (
-            <tr key={i} className="border-b border-white/[0.04]">
-              {cols.map((c) => <td key={c} className="px-3 py-2 text-white/65">{String(row[c] ?? "—")}</td>)}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {rows.length > 10 && <p className="mt-2 text-xs text-white/30">Showing 10 of {rows.length} rows</p>}
+      {data.exact?.count === 0 && data.near_duplicates?.count === 0 && (
+        <div className="rounded-xl border border-green-500/20 bg-green-500/10 px-4 py-3 text-sm text-green-300">
+          No duplicates detected. Your dataset looks clean.
+        </div>
+      )}
     </div>
   );
 }

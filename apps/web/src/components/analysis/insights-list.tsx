@@ -1,97 +1,148 @@
+"use client";
+
+import { useState } from "react";
+
 type Insight = {
   type?: string;
+  severity?: string;
   confidence?: number;
   title?: string;
   finding?: string;
+  evidence?: string;
   action?: string;
   description?: string;
 };
 
-type Props = { insights: Insight[] };
-
-const TYPE_META: Record<string, { label: string; dot: string; badge: string }> = {
-  correlation: {
-    label: "Correlation",
-    dot: "bg-indigo-400",
-    badge: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
-  },
-  anomaly: {
-    label: "Anomaly",
-    dot: "bg-amber-400",
-    badge: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  },
-  segment: {
-    label: "Segment",
-    dot: "bg-emerald-400",
-    badge: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  },
-  data_quality: {
-    label: "Data quality",
-    dot: "bg-rose-400",
-    badge: "bg-rose-500/10 text-rose-400 border-rose-500/20",
-  },
+type Props = {
+  insights: Insight[];
 };
 
-function getTypeMeta(type?: string) {
-  return (
-    TYPE_META[type ?? ""] ?? {
-      label: type ?? "Insight",
-      dot: "bg-white/40",
-      badge: "bg-white/5 text-white/50 border-white/10",
-    }
-  );
-}
+const TYPE_META: Record<string, { dot: string; badge: string; label: string }> = {
+  correlation: { dot: "bg-indigo-400", badge: "bg-indigo-500/20 text-indigo-300", label: "Correlation" },
+  anomaly: { dot: "bg-red-400", badge: "bg-red-500/20 text-red-300", label: "Anomaly" },
+  segment: { dot: "bg-purple-400", badge: "bg-purple-500/20 text-purple-300", label: "Segment" },
+  distribution: { dot: "bg-amber-400", badge: "bg-amber-500/20 text-amber-300", label: "Distribution" },
+  data_quality: { dot: "bg-orange-400", badge: "bg-orange-500/20 text-orange-300", label: "Data Quality" },
+};
+
+const SEVERITY_META: Record<string, string> = {
+  high: "border-red-500/20 bg-red-500/5",
+  medium: "border-white/[0.07] bg-white/[0.03]",
+  low: "border-white/[0.04] bg-white/[0.02]",
+};
+
+const ALL_TYPES = ["all", "correlation", "anomaly", "segment", "distribution", "data_quality"];
 
 export function InsightsList({ insights }: Props) {
+  const [filter, setFilter] = useState("all");
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+
   if (!insights || insights.length === 0) {
-    return <p className="text-sm text-white/40">No insights found.</p>;
+    return <p className="text-white/40 text-sm">No insights found. Run analysis on a richer dataset.</p>;
   }
 
+  const filtered = filter === "all" ? insights : insights.filter((i) => i.type === filter);
+
   return (
-    <div className="space-y-3">
-      {insights.map((insight, idx) => {
-        const meta = getTypeMeta(insight.type);
-        return (
-          <div
-            key={idx}
-            className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-4 transition-colors hover:bg-white/[0.05]"
-          >
-            <div className="flex items-start gap-2.5">
-              <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${meta.dot}`} />
-              <div className="flex-1 min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-semibold text-white">
-                    {insight.title || insight.type || "Insight"}
-                  </p>
-                  <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${meta.badge}`}>
-                    {meta.label}
-                  </span>
-                  {insight.confidence !== undefined && (
-                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] text-white/50">
-                      {insight.confidence}% confidence
+    <div className="space-y-4">
+      {/* Filter tabs */}
+      <div className="flex flex-wrap gap-1.5">
+        {ALL_TYPES.map((type) => {
+          const count = type === "all" ? insights.length : insights.filter((i) => i.type === type).length;
+          if (count === 0 && type !== "all") return null;
+          const meta = type !== "all" ? TYPE_META[type] : null;
+          return (
+            <button
+              key={type}
+              onClick={() => setFilter(type)}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                filter === type
+                  ? "bg-indigo-600 text-white"
+                  : "bg-white/[0.06] text-white/50 hover:text-white"
+              }`}
+            >
+              {type === "all" ? "All" : (meta?.label ?? type)} {count > 0 ? `(${count})` : ""}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Insight cards */}
+      <div className="space-y-2">
+        {filtered.map((insight, idx) => {
+          const meta = TYPE_META[insight.type ?? ""] ?? { dot: "bg-white/20", badge: "bg-white/10 text-white/50", label: insight.type ?? "" };
+          const severityClass = SEVERITY_META[insight.severity ?? "medium"] ?? SEVERITY_META.medium;
+          const isExpanded = expandedIdx === idx;
+
+          return (
+            <div
+              key={idx}
+              className={`rounded-xl border p-4 transition-all ${severityClass}`}
+            >
+              {/* Header */}
+              <button
+                className="flex w-full items-start gap-3 text-left"
+                onClick={() => setExpandedIdx(isExpanded ? null : idx)}
+              >
+                <span className={`mt-1.5 h-2 w-2 rounded-full flex-shrink-0 ${meta.dot}`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-semibold text-white">
+                      {insight.title ?? insight.type ?? "Insight"}
+                    </p>
+                    <span className={`rounded-full px-2 py-0.5 text-xs ${meta.badge}`}>
+                      {meta.label || insight.type}
                     </span>
+                    {insight.severity === "high" && (
+                      <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-xs text-red-300">high severity</span>
+                    )}
+                    {insight.confidence !== undefined && (
+                      <span className="rounded-full bg-white/[0.08] px-2 py-0.5 text-xs text-white/50">
+                        {insight.confidence}% confidence
+                      </span>
+                    )}
+                  </div>
+
+                  {insight.finding || insight.description ? (
+                    <p className="mt-1.5 text-sm text-white/60 leading-relaxed">
+                      {insight.finding ?? insight.description}
+                    </p>
+                  ) : null}
+                </div>
+              </button>
+
+              {/* Expanded: evidence + action */}
+              {isExpanded && (
+                <div className="mt-3 ml-5 space-y-2 border-t border-white/[0.07] pt-3">
+                  {insight.evidence && (
+                    <div className="rounded-lg bg-white/[0.04] px-3 py-2">
+                      <p className="text-xs font-medium text-white/40 mb-0.5">Evidence</p>
+                      <p className="text-xs font-mono text-white/60">{insight.evidence}</p>
+                    </div>
+                  )}
+                  {insight.action && (
+                    <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-3 py-2">
+                      <p className="text-xs font-medium text-indigo-400 mb-0.5">Recommended Action</p>
+                      <p className="text-sm text-indigo-200">{insight.action}</p>
+                    </div>
                   )}
                 </div>
+              )}
 
-                {(insight.finding || insight.description) && (
-                  <p className="mt-2 text-sm text-white/60 leading-relaxed">
-                    {insight.finding || insight.description}
-                  </p>
-                )}
-
-                {insight.action && (
-                  <div className="mt-3 rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 py-2">
-                    <p className="text-[11px] font-medium uppercase tracking-wide text-white/35">
-                      Recommended action
-                    </p>
-                    <p className="mt-1 text-xs text-white/65">{insight.action}</p>
-                  </div>
-                )}
-              </div>
+              {/* Collapsed: show action hint */}
+              {!isExpanded && insight.action && (
+                <p className="mt-2 ml-5 text-xs text-indigo-400/70 cursor-pointer" onClick={() => setExpandedIdx(idx)}>
+                  Click to see recommendation →
+                </p>
+              )}
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
+
+      {filtered.length === 0 && (
+        <p className="text-sm text-white/40">No {filter} insights found.</p>
+      )}
     </div>
   );
 }
