@@ -113,24 +113,36 @@ def _num_num(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
     # Distribution overlap
     overlap = _distribution_overlap(a, b)
 
-    # Regression line
-    coeffs = np.polyfit(a, b, 1)
-    x_range = np.linspace(float(clean[col_a].min()), float(clean[col_a].max()), 50)
-    regression = [{"x": round(float(x), 4), "y_hat": round(float(np.polyval(coeffs, x)), 4)} for x in x_range]
+    # Regression line (guard against constant columns)
+    regression = []
+    coeffs = None
+    if float(np.std(a)) > 1e-10 and float(np.std(b)) > 1e-10:
+        try:
+            coeffs = np.polyfit(a, b, 1)
+            x_range = np.linspace(float(clean[col_a].min()), float(clean[col_a].max()), 50)
+            regression = [{"x": round(float(x), 4), "y_hat": round(float(np.polyval(coeffs, x)), 4)} for x in x_range]
+        except (np.linalg.LinAlgError, Exception):
+            coeffs = None
 
     # Scatter sample (flag anomalies beyond 2σ residual)
     sample = clean.sample(min(len(clean), 400), random_state=42)
-    predicted = np.polyval(coeffs, sample[col_a].values)
-    residuals = sample[col_b].values - predicted
-    resid_std = float(np.std(residuals))
-    scatter = [
-        {
-            "x": round(float(row[col_a]), 4),
-            "y": round(float(row[col_b]), 4),
-            "is_anomaly": bool(abs(residuals[i]) > 2 * resid_std),
-        }
-        for i, (_, row) in enumerate(sample.iterrows())
-    ]
+    if coeffs is not None:
+        predicted = np.polyval(coeffs, sample[col_a].values)
+        residuals = sample[col_b].values - predicted
+        resid_std = float(np.std(residuals))
+        scatter = [
+            {
+                "x": round(float(row[col_a]), 4),
+                "y": round(float(row[col_b]), 4),
+                "is_anomaly": bool(resid_std > 1e-10 and abs(residuals[i]) > 2 * resid_std),
+            }
+            for i, (_, row) in enumerate(sample.iterrows())
+        ]
+    else:
+        scatter = [
+            {"x": round(float(row[col_a]), 4), "y": round(float(row[col_b]), 4), "is_anomaly": False}
+            for _, row in sample.iterrows()
+        ]
 
     strength = "strong" if abs(pearson_r) > 0.7 else "moderate" if abs(pearson_r) > 0.4 else "weak"
     direction = "positive" if pearson_r > 0 else "negative"
@@ -158,8 +170,8 @@ def _num_num(df: pd.DataFrame, col_a: str, col_b: str) -> dict:
         "interpretation": interpretation,
         "scatter": scatter,
         "regression_line": regression,
-        "slope": round(float(coeffs[0]), 4),
-        "intercept": round(float(coeffs[1]), 4),
+        "slope": round(float(coeffs[0]), 4) if coeffs is not None else None,
+        "intercept": round(float(coeffs[1]), 4) if coeffs is not None else None,
     }
 
 

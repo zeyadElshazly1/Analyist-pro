@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query
+import pandas as pd
 from pydantic import BaseModel
 
 from app.services.cleaner import clean_dataset
@@ -73,7 +74,7 @@ def cohort_columns(project_id: int = Query(...)):
     for col in df.select_dtypes(include="object").columns:
         sample = df[col].dropna().head(5)
         try:
-            pd_check = __import__("pandas").to_datetime(sample, errors="coerce")
+            pd_check = pd.to_datetime(sample, errors="coerce")
             if pd_check.notna().sum() >= 3:
                 datetime_cols.append(col)
         except Exception:

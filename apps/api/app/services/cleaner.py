@@ -292,7 +292,6 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
         standardized, canonical, n_changed = _standardize_booleans(df_clean[col])
         if standardized is not None and n_changed > 0:
             df_clean[col] = standardized
-            old_vals = df_clean[col].dropna().unique()
             report.append({
                 "step": f"Standardize boolean: {col}",
                 "detail": (

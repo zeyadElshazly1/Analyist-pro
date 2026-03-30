@@ -190,7 +190,8 @@ def run_test(
     elif test_type == "shapiro":
         data = df[col_a].dropna().values
         if len(data) > 5000:
-            data = np.random.choice(data, 5000, replace=False)
+            rng = np.random.default_rng(42)
+            data = rng.choice(data, 5000, replace=False)
         stat, p = stats.shapiro(data)
         result.update({
             "statistic": round(float(stat), 4),

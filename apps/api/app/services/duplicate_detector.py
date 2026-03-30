@@ -113,12 +113,18 @@ def detect_duplicates(df: pd.DataFrame) -> dict:
 
     exact_groups = []
     if exact_count > 0:
-        groups = df[exact_mask].groupby(df[exact_mask].columns.tolist(), dropna=False)
-        for _key, group in list(groups)[:10]:
-            exact_groups.append({
-                "indices": group.index.tolist(),
-                "count": len(group),
-            })
+        try:
+            # Convert all columns to string before groupby to avoid unhashable type errors
+            df_str = df[exact_mask].astype(str)
+            groups = df_str.groupby(df_str.columns.tolist(), dropna=False)
+            for _key, group in list(groups)[:10]:
+                exact_groups.append({
+                    "indices": group.index.tolist(),
+                    "count": len(group),
+                })
+        except Exception:
+            # Fallback: just report duplicated rows without grouping
+            pass
 
     # ── 2. Near-duplicates via adaptive-threshold KNN ────────────────────────
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()

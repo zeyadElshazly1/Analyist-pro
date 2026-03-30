@@ -44,7 +44,14 @@ def explore_outliers(df: pd.DataFrame, column: str) -> dict:
     if len(numeric_cols) >= 2 and len(col_data) >= 20:
         try:
             from sklearn.ensemble import IsolationForest
-            sub = df[numeric_cols].loc[col_data.index].fillna(df[numeric_cols].median())
+            medians = df[numeric_cols].median()
+            # Replace any all-NaN column medians with 0 to avoid NaN fill
+            medians = medians.fillna(0)
+            sub = df[numeric_cols].loc[col_data.index].fillna(medians)
+            # Drop columns that are still all-NaN after fill
+            sub = sub.dropna(axis=1, how="all")
+            if sub.shape[1] == 0:
+                raise ValueError("No usable columns for isolation forest")
             contamination = min(0.1, max(0.01, 1 / len(sub) * 10))
             clf = IsolationForest(contamination=contamination, random_state=42, n_estimators=100)
             preds = clf.fit_predict(sub)
