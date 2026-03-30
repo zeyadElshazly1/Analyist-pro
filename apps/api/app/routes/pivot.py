@@ -33,7 +33,7 @@ class PivotRequest(BaseModel):
     top_n: int = 20
 
 
-@router.post("/pivot/run")
+@router.post("/run")
 def pivot_run(req: PivotRequest):
     df = _load(req.project_id)
     try:
@@ -45,7 +45,7 @@ def pivot_run(req: PivotRequest):
         raise HTTPException(status_code=500, detail=f"Pivot failed: {e}")
 
 
-@router.get("/pivot/columns")
+@router.get("/columns")
 def pivot_columns(project_id: int = Query(...)):
     df = _load(project_id)
     numeric = df.select_dtypes(include="number").columns.tolist()

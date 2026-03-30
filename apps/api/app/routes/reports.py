@@ -40,7 +40,7 @@ def _load_and_analyze(project_id: int) -> tuple:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
 
 
-@router.get("/reports/export/{project_id}")
+@router.get("/export/{project_id}")
 def export_report(project_id: int, format: str = Query("html", regex="^(html|pdf)$")):
     df, analysis_result = _load_and_analyze(project_id)
     project_name = PROJECT_FILES[project_id].get("name", f"Project {project_id}")
@@ -63,7 +63,7 @@ def export_report(project_id: int, format: str = Query("html", regex="^(html|pdf
         )
 
 
-@router.get("/reports/preview/{project_id}")
+@router.get("/preview/{project_id}")
 def preview_report(project_id: int):
     _, analysis_result = _load_and_analyze(project_id)
     return analysis_result
