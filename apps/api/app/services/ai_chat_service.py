@@ -114,12 +114,14 @@ Instructions:
     answer_text = None
     model_used = "fallback"
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if api_key:
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    openai_key = os.environ.get("OPENAI_API_KEY", "")
+
+    if anthropic_key:
         try:
             import anthropic
 
-            client = anthropic.Anthropic(api_key=api_key)
+            client = anthropic.Anthropic(api_key=anthropic_key)
             messages = list(conversation_history) + [{"role": "user", "content": user_message}]
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
@@ -133,6 +135,26 @@ Instructions:
             pass
         except Exception as e:
             answer_text = f"AI service error: {e}. Falling back to basic analysis."
+
+    elif openai_key:
+        try:
+            import openai
+
+            client = openai.OpenAI(api_key=openai_key)
+            messages = [{"role": "system", "content": system_prompt}]
+            messages += [{"role": m["role"], "content": m["content"]} for m in conversation_history]
+            messages.append({"role": "user", "content": user_message})
+            response = client.chat.completions.create(
+                model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+                max_tokens=1024,
+                messages=messages,
+            )
+            answer_text = response.choices[0].message.content
+            model_used = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+        except ImportError:
+            answer_text = "openai package not installed. Run: pip install openai"
+        except Exception as e:
+            answer_text = f"OpenAI error: {e}. Falling back to basic analysis."
 
     if answer_text is None:
         answer_text = _fallback_answer(df, user_message)
