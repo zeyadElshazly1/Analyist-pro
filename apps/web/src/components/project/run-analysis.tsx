@@ -21,6 +21,12 @@ import { OutlierView } from "@/components/analysis/outlier-view";
 import { CorrelationMatrix } from "@/components/analysis/correlation-matrix";
 import { ColumnCompare } from "@/components/analysis/column-compare";
 import { MultifileCompare } from "@/components/analysis/multifile-compare";
+import { PredictionsView } from "@/components/analysis/predictions-view";
+import { AiChatView } from "@/components/analysis/ai-chat-view";
+import { PivotView } from "@/components/analysis/pivot-view";
+import { SegmentsView } from "@/components/analysis/segments-view";
+import { AbTestsView } from "@/components/analysis/ab-tests-view";
+import { QueryView } from "@/components/analysis/query-view";
 
 type Props = {
   projectId: number;
@@ -188,6 +194,48 @@ export function RunAnalysis({ projectId }: Props) {
           {tab === "compare-files" && (
             <TabPanel>
               <MultifileCompare currentProjectId={projectId} />
+            </TabPanel>
+          )}
+
+          {/* ── Predictions ──────────────────────────────────────────── */}
+          {tab === "predictions" && (
+            <TabPanel>
+              <PredictionsView projectId={projectId} />
+            </TabPanel>
+          )}
+
+          {/* ── Ask AI ───────────────────────────────────────────────── */}
+          {tab === "ask-ai" && (
+            <TabPanel>
+              <AiChatView projectId={projectId} />
+            </TabPanel>
+          )}
+
+          {/* ── Pivot ────────────────────────────────────────────────── */}
+          {tab === "pivot" && (
+            <TabPanel>
+              <PivotView projectId={projectId} />
+            </TabPanel>
+          )}
+
+          {/* ── Segments ─────────────────────────────────────────────── */}
+          {tab === "segments" && (
+            <TabPanel>
+              <SegmentsView projectId={projectId} />
+            </TabPanel>
+          )}
+
+          {/* ── A/B Tests ────────────────────────────────────────────── */}
+          {tab === "ab-tests" && (
+            <TabPanel>
+              <AbTestsView projectId={projectId} />
+            </TabPanel>
+          )}
+
+          {/* ── SQL Query ────────────────────────────────────────────── */}
+          {tab === "query" && (
+            <TabPanel>
+              <QueryView projectId={projectId} />
             </TabPanel>
           )}
         </div>

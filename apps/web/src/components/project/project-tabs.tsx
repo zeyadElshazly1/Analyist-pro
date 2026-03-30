@@ -17,6 +17,12 @@ const tabs = [
   { id: "correlations", label: "Correlations" },
   { id: "compare-cols", label: "Compare Cols" },
   { id: "compare-files", label: "Compare Files" },
+  { id: "predictions", label: "Predictions" },
+  { id: "ask-ai", label: "Ask AI" },
+  { id: "pivot", label: "Pivot" },
+  { id: "segments", label: "Segments" },
+  { id: "ab-tests", label: "A/B Tests" },
+  { id: "query", label: "SQL Query" },
 ];
 
 export function ProjectTabs({ value, onChange }: Props) {

@@ -7,8 +7,16 @@ from app.routes.upload import router as upload_router
 from app.routes.analysis import router as analysis_router
 from app.routes.charts import router as charts_router
 from app.routes.explore import router as explore_router
+from app.routes.ml import router as ml_router
+from app.routes.chat import router as chat_router
+from app.routes.reports import router as reports_router
+from app.routes.pivot import router as pivot_router
+from app.routes.cohorts import router as cohorts_router
+from app.routes.stats import router as stats_router
+from app.routes.query import router as query_router
+from app.routes.features import router as features_router
 
-app = FastAPI(title="Analyst Pro API", version="1.0.0")
+app = FastAPI(title="Analyst Pro API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,6 +31,14 @@ app.include_router(upload_router)
 app.include_router(analysis_router)
 app.include_router(charts_router)
 app.include_router(explore_router)
+app.include_router(ml_router)
+app.include_router(chat_router)
+app.include_router(reports_router)
+app.include_router(pivot_router)
+app.include_router(cohorts_router)
+app.include_router(stats_router)
+app.include_router(query_router)
+app.include_router(features_router)
 
 
 @app.exception_handler(ValueError)
