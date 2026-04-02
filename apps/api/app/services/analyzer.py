@@ -502,6 +502,8 @@ def analyze_dataset(df: pd.DataFrame) -> list[dict]:
             outlier_count = int(outlier_mask.sum())
             method_label, evidence_detail = "IQR (3× fence)", f"IQR fence [{lower:.3g}, {upper:.3g}], skew={skew:.2f}"
         else:
+            if col_data.std() < 1e-10:
+                continue  # constant column — zscore undefined
             z_scores = np.abs(stats.zscore(col_data))
             outlier_count = int((z_scores > 3).sum())
             worst_z = round(float(z_scores.max()), 1)

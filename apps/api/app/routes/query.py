@@ -29,7 +29,7 @@ class QueryRequest(BaseModel):
     sql: str
 
 
-@router.post("/query/execute")
+@router.post("/execute")
 def query_execute(req: QueryRequest):
     if not req.sql.strip():
         raise HTTPException(status_code=400, detail="SQL query cannot be empty.")
@@ -51,7 +51,7 @@ def query_execute(req: QueryRequest):
         raise HTTPException(status_code=500, detail=f"Query failed: {e}")
 
 
-@router.get("/query/schema")
+@router.get("/schema")
 def query_schema(project_id: int = Query(...)):
     df = _load(project_id)
     return {"columns": get_schema(df), "table_name": "data"}

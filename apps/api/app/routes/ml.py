@@ -29,7 +29,7 @@ class TrainRequest(BaseModel):
     target_col: str
 
 
-@router.post("/ml/train")
+@router.post("/train")
 def train(req: TrainRequest):
     df = _load(req.project_id)
     if req.target_col not in df.columns:
@@ -43,7 +43,7 @@ def train(req: TrainRequest):
         raise HTTPException(status_code=500, detail=f"Training failed: {e}")
 
 
-@router.get("/ml/columns")
+@router.get("/columns")
 def get_columns(project_id: int = Query(...)):
     df = _load(project_id)
     return {"columns": df.columns.tolist()}

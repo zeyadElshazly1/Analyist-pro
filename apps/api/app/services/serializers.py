@@ -29,7 +29,12 @@ def to_jsonable(value):
     if isinstance(value, (pd.Timestamp, datetime, date)):
         return str(value)
 
-    if pd.isna(value):
-        return None
+    # Only call pd.isna on scalar-like types to avoid "ambiguous truth value" errors
+    if isinstance(value, (int, float, complex)):
+        try:
+            if math.isnan(value) or math.isinf(value):
+                return None
+        except (TypeError, ValueError):
+            pass
 
     return value

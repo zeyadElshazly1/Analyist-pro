@@ -30,7 +30,7 @@ class FeatureRequest(BaseModel):
     formula: str
 
 
-@router.post("/features/create")
+@router.post("/create")
 def feature_create(req: FeatureRequest):
     df = _load(req.project_id)
     try:
@@ -52,7 +52,7 @@ def feature_create(req: FeatureRequest):
     return to_jsonable(result)
 
 
-@router.get("/features/suggest")
+@router.get("/suggest")
 def feature_suggest(project_id: int = Query(...)):
     df = _load(project_id)
     try:
@@ -62,7 +62,7 @@ def feature_suggest(project_id: int = Query(...)):
         raise HTTPException(status_code=500, detail=f"Suggestion failed: {e}")
 
 
-@router.get("/features/list")
+@router.get("/list")
 def feature_list(project_id: int = Query(...)):
     if project_id not in PROJECT_FILES:
         raise HTTPException(status_code=404, detail="Project not found.")

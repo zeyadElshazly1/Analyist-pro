@@ -35,7 +35,7 @@ class ChatRequest(BaseModel):
     history: list[ChatMessage] = []
 
 
-@router.post("/chat/query")
+@router.post("/query")
 def chat_query(req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import re
 import time
 
@@ -57,10 +58,16 @@ def execute_query(df: pd.DataFrame, sql: str) -> dict:
         # convert non-serializable types
         for row in rows:
             for k, v in row.items():
-                if hasattr(v, "item"):  # numpy scalar
+                if v is None:
+                    pass
+                elif hasattr(v, "item"):  # numpy scalar
                     row[k] = v.item()
-                elif v != v:  # NaN
+                elif isinstance(v, (datetime.datetime, datetime.date)):
+                    row[k] = v.isoformat()
+                elif isinstance(v, float) and v != v:  # float NaN
                     row[k] = None
+                elif isinstance(v, bytes):
+                    row[k] = v.decode("utf-8", errors="replace")
 
         return {
             "columns": columns,

@@ -98,8 +98,11 @@ def suggest_features(df: pd.DataFrame) -> list[dict]:
     # Log transforms for skewed columns
     for col in numeric_cols:
         try:
-            skew = float(df[col].skew())
-            if abs(skew) > 1.5 and (df[col] >= 0).all():
+            col_vals = pd.to_numeric(df[col], errors="coerce").dropna()
+            if len(col_vals) == 0:
+                continue
+            skew = float(col_vals.skew())
+            if abs(skew) > 1.5 and (col_vals >= 0).all():
                 suggestions.append({
                     "name": f"log_{col}",
                     "formula": f"log1p({col})",

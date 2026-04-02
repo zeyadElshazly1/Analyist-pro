@@ -43,12 +43,14 @@ def train_models(df: pd.DataFrame, target_col: str) -> dict:  # noqa: C901
 
     # drop rows where target is missing
     df = df.dropna(subset=[target_col])
+    if len(df) < 10:
+        raise ValueError("Need at least 10 non-null rows in the target column to train.")
 
     # drop cols with >70 % missing
     thresh = 0.7 * len(df)
     df = df.loc[:, df.isnull().sum() <= thresh]
 
-    # drop ID-like cols (all unique)
+    # drop ID-like cols (all unique, object dtype)
     id_cols = [c for c in df.columns if c != target_col and df[c].nunique() == len(df) and df[c].dtype == object]
     if id_cols:
         df = df.drop(columns=id_cols)
@@ -59,14 +61,24 @@ def train_models(df: pd.DataFrame, target_col: str) -> dict:  # noqa: C901
     y_raw = df[target_col].copy()
     X_raw = df.drop(columns=[target_col])
 
-    # encode target for classification
+    # encode target
     le_target = None
     if problem_type == "classification":
         le_target = LabelEncoder()
         y = le_target.fit_transform(y_raw.astype(str))
         class_labels = list(le_target.classes_)
+        if len(np.unique(y)) < 2:
+            raise ValueError("Target column has only one class — cannot train a classifier.")
     else:
-        y = y_raw.values.astype(float)
+        try:
+            y = y_raw.values.astype(float)
+        except (ValueError, TypeError):
+            # fall back to classification if numeric coercion fails
+            problem_type = "classification"
+            le_target = LabelEncoder()
+            y = le_target.fit_transform(y_raw.astype(str))
+            class_labels = list(le_target.classes_)
+            notes.append("Target could not be cast to float — switched to classification.")
         class_labels = None
 
     # encode categorical features

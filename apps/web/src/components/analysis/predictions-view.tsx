@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trainModel, getMlColumns } from "@/lib/api";
-import { Loader2, Brain, TrendingUp, BarChart2 } from "lucide-react";
+import { Loader2, Brain, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   BarChart,
@@ -11,36 +11,36 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  ScatterChart,
-  Scatter,
-  CartesianGrid,
   Cell,
 } from "recharts";
 
 type Props = { projectId: number };
 
+const DARK_TOOLTIP = {
+  contentStyle: {
+    background: "#111118",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 8,
+    color: "#fff",
+  },
+};
+
 export function PredictionsView({ projectId }: Props) {
   const [columns, setColumns] = useState<string[]>([]);
   const [targetCol, setTargetCol] = useState("");
   const [loading, setLoading] = useState(false);
-  const [loadingCols, setLoadingCols] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState("");
-  const [colsLoaded, setColsLoaded] = useState(false);
 
-  async function loadColumns() {
-    if (colsLoaded) return;
-    setLoadingCols(true);
-    try {
-      const data = await getMlColumns(projectId);
-      setColumns(data.columns || []);
-      setColsLoaded(true);
-    } catch (e) {
-      setError("Failed to load columns.");
-    } finally {
-      setLoadingCols(false);
-    }
-  }
+  useEffect(() => {
+    getMlColumns(projectId)
+      .then((data: any) => {
+        const cols: string[] = data.columns || [];
+        setColumns(cols);
+        if (cols.length > 0) setTargetCol(cols[cols.length - 1]);
+      })
+      .catch(() => setError("Failed to load columns."));
+  }, [projectId]);
 
   async function handleTrain() {
     if (!targetCol) { setError("Select a target column."); return; }
@@ -50,7 +50,8 @@ export function PredictionsView({ projectId }: Props) {
       const data = await trainModel(projectId, targetCol);
       setResult(data);
     } catch (e: any) {
-      setError(e.message || "Training failed.");
+      try { const p = JSON.parse(e.message); setError(p.detail || e.message); }
+      catch { setError(e.message || "Training failed."); }
     } finally {
       setLoading(false);
     }
@@ -76,9 +77,8 @@ export function PredictionsView({ projectId }: Props) {
             className="w-full rounded-lg bg-white/[0.05] border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
             value={targetCol}
             onChange={(e) => setTargetCol(e.target.value)}
-            onFocus={loadColumns}
           >
-            <option value="">Select a column…</option>
+            {columns.length === 0 && <option value="">Loading columns…</option>}
             {columns.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
@@ -93,23 +93,21 @@ export function PredictionsView({ projectId }: Props) {
 
       {result && (
         <div className="space-y-6">
-          {/* Summary */}
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-lg bg-white/[0.03] border border-white/[0.07] p-4 text-center">
-              <div className="text-2xl font-bold text-indigo-400">{result.n_rows?.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-indigo-400">{(result.n_rows || 0).toLocaleString()}</div>
               <div className="text-xs text-white/50 mt-1">Training Rows</div>
             </div>
             <div className="rounded-lg bg-white/[0.03] border border-white/[0.07] p-4 text-center">
-              <div className="text-2xl font-bold text-indigo-400">{result.n_features}</div>
+              <div className="text-2xl font-bold text-indigo-400">{result.n_features ?? "—"}</div>
               <div className="text-xs text-white/50 mt-1">Features Used</div>
             </div>
             <div className="rounded-lg bg-white/[0.03] border border-white/[0.07] p-4 text-center">
-              <div className="text-xl font-bold text-indigo-400 capitalize">{result.problem_type}</div>
+              <div className="text-xl font-bold text-indigo-400 capitalize">{result.problem_type ?? "—"}</div>
               <div className="text-xs text-white/50 mt-1">Problem Type</div>
             </div>
           </div>
 
-          {/* Model leaderboard */}
           <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5">
             <h3 className="text-sm font-semibold text-white/70 uppercase tracking-wider mb-4">Model Leaderboard</h3>
             <div className="overflow-x-auto">
@@ -161,18 +159,17 @@ export function PredictionsView({ projectId }: Props) {
             </div>
           </div>
 
-          {/* Feature importance */}
           {result.feature_importance?.length > 0 && (
             <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5">
-              <h3 className="text-sm font-semibold text-white/70 uppercase tracking-wider mb-4">Feature Importance</h3>
-              <ResponsiveContainer width="100%" height={Math.min(result.feature_importance.length * 30 + 20, 350)}>
-                <BarChart data={result.feature_importance.slice(0, 12)} layout="vertical" margin={{ left: 10 }}>
+              <h3 className="text-sm font-semibold text-white/70 uppercase tracking-wider mb-4">Feature Importance — {result.best_model}</h3>
+              <ResponsiveContainer width="100%" height={Math.min(result.feature_importance.length * 32 + 20, 380)}>
+                <BarChart data={result.feature_importance.slice(0, 15)} layout="vertical" margin={{ left: 10, right: 20 }}>
                   <XAxis type="number" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                  <YAxis dataKey="feature" type="category" tick={{ fill: "#94a3b8", fontSize: 11 }} width={120} />
-                  <Tooltip contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8 }} />
+                  <YAxis dataKey="feature" type="category" tick={{ fill: "#94a3b8", fontSize: 11 }} width={130} />
+                  <Tooltip {...DARK_TOOLTIP} formatter={(v: any) => [v.toFixed(4), "Importance"]} />
                   <Bar dataKey="importance" radius={4}>
-                    {result.feature_importance.slice(0, 12).map((_: any, i: number) => (
-                      <Cell key={i} fill={i === 0 ? "#6366f1" : "#4f46e5"} fillOpacity={1 - i * 0.05} />
+                    {result.feature_importance.slice(0, 15).map((_: any, i: number) => (
+                      <Cell key={i} fill="#6366f1" fillOpacity={1 - i * 0.04} />
                     ))}
                   </Bar>
                 </BarChart>
@@ -180,10 +177,9 @@ export function PredictionsView({ projectId }: Props) {
             </div>
           )}
 
-          {/* Preprocessing notes */}
           {result.preprocessing_notes?.length > 0 && (
             <div className="rounded-lg bg-white/[0.03] border border-white/[0.07] p-4">
-              <h3 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Preprocessing</h3>
+              <h3 className="text-xs font-semibold text-white/50 uppercase tracking-wider mb-2">Preprocessing Notes</h3>
               <ul className="text-sm text-white/60 space-y-1">
                 {result.preprocessing_notes.map((note: string, i: number) => (
                   <li key={i}>· {note}</li>

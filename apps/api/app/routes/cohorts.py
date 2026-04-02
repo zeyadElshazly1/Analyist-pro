@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query
+import pandas as pd
 from pydantic import BaseModel
 
 from app.services.cleaner import clean_dataset
@@ -38,7 +39,7 @@ class RetentionRequest(BaseModel):
     user_col: str
 
 
-@router.post("/cohorts/rfm")
+@router.post("/rfm")
 def rfm(req: RfmRequest):
     df = _load(req.project_id)
     for col in [req.customer_col, req.date_col, req.revenue_col]:
@@ -51,7 +52,7 @@ def rfm(req: RfmRequest):
         raise HTTPException(status_code=500, detail=f"RFM analysis failed: {e}")
 
 
-@router.post("/cohorts/retention")
+@router.post("/retention")
 def retention(req: RetentionRequest):
     df = _load(req.project_id)
     for col in [req.cohort_col, req.period_col, req.user_col]:
@@ -64,7 +65,7 @@ def retention(req: RetentionRequest):
         raise HTTPException(status_code=500, detail=f"Retention analysis failed: {e}")
 
 
-@router.get("/cohorts/columns")
+@router.get("/columns")
 def cohort_columns(project_id: int = Query(...)):
     df = _load(project_id)
     numeric = df.select_dtypes(include="number").columns.tolist()
@@ -73,7 +74,7 @@ def cohort_columns(project_id: int = Query(...)):
     for col in df.select_dtypes(include="object").columns:
         sample = df[col].dropna().head(5)
         try:
-            pd_check = __import__("pandas").to_datetime(sample, errors="coerce")
+            pd_check = pd.to_datetime(sample, errors="coerce")
             if pd_check.notna().sum() >= 3:
                 datetime_cols.append(col)
         except Exception:

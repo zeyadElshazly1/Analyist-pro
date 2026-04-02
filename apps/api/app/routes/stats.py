@@ -39,7 +39,7 @@ class PowerRequest(BaseModel):
     test_type: str = "ttest"
 
 
-@router.post("/stats/test")
+@router.post("/test")
 def stats_test(req: TestRequest):
     df = _load(req.project_id)
     try:
@@ -51,7 +51,7 @@ def stats_test(req: TestRequest):
         raise HTTPException(status_code=500, detail=f"Test failed: {e}")
 
 
-@router.post("/stats/power")
+@router.post("/power")
 def stats_power(req: PowerRequest):
     try:
         result = power_analysis(req.effect_size, req.alpha, req.power, req.test_type)
@@ -60,7 +60,7 @@ def stats_power(req: PowerRequest):
         raise HTTPException(status_code=500, detail=f"Power analysis failed: {e}")
 
 
-@router.get("/stats/columns")
+@router.get("/columns")
 def stats_columns(project_id: int = Query(...)):
     df = _load(project_id)
     numeric = df.select_dtypes(include="number").columns.tolist()
