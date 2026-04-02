@@ -83,7 +83,11 @@ export function ColumnCompare({ projectId }: Props) {
               onChange={(e) => idx === 0 ? setColA(e.target.value) : setColB(e.target.value)}
               className="rounded-lg border border-white/[0.08] bg-white/[0.05] px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
             >
-              {columns.map((c) => <option key={c} value={c}>{c}</option>)}
+              {columns.map((c) => (
+                <option key={c} value={c} className="bg-white text-black">
+                  {c}
+                </option>
+              ))}
             </select>
           </div>
         ))}
