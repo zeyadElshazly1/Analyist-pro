@@ -1,10 +1,10 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.state import PROJECT_FILES
 from app.services.file_loader import load_dataset
 from app.services.cleaner import clean_dataset
 from app.services.chart_builder import build_chart_data
-from app.services.persistence import get_project_file_info
 
 router = APIRouter(prefix="/charts", tags=["charts"])
 
@@ -17,9 +17,10 @@ class ChartRequest(BaseModel):
 def suggest_chart(payload: ChartRequest):
     project_id = payload.project_id
 
-    file_info = get_project_file_info(project_id)
-    if not file_info:
+    if project_id not in PROJECT_FILES:
         raise HTTPException(status_code=404, detail="No uploaded file found for this project.")
+
+    file_info = PROJECT_FILES[project_id]
     file_path = file_info["path"]
 
     try:

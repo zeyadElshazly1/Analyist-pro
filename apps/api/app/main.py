@@ -5,7 +5,6 @@ from fastapi.responses import JSONResponse
 from app.routes.projects import router as projects_router
 from app.routes.upload import router as upload_router
 from app.routes.analysis import router as analysis_router
-from app.routes.datasets import router as datasets_router
 from app.routes.charts import router as charts_router
 from app.routes.explore import router as explore_router
 from app.routes.ml import router as ml_router
@@ -16,7 +15,6 @@ from app.routes.cohorts import router as cohorts_router
 from app.routes.stats import router as stats_router
 from app.routes.query import router as query_router
 from app.routes.features import router as features_router
-from app.db import init_db
 
 app = FastAPI(title="Analyst Pro API", version="2.0.0")
 
@@ -31,7 +29,6 @@ app.add_middleware(
 app.include_router(projects_router)
 app.include_router(upload_router)
 app.include_router(analysis_router)
-app.include_router(datasets_router)
 app.include_router(charts_router)
 app.include_router(explore_router)
 app.include_router(ml_router)
@@ -42,11 +39,6 @@ app.include_router(cohorts_router)
 app.include_router(stats_router)
 app.include_router(query_router)
 app.include_router(features_router)
-
-
-@app.on_event("startup")
-def startup_event():
-    init_db()
 
 
 @app.exception_handler(ValueError)

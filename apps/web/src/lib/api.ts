@@ -1,84 +1,6 @@
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 
-export type ProjectIntent =
-  | "marketing"
-  | "saas"
-  | "sales"
-  | "finance"
-  | "operations"
-  | "general";
-
-export type ProjectSummary = {
-  id: number;
-  name: string;
-  status: string;
-  intent?: ProjectIntent;
-  latest_dataset_id?: number | null;
-  latest_job_id?: number | null;
-};
-
-export type DatasetRecord = {
-  id: number;
-  project_id: number;
-  filename: string;
-  storage_path: string;
-  file_size: number;
-  file_hash: string;
-  status: string;
-  rows_count?: number | null;
-  columns_count?: number | null;
-  uploaded_at: string;
-  updated_at: string;
-};
-
-export type AnalysisArtifactPayload = {
-  dataset_summary: {
-    rows: number;
-    columns: number;
-    numeric_cols: number;
-    categorical_cols: number;
-    datetime_cols?: number;
-    missing_pct: number;
-  };
-  cleaning_summary: Record<string, unknown>;
-  cleaning_report: Array<Record<string, unknown>>;
-  health_score: Record<string, unknown>;
-  profile: Record<string, unknown>;
-  insights: Array<Record<string, unknown>>;
-  narrative: string;
-  analysis_version: string;
-};
-
-export type AnalysisArtifact = {
-  id: number;
-  kind: string;
-  version: string;
-  created_at: string;
-  payload: AnalysisArtifactPayload;
-};
-
-export type AnalysisJob = {
-  id: number;
-  project_id: number;
-  dataset_id: number;
-  status: "queued" | "running" | "completed" | "failed";
-  progress: number;
-  stage: string;
-  analysis_version: string;
-  error_message?: string | null;
-  result_artifact?: AnalysisArtifact | null;
-  created_at: string;
-  updated_at: string;
-  completed_at?: string | null;
-};
-
-export type ProjectDetail = ProjectSummary & {
-  latest_dataset?: DatasetRecord | null;
-  latest_job?: AnalysisJob | null;
-  latest_analysis?: AnalysisArtifact | null;
-};
-
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, { cache: "no-store" });
   if (!res.ok) {
@@ -101,22 +23,23 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   return res.json();
 }
 
+// ── Projects ──────────────────────────────────────────────────────────────────
+
 export function getProjects() {
-  return get<ProjectSummary[]>("/projects");
+  return get<{ id: number; name: string; status?: string }[]>("/projects");
 }
 
-export function getProject(projectId: number) {
-  return get<ProjectDetail>(`/projects/${projectId}`);
+export function createProject(name: string) {
+  return post<{ id: number; name: string }>("/projects", { name });
 }
 
-export function createProject(name: string, intent: ProjectIntent = "general") {
-  return post<ProjectSummary>("/projects", { name, intent });
-}
+// ── Upload ────────────────────────────────────────────────────────────────────
 
 export async function uploadFile(projectId: number, file: File) {
   const formData = new FormData();
+  formData.append("project_id", String(projectId));
   formData.append("file", file);
-  const res = await fetch(`${API_BASE_URL}/projects/${projectId}/datasets`, {
+  const res = await fetch(`${API_BASE_URL}/upload`, {
     method: "POST",
     body: formData,
   });
@@ -124,32 +47,27 @@ export async function uploadFile(projectId: number, file: File) {
     const text = await res.text();
     throw new Error(`Upload failed: ${text}`);
   }
-  return res.json() as Promise<DatasetRecord>;
+  return res.json();
 }
 
-export function startAnalysis(datasetId: number) {
-  return post<AnalysisJob>(`/datasets/${datasetId}/analyze`);
-}
-
-export function getAnalysisJob(jobId: number) {
-  return get<AnalysisJob>(`/analysis-jobs/${jobId}`);
-}
-
-export function getLatestAnalysis(projectId: number) {
-  return get<AnalysisArtifactPayload>(`/analysis/latest/${projectId}`);
-}
+// ── Analysis ──────────────────────────────────────────────────────────────────
 
 export function runAnalysis(projectId: number) {
-  return post<AnalysisJob>("/analysis/run", { project_id: projectId });
+  return post<Record<string, unknown>>("/analysis/run", { project_id: projectId });
 }
+
+// ── Charts ────────────────────────────────────────────────────────────────────
 
 export function getSuggestedCharts(projectId: number) {
   return post<{ charts: unknown[] }>("/charts/suggest", { project_id: projectId });
 }
 
+/** @deprecated use getSuggestedCharts */
 export function getSuggestedChart(projectId: number) {
   return getSuggestedCharts(projectId);
 }
+
+// ── Explore: Time Series ──────────────────────────────────────────────────────
 
 export function getTimeseriesColumns(projectId: number) {
   return get<{ date_columns: string[]; value_columns: string[] }>(
@@ -165,12 +83,18 @@ export function runTimeseries(projectId: number, dateCol: string, valueCol: stri
   });
 }
 
+// ── Explore: Duplicates ───────────────────────────────────────────────────────
+
 export function getDuplicates(projectId: number) {
   return post<Record<string, unknown>>("/explore/duplicates", { project_id: projectId });
 }
 
+// ── Explore: Outliers ─────────────────────────────────────────────────────────
+
 export function getOutlierColumns(projectId: number) {
-  return get<{ numeric_columns: string[] }>(`/explore/outliers/columns?project_id=${projectId}`);
+  return get<{ numeric_columns: string[] }>(
+    `/explore/outliers/columns?project_id=${projectId}`
+  );
 }
 
 export function runOutlierAnalysis(projectId: number, column: string) {
@@ -180,12 +104,18 @@ export function runOutlierAnalysis(projectId: number, column: string) {
   });
 }
 
+// ── Explore: Correlations ─────────────────────────────────────────────────────
+
 export function getCorrelations(projectId: number) {
   return post<Record<string, unknown>>("/explore/correlations", { project_id: projectId });
 }
 
+// ── Explore: Column Compare ───────────────────────────────────────────────────
+
 export function getCompareColumnOptions(projectId: number) {
-  return get<{ columns: string[] }>(`/explore/compare-columns/columns?project_id=${projectId}`);
+  return get<{ columns: string[] }>(
+    `/explore/compare-columns/columns?project_id=${projectId}`
+  );
 }
 
 export function runColumnCompare(projectId: number, colA: string, colB: string) {
@@ -196,12 +126,16 @@ export function runColumnCompare(projectId: number, colA: string, colB: string) 
   });
 }
 
+// ── Explore: Multi-file Compare ───────────────────────────────────────────────
+
 export function runMultifileCompare(projectIdA: number, projectIdB: number) {
   return post<Record<string, unknown>>("/explore/multifile", {
     project_id_a: projectIdA,
     project_id_b: projectIdB,
   });
 }
+
+// ── AutoML ────────────────────────────────────────────────────────────────────
 
 export function getMlColumns(projectId: number) {
   return get<{ columns: string[] }>(`/ml/columns?project_id=${projectId}`);
@@ -213,6 +147,8 @@ export function trainModel(projectId: number, targetCol: string) {
     target_col: targetCol,
   });
 }
+
+// ── AI Chat ───────────────────────────────────────────────────────────────────
 
 export function sendChatMessage(
   projectId: number,
@@ -226,10 +162,14 @@ export function sendChatMessage(
   });
 }
 
+// ── Report Export ─────────────────────────────────────────────────────────────
+
 export function exportReport(projectId: number, format: "html" | "pdf" = "html") {
-  const url = `${API_BASE_URL}/reports/export/${projectId}?format=${format}`;
+  const url = `${process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000"}/reports/export/${projectId}?format=${format}`;
   window.open(url, "_blank");
 }
+
+// ── Pivot ─────────────────────────────────────────────────────────────────────
 
 export function getPivotColumns(projectId: number) {
   return get<{ all_columns: string[]; numeric_columns: string[] }>(
@@ -252,6 +192,8 @@ export function runPivot(
     aggfunc,
   });
 }
+
+// ── Cohorts ───────────────────────────────────────────────────────────────────
 
 export function getCohortColumns(projectId: number) {
   return get<{ all_columns: string[]; numeric_columns: string[]; datetime_columns: string[] }>(
@@ -286,6 +228,8 @@ export function runRetention(
     user_col: userCol,
   });
 }
+
+// ── Statistical Tests ─────────────────────────────────────────────────────────
 
 export function getStatsColumns(projectId: number) {
   return get<{ numeric_columns: string[]; categorical_columns: string[] }>(
@@ -323,6 +267,8 @@ export function runPowerAnalysis(
   });
 }
 
+// ── SQL Engine ────────────────────────────────────────────────────────────────
+
 export function getQuerySchema(projectId: number) {
   return get<{ columns: { name: string; dtype: string; sample_values: string[] }[]; table_name: string }>(
     `/query/schema?project_id=${projectId}`
@@ -335,6 +281,8 @@ export function executeQuery(projectId: number, sql: string) {
     sql,
   });
 }
+
+// ── Feature Engineering ───────────────────────────────────────────────────────
 
 export function suggestFeatures(projectId: number) {
   return get<{ suggestions: { name: string; formula: string; rationale: string; category: string }[] }>(

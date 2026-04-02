@@ -1,57 +1,67 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, HTTPException
 
 from app.schemas.analysis import AnalysisRequest
-from app.services.analysis_jobs import ANALYSIS_VERSION, build_analysis_result, run_analysis_job
-from app.services.persistence import (
-    create_analysis_job,
-    get_cached_artifact,
-    get_latest_dataset,
-    record_usage_event,
-)
+from app.state import PROJECT_FILES
+from app.services.file_loader import load_dataset
+from app.services.cleaner import clean_dataset
+from app.services.profiler import profile_dataset, calculate_health_score
+from app.services.analyzer import analyze_dataset, get_dataset_summary
+from app.services.serializers import to_jsonable
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
 
 @router.post("/run")
-def run_analysis(payload: AnalysisRequest, background_tasks: BackgroundTasks):
-    dataset = get_latest_dataset(payload.project_id)
-    if dataset is None:
-        raise HTTPException(status_code=404, detail="No uploaded dataset found for this project.")
+def run_analysis(payload: AnalysisRequest):
+    project_id = payload.project_id
 
-    job = create_analysis_job(payload.project_id, dataset["id"], ANALYSIS_VERSION)
-    record_usage_event(
-        "analysis_started",
-        project_id=payload.project_id,
-        dataset_id=dataset["id"],
-        job_id=job["id"],
-        metadata={"source": "legacy_run_endpoint", "analysis_version": ANALYSIS_VERSION},
-    )
-    background_tasks.add_task(run_analysis_job, job["id"])
-    return job
+    if project_id not in PROJECT_FILES:
+        raise HTTPException(
+            status_code=404,
+            detail="No uploaded file found for this project.",
+        )
 
-
-@router.get("/latest/{project_id}")
-def latest_analysis(project_id: int):
-    dataset = get_latest_dataset(project_id)
-    if dataset is None:
-        raise HTTPException(status_code=404, detail="No uploaded dataset found for this project.")
-
-    artifact = get_cached_artifact(dataset["id"], "analysis_result", ANALYSIS_VERSION)
-    if artifact is None:
-        raise HTTPException(status_code=404, detail="No completed analysis found for this project.")
-    return artifact["payload"]
-
-
-@router.post("/run-sync")
-def run_analysis_sync(payload: AnalysisRequest):
-    dataset = get_latest_dataset(payload.project_id)
-    if dataset is None:
-        raise HTTPException(status_code=404, detail="No uploaded dataset found for this project.")
+    file_info = PROJECT_FILES[project_id]
+    file_path = file_info["path"]
 
     try:
-        result, _ = build_analysis_result(dataset["storage_path"])
-        return result
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {exc}")
+        df = load_dataset(file_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Uploaded file path is missing.")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load dataset: {str(e)}")
+
+    try:
+        if df.empty:
+            raise HTTPException(status_code=400, detail="Uploaded dataset is empty.")
+
+        df_clean, cleaning_report, cleaning_summary = clean_dataset(df)
+
+        if df_clean.empty or len(df_clean.columns) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Dataset became empty after cleaning.",
+            )
+
+        profile = profile_dataset(df_clean)
+        health_score = calculate_health_score(df_clean)
+        insights, narrative = analyze_dataset(df_clean)
+        dataset_summary = get_dataset_summary(df_clean)
+
+        return {
+            "project_id": project_id,
+            "dataset_summary": to_jsonable(dataset_summary),
+            "cleaning_summary": to_jsonable(cleaning_summary),
+            "cleaning_report": to_jsonable(cleaning_report),
+            "health_score": to_jsonable(health_score),
+            "profile": to_jsonable(profile),
+            "insights": to_jsonable(insights),
+            "narrative": narrative,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")

@@ -11,9 +11,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
-apps/api/data/
-apps/api/artifacts/
-apps/api/uploads/
 
 # Env
 .env

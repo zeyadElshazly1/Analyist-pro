@@ -1,53 +1,43 @@
-from collections.abc import MutableMapping
-from typing import Any, Iterator
+from pathlib import Path
+from typing import Any
 
-from app.services.persistence import get_project_file_info as get_project_file_info_from_db
+# Shared in-memory state
+# Both PROJECT_FILES and PROJECTS live here to avoid circular imports
 
+PROJECT_FILES: dict[int, dict[str, Any]] = {}
+# { project_id: { "filename": str, "path": str } }
 
-class ProjectFilesProxy(MutableMapping[int, dict[str, Any]]):
-    def __init__(self) -> None:
-        self._extras: dict[int, dict[str, Any]] = {}
-
-    def _load(self, project_id: int) -> dict[str, Any] | None:
-        base = get_project_file_info_from_db(project_id)
-        if base is None:
-            return None
-        extras = self._extras.get(project_id, {})
-        merged = {**base, **extras}
-        self._extras[project_id] = merged
-        return merged
-
-    def __getitem__(self, key: int) -> dict[str, Any]:
-        value = self._load(key)
-        if value is None:
-            raise KeyError(key)
-        return value
-
-    def __setitem__(self, key: int, value: dict[str, Any]) -> None:
-        current = self._load(key) or {}
-        current.update(value)
-        self._extras[key] = current
-
-    def __delitem__(self, key: int) -> None:
-        self._extras.pop(key, None)
-
-    def __iter__(self) -> Iterator[int]:
-        return iter(self._extras)
-
-    def __len__(self) -> int:
-        return len(self._extras)
-
-    def __contains__(self, key: object) -> bool:
-        return isinstance(key, int) and self._load(key) is not None
-
-    def get(self, key: int, default: Any = None) -> Any:
-        value = self._load(key)
-        return value if value is not None else default
-
-
-PROJECT_FILES: MutableMapping[int, dict[str, Any]] = ProjectFilesProxy()
-PROJECTS: list[dict[str, Any]] = []
+PROJECTS: list = []
+# [ { "id": int, "name": str, "status": str, ... } ]
 
 
 def get_project_file_info(project_id: int) -> dict[str, Any] | None:
-    return PROJECT_FILES.get(project_id)
+    """
+    Return file info for a project.
+    - First, tries in-memory state.
+    - If missing (e.g. after API restart), falls back to uploads on disk and
+      repopulates PROJECT_FILES.
+    """
+    existing = PROJECT_FILES.get(project_id)
+    if existing and existing.get("path") and Path(existing["path"]).exists():
+        return existing
+
+    api_root = Path(__file__).resolve().parents[1]  # apps/api
+    uploads_dir = api_root / "uploads"
+    if not uploads_dir.exists():
+        return None
+
+    matches = sorted(
+        uploads_dir.glob(f"project_{project_id}_*"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not matches:
+        return None
+
+    chosen = matches[0]
+    prefix = f"project_{project_id}_"
+    original_name = chosen.name[len(prefix):] if chosen.name.startswith(prefix) else chosen.name
+    info = {"filename": original_name, "path": str(chosen)}
+    PROJECT_FILES[project_id] = info
+    return info
