@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from app.services.persistence import get_project_file_info
+from app.state import PROJECT_FILES, get_project_file_info
 from app.services.file_loader import load_dataset
 from app.services.cleaner import clean_dataset
 from app.services.serializers import to_jsonable

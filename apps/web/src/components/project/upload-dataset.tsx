@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { DatasetRecord, uploadFile } from "@/lib/api";
+import { uploadFile } from "@/lib/api";
 import { Upload, FileText, CheckCircle2, AlertCircle } from "lucide-react";
 
 type Props = {
   projectId: number;
-  onUploaded?: (dataset: DatasetRecord) => void;
+  onUploaded?: () => void;
 };
 
 type Status = "idle" | "uploading" | "success" | "error";
@@ -35,10 +35,10 @@ export function UploadDataset({ projectId, onUploaded }: Props) {
     if (!file) return;
     try {
       setStatus("uploading");
-      const dataset = await uploadFile(projectId, file);
+      await uploadFile(projectId, file);
       setStatus("success");
       setMessage(`${file.name} uploaded successfully.`);
-      onUploaded?.(dataset);
+      onUploaded?.();
     } catch (e) {
       setStatus("error");
       setMessage(e instanceof Error ? e.message : "Upload failed.");
