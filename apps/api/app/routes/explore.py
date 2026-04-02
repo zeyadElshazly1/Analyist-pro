@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from app.state import PROJECT_FILES
+from app.state import PROJECT_FILES, get_project_file_info
 from app.services.file_loader import load_dataset
 from app.services.cleaner import clean_dataset
 from app.services.serializers import to_jsonable
@@ -17,9 +17,10 @@ router = APIRouter(prefix="/explore", tags=["explore"])
 
 def _load(project_id: int):
     """Load + clean a dataset by project_id. Raises HTTPException on failure."""
-    if project_id not in PROJECT_FILES:
+    file_info = get_project_file_info(project_id)
+    if not file_info:
         raise HTTPException(status_code=404, detail="No uploaded file for this project.")
-    path = PROJECT_FILES[project_id]["path"]
+    path = file_info["path"]
     try:
         df = load_dataset(path)
         df_clean, _, _ = clean_dataset(df)
@@ -149,15 +150,17 @@ class MultifileRequest(BaseModel):
 
 @router.post("/multifile")
 def multifile_compare(payload: MultifileRequest):
-    if payload.project_id_a not in PROJECT_FILES:
+    file_a = get_project_file_info(payload.project_id_a)
+    if not file_a:
         raise HTTPException(status_code=404, detail=f"No file for project {payload.project_id_a}")
-    if payload.project_id_b not in PROJECT_FILES:
+    file_b = get_project_file_info(payload.project_id_b)
+    if not file_b:
         raise HTTPException(status_code=404, detail=f"No file for project {payload.project_id_b}")
 
-    path_a = PROJECT_FILES[payload.project_id_a]["path"]
-    path_b = PROJECT_FILES[payload.project_id_b]["path"]
-    label_a = PROJECT_FILES[payload.project_id_a].get("filename", f"Project {payload.project_id_a}")
-    label_b = PROJECT_FILES[payload.project_id_b].get("filename", f"Project {payload.project_id_b}")
+    path_a = file_a["path"]
+    path_b = file_b["path"]
+    label_a = file_a.get("filename", f"Project {payload.project_id_a}")
+    label_b = file_b.get("filename", f"Project {payload.project_id_b}")
 
     try:
         result = compare_files(path_a, path_b, label_a=label_a, label_b=label_b)
