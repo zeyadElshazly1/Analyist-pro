@@ -1,3 +1,7 @@
+import os
+import time
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -15,17 +19,69 @@ from app.routes.cohorts import router as cohorts_router
 from app.routes.stats import router as stats_router
 from app.routes.query import router as query_router
 from app.routes.features import router as features_router
+from app.routes.analysis_stream import router as analysis_stream_router
 
-app = FastAPI(title="Analyst Pro API", version="2.0.0")
+# ── Structured logging setup ──────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format='{"time": "%(asctime)s", "level": "%(levelname)s", "logger": "%(name)s", "message": "%(message)s"}',
+)
+logger = logging.getLogger("analyistpro")
 
+# ── Optional Sentry integration ───────────────────────────────────────────────
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            integrations=[FastApiIntegration(), SqlalchemyIntegration()],
+            traces_sample_rate=0.1,
+            environment=os.getenv("ENVIRONMENT", "production"),
+        )
+        logger.info("Sentry initialized")
+    except ImportError:
+        logger.warning("sentry-sdk not installed; skipping Sentry integration")
+
+# ── App factory ───────────────────────────────────────────────────────────────
+app = FastAPI(
+    title="AnalystPro API",
+    version="2.0.0",
+    description="AI-powered data analytics platform",
+)
+
+# ── CORS ──────────────────────────────────────────────────────────────────────
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# ── Request timing middleware ─────────────────────────────────────────────────
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.monotonic()
+    response = await call_next(request)
+    duration_ms = int((time.monotonic() - start) * 1000)
+    logger.info(
+        f"method={request.method} path={request.url.path} "
+        f"status={response.status_code} duration_ms={duration_ms}"
+    )
+    return response
+
+# ── Startup: initialize DB ────────────────────────────────────────────────────
+@app.on_event("startup")
+def startup_event():
+    from app.db import init_db
+    init_db()
+    logger.info("Database initialized")
+
+# ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(projects_router)
 app.include_router(upload_router)
 app.include_router(analysis_router)
@@ -39,8 +95,9 @@ app.include_router(cohorts_router)
 app.include_router(stats_router)
 app.include_router(query_router)
 app.include_router(features_router)
+app.include_router(analysis_stream_router)
 
-
+# ── Exception handlers ────────────────────────────────────────────────────────
 @app.exception_handler(ValueError)
 async def value_error_handler(request: Request, exc: ValueError):
     return JSONResponse(
@@ -59,12 +116,14 @@ async def key_error_handler(request: Request, exc: KeyError):
 
 @app.exception_handler(Exception)
 async def generic_error_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
         content={"error": "Internal server error", "detail": str(exc), "code": 500},
     )
 
 
+# ── Health check ──────────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "1.0.0"}
+    return {"status": "ok", "version": "2.0.0"}

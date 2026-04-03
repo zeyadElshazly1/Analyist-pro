@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from sklearn.ensemble import (
     GradientBoostingClassifier,
     GradientBoostingRegressor,
@@ -120,38 +121,37 @@ def train_models(df: pd.DataFrame, target_col: str) -> dict:  # noqa: C901
             "Linear Regression": LinearRegression(),
             "Ridge": Ridge(),
             "Random Forest": RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1),
-            "Gradient Boosting": GradientBoostingRegressor(n_estimators=100, random_state=42),
+            "Gradient Boosting": GradientBoostingRegressor(
+                n_estimators=100, random_state=42, n_iter_no_change=10, validation_fraction=0.1
+            ),
         }
     else:
-        n_classes = len(np.unique(y))
         models = {
             "Logistic Regression": LogisticRegression(max_iter=500, random_state=42),
             "Ridge Classifier": RidgeClassifier(),
             "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1),
-            "Gradient Boosting": GradientBoostingClassifier(n_estimators=100, random_state=42),
+            "Gradient Boosting": GradientBoostingClassifier(
+                n_estimators=100, random_state=42, n_iter_no_change=10, validation_fraction=0.1
+            ),
         }
 
     # try xgboost
     try:
         import xgboost as xgb  # noqa: F401
         if problem_type == "regression":
-            models["XGBoost"] = xgb.XGBRegressor(n_estimators=100, random_state=42, verbosity=0)
+            models["XGBoost"] = xgb.XGBRegressor(n_estimators=100, random_state=42, verbosity=0, n_jobs=-1)
         else:
-            models["XGBoost"] = xgb.XGBClassifier(n_estimators=100, random_state=42, verbosity=0)
+            models["XGBoost"] = xgb.XGBClassifier(n_estimators=100, random_state=42, verbosity=0, n_jobs=-1)
         notes.append("XGBoost included")
     except ImportError:
         pass
 
-    # --- train & evaluate ---
-    results = []
-    best_score = -np.inf
-    best_name = ""
-    best_model = None
-
-    for name, model in models.items():
+    # --- parallel train & evaluate ---
+    def _train_one(name: str, model) -> tuple[str, object, dict, float]:
+        """Train a single model and return (name, fitted_model, metrics_dict, score)."""
         try:
             if problem_type == "regression":
-                cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring="r2")
+                cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring="r2", n_jobs=-1)
                 model.fit(X_train, y_train)
                 preds = model.predict(X_test)
                 rmse = float(np.sqrt(mean_squared_error(y_test, preds)))
@@ -167,8 +167,7 @@ def train_models(df: pd.DataFrame, target_col: str) -> dict:  # noqa: C901
                 }
                 score = r2
             else:
-                scoring = "roc_auc_ovr" if len(np.unique(y)) > 2 else "roc_auc"
-                cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring="f1_weighted")
+                cv_scores = cross_val_score(model, X_train, y_train, cv=5, scoring="f1_weighted", n_jobs=-1)
                 model.fit(X_train, y_train)
                 preds = model.predict(X_test)
                 acc = float(accuracy_score(y_test, preds))
@@ -193,13 +192,25 @@ def train_models(df: pd.DataFrame, target_col: str) -> dict:  # noqa: C901
                     "cv_std": round(float(cv_scores.std()), 4),
                 }
                 score = f1
-            results.append(result)
-            if score > best_score:
-                best_score = score
-                best_name = name
-                best_model = model
+            return name, model, result, score
         except Exception as e:
-            results.append({"name": name, "error": str(e)})
+            return name, None, {"name": name, "error": str(e)}, -np.inf
+
+    parallel_results = Parallel(n_jobs=4, prefer="threads")(
+        delayed(_train_one)(name, model) for name, model in models.items()
+    )
+
+    results = []
+    best_score = -np.inf
+    best_name = ""
+    best_model = None
+
+    for name, fitted_model, result, score in parallel_results:
+        results.append(result)
+        if score > best_score:
+            best_score = score
+            best_name = name
+            best_model = fitted_model
 
     # sort by cv_score desc
     results.sort(key=lambda x: x.get("cv_score", -999), reverse=True)

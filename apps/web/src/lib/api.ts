@@ -56,6 +56,12 @@ export function runAnalysis(projectId: number) {
   return post<Record<string, unknown>>("/analysis/run", { project_id: projectId });
 }
 
+export function getDataPreview(projectId: number, rows = 5) {
+  return get<{ columns: string[]; rows: unknown[][]; total_rows: number; total_columns: number }>(
+    `/analysis/preview/${projectId}?rows=${rows}`
+  );
+}
+
 // ── Charts ────────────────────────────────────────────────────────────────────
 
 export function getSuggestedCharts(projectId: number) {
