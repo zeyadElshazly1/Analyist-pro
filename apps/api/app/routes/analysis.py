@@ -116,6 +116,21 @@ def get_analysis_history(project_id: int, limit: int = Query(10, ge=1, le=50), d
     ]
 
 
+@router.get("/result/{analysis_id}")
+def get_analysis_result(analysis_id: int, db: Session = Depends(get_db)):
+    """Return the full result JSON for a specific stored analysis run."""
+    analysis = db.query(AnalysisResult).filter(AnalysisResult.id == analysis_id).first()
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Analysis result not found.")
+    return {
+        "id": analysis.id,
+        "project_id": analysis.project_id,
+        "created_at": analysis.created_at.isoformat() if analysis.created_at else None,
+        "file_hash": analysis.file_hash,
+        "result": json.loads(analysis.result_json),
+    }
+
+
 @router.get("/preview/{project_id}")
 def preview_dataset(project_id: int, rows: int = Query(10, ge=1, le=100)):
     """
