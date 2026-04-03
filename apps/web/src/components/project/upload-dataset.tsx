@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { uploadFile } from "@/lib/api";
-import { Upload, FileText, CheckCircle2, AlertCircle } from "lucide-react";
+import { uploadFile, getDataPreview } from "@/lib/api";
+import { Upload, FileText, CheckCircle2, AlertCircle, TableIcon } from "lucide-react";
 
 type Props = {
   projectId: number;
@@ -11,17 +11,26 @@ type Props = {
 
 type Status = "idle" | "uploading" | "success" | "error";
 
+type Preview = {
+  columns: string[];
+  rows: unknown[][];
+  total_rows: number;
+  total_columns: number;
+};
+
 export function UploadDataset({ projectId, onUploaded }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [preview, setPreview] = useState<Preview | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   function selectFile(f: File) {
     setFile(f);
     setStatus("idle");
     setMessage("");
+    setPreview(null);
   }
 
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -39,6 +48,10 @@ export function UploadDataset({ projectId, onUploaded }: Props) {
       setStatus("success");
       setMessage(`${file.name} uploaded successfully.`);
       onUploaded?.();
+      // fetch preview in background — non-blocking
+      getDataPreview(projectId, 5)
+        .then(setPreview)
+        .catch(() => {/* preview is best-effort */});
     } catch (e) {
       setStatus("error");
       setMessage(e instanceof Error ? e.message : "Upload failed.");
@@ -89,7 +102,7 @@ export function UploadDataset({ projectId, onUploaded }: Props) {
                 Drag & drop your file, or{" "}
                 <span className="text-indigo-400 underline underline-offset-2">browse</span>
               </p>
-              <p className="mt-1 text-xs text-white/30">CSV, XLSX, XLS · Max 50 MB</p>
+              <p className="mt-1 text-xs text-white/30">CSV, XLSX, XLS · Max 100 MB</p>
             </div>
           </div>
         )}
@@ -127,6 +140,59 @@ export function UploadDataset({ projectId, onUploaded }: Props) {
           <AlertCircle className="h-4 w-4" />
           {message}
         </p>
+      )}
+
+      {/* ── Data preview ────────────────────────────────────────────────────── */}
+      {preview && (
+        <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
+            <TableIcon className="h-3.5 w-3.5 text-white/40" />
+            <span className="text-xs font-medium text-white/60">
+              Preview — first {preview.rows.length} of{" "}
+              <span className="text-white/80">{preview.total_rows.toLocaleString()}</span> rows
+              &nbsp;·&nbsp;
+              <span className="text-white/80">{preview.total_columns}</span> columns
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-white/[0.06]">
+                  {preview.columns.map((col) => (
+                    <th
+                      key={col}
+                      className="px-4 py-2 text-left font-medium text-white/50 whitespace-nowrap"
+                    >
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {preview.rows.map((row, ri) => (
+                  <tr
+                    key={ri}
+                    className="border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors"
+                  >
+                    {(row as unknown[]).map((cell, ci) => (
+                      <td
+                        key={ci}
+                        className="px-4 py-2 text-white/70 whitespace-nowrap max-w-[180px] truncate"
+                        title={cell == null ? "" : String(cell)}
+                      >
+                        {cell == null ? (
+                          <span className="text-white/20 italic">null</span>
+                        ) : (
+                          String(cell)
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </div>
   );

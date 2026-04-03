@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { runAnalysis } from "@/lib/api";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Play } from "lucide-react";
+import { Loader2, Play, CheckCircle2 } from "lucide-react";
 
 import { StatsCards } from "@/components/analysis/stats-cards";
 import { InsightsList } from "@/components/analysis/insights-list";
@@ -28,8 +27,17 @@ import { SegmentsView } from "@/components/analysis/segments-view";
 import { AbTestsView } from "@/components/analysis/ab-tests-view";
 import { QueryView } from "@/components/analysis/query-view";
 
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
+
 type Props = {
   projectId: number;
+};
+
+type ProgressState = {
+  step: string;
+  progress: number;
+  detail: string;
 };
 
 function TabPanel({ children }: { children: React.ReactNode }) {
@@ -40,24 +48,83 @@ function TabPanel({ children }: { children: React.ReactNode }) {
   );
 }
 
+function ProgressBar({ progress, step, detail }: ProgressState) {
+  return (
+    <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 space-y-3">
+      <div className="flex items-center justify-between text-sm">
+        <span className="text-white/80 font-medium">{step}</span>
+        <span className="text-white/40">{progress}%</span>
+      </div>
+      {detail && <p className="text-xs text-white/40">{detail}</p>}
+      <div className="h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
+        <div
+          className="h-full rounded-full bg-indigo-500 transition-all duration-500 ease-out"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function RunAnalysis({ projectId }: Props) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any | null>(null);
   const [tab, setTab] = useState("overview");
   const [error, setError] = useState("");
+  const [progress, setProgress] = useState<ProgressState | null>(null);
+  const esRef = useRef<EventSource | null>(null);
 
-  async function handleRun() {
-    try {
-      setLoading(true);
-      setError("");
-      const data = await runAnalysis(projectId);
-      setResult(data);
-      setTab("overview");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Analysis failed.");
-    } finally {
-      setLoading(false);
+  function handleRun() {
+    if (esRef.current) {
+      esRef.current.close();
     }
+
+    setLoading(true);
+    setError("");
+    setProgress({ step: "Starting…", progress: 0, detail: "" });
+
+    const es = new EventSource(`${API_BASE_URL}/analysis/stream/${projectId}`);
+    esRef.current = es;
+
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.error) {
+          setError(data.error);
+          setLoading(false);
+          setProgress(null);
+          es.close();
+          return;
+        }
+
+        if (data.result) {
+          setResult(data.result);
+          setTab("overview");
+          setLoading(false);
+          setProgress(null);
+          es.close();
+          return;
+        }
+
+        if (data.step) {
+          setProgress({
+            step: data.step,
+            progress: data.progress ?? 0,
+            detail: data.detail ?? "",
+          });
+        }
+      } catch {
+        // non-JSON line, ignore
+      }
+    };
+
+    es.onerror = () => {
+      setError("Analysis stream disconnected. Please try again.");
+      setLoading(false);
+      setProgress(null);
+      es.close();
+    };
   }
 
   return (
@@ -81,8 +148,9 @@ export function RunAnalysis({ projectId }: Props) {
           )}
         </Button>
         {result && !loading && (
-          <span className="text-xs text-white/40">
-            Analysis complete — explore tabs below
+          <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Analysis complete
           </span>
         )}
       </div>
@@ -92,6 +160,14 @@ export function RunAnalysis({ projectId }: Props) {
           {error}
         </div>
       ) : null}
+
+      {loading && progress && (
+        <ProgressBar
+          step={progress.step}
+          progress={progress.progress}
+          detail={progress.detail}
+        />
+      )}
 
       {result ? (
         <div className="space-y-4">
@@ -246,7 +322,8 @@ export function RunAnalysis({ projectId }: Props) {
               <Play className="h-5 w-5 text-indigo-400" />
             </div>
             <p className="text-white/50 text-sm">
-              Upload a dataset and click <span className="text-white/80">Run Analysis</span> to get started
+              Upload a dataset and click{" "}
+              <span className="text-white/80">Run Analysis</span> to get started
             </p>
           </div>
         )
