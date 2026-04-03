@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
-import { runAnalysis, getProjects, getAnalysisHistory, shareAnalysis, exportReport } from "@/lib/api";
+import { getProjects, getAnalysisHistory, getAnalysisResult, shareAnalysis, exportReport } from "@/lib/api";
 import { StatsCards } from "@/components/analysis/stats-cards";
 import { HealthScore } from "@/components/analysis/health-score";
 import { InsightHighlights } from "@/components/analysis/insight-highlights";
@@ -26,7 +26,6 @@ import {
 
 type HistoryEntry = { id: number; project_id: number; created_at: string };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 
 export default function ReportDetailPage() {
   const params = useParams();
@@ -56,24 +55,14 @@ export default function ReportDetailPage() {
         if (p) setProjectName(p.name);
         setHistory(hist);
 
-        // Load the latest analysis result via the stream/run endpoint
         if (hist.length === 0) {
           setError("No analysis found for this project. Run an analysis first.");
           return;
         }
 
-        // Fetch via SSE to get the most recent stored result
-        const res = await fetch(`${API_BASE_URL}/analysis/run`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ project_id: projectId }),
-        });
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || "Failed to load analysis.");
-        }
-        const data = await res.json();
-        setResult(data);
+        // Fetch the stored result for the latest run (no re-running)
+        const stored = await getAnalysisResult(hist[0].id);
+        setResult(stored.result);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load report.");
       } finally {
