@@ -70,6 +70,7 @@ class AnalysisResult(Base):
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     file_hash = Column(String(64), nullable=True)        # Hash of the file at analysis time
     result_json = Column(Text, nullable=False)           # Full analysis JSON (compressed if needed)
+    share_token = Column(String(64), nullable=True, unique=True, index=True)  # UUID for public share link
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     project = relationship("Project", back_populates="analyses")

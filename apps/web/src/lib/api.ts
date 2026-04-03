@@ -26,11 +26,24 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
 // ── Projects ──────────────────────────────────────────────────────────────────
 
 export function getProjects() {
-  return get<{ id: number; name: string; status?: string }[]>("/projects");
+  return get<{ id: number; name: string; status?: string; created_at?: string }[]>("/projects");
 }
 
 export function createProject(name: string) {
   return post<{ id: number; name: string }>("/projects", { name });
+}
+
+export function deleteProject(projectId: number) {
+  return fetch(`${API_BASE_URL}/projects/${projectId}`, { method: "DELETE" });
+}
+
+export function getProjectStats() {
+  return get<{
+    total_projects: number;
+    total_files: number;
+    total_analyses: number;
+    ready_projects: number;
+  }>("/projects/stats");
 }
 
 // ── Upload ────────────────────────────────────────────────────────────────────
@@ -59,6 +72,16 @@ export function runAnalysis(projectId: number) {
 export function getDataPreview(projectId: number, rows = 5) {
   return get<{ columns: string[]; rows: unknown[][]; total_rows: number; total_columns: number }>(
     `/analysis/preview/${projectId}?rows=${rows}`
+  );
+}
+
+export function shareAnalysis(projectId: number) {
+  return post<{ share_token: string }>(`/analysis/share/${projectId}`);
+}
+
+export function getSharedAnalysis(token: string) {
+  return get<{ project_id: number; created_at: string; result: Record<string, unknown> }>(
+    `/analysis/shared/${token}`
   );
 }
 
