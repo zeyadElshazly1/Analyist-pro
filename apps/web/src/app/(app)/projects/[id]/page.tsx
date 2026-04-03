@@ -6,8 +6,73 @@ import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
 import { UploadDataset } from "@/components/project/upload-dataset";
 import { RunAnalysis } from "@/components/project/run-analysis";
-import { getProjects } from "@/lib/api";
-import { ArrowLeft, Database, Zap } from "lucide-react";
+import { getProjects, getAnalysisHistory } from "@/lib/api";
+import { ArrowLeft, Database, Zap, Clock, FileText } from "lucide-react";
+
+type HistoryEntry = { id: number; project_id: number; created_at: string; file_hash: string | null };
+
+function HistoryPanel({ projectId }: { projectId: number }) {
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getAnalysisHistory(projectId, 8)
+      .then(setHistory)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [projectId]);
+
+  if (loading) return null;
+  if (history.length === 0) return null;
+
+  return (
+    <section className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.05]">
+            <Clock className="h-3.5 w-3.5 text-white/50" strokeWidth={1.75} />
+          </div>
+          <h2 className="text-sm font-semibold text-white">Analysis history</h2>
+        </div>
+        <Link
+          href={`/reports/${projectId}`}
+          className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+        >
+          <FileText className="h-3.5 w-3.5" />
+          View full report
+        </Link>
+      </div>
+
+      <div className="space-y-1">
+        {history.map((entry, i) => (
+          <div
+            key={entry.id}
+            className={`flex items-center justify-between rounded-lg px-3 py-2.5 ${
+              i === 0 ? "bg-indigo-600/10 border border-indigo-500/20" : "hover:bg-white/[0.02]"
+            } transition-colors`}
+          >
+            <div className="flex items-center gap-2.5">
+              <div className={`h-2 w-2 rounded-full flex-shrink-0 ${i === 0 ? "bg-indigo-400" : "bg-white/20"}`} />
+              <span className="text-xs text-white/60">
+                {new Date(entry.created_at).toLocaleString()}
+              </span>
+              {i === 0 && (
+                <span className="rounded-full bg-indigo-600/20 px-2 py-0.5 text-[10px] font-medium text-indigo-400">
+                  Latest
+                </span>
+              )}
+            </div>
+            {entry.file_hash && (
+              <span className="font-mono text-[10px] text-white/20" title="File hash">
+                #{entry.file_hash.slice(0, 8)}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 export default function ProjectPage() {
   const params = useParams();
@@ -51,16 +116,25 @@ export default function ProjectPage() {
               <ArrowLeft className="h-3 w-3" />
               Projects
             </Link>
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600/15">
-                <Database className="h-4.5 w-4.5 text-indigo-400" strokeWidth={1.75} />
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600/15">
+                  <Database className="h-4.5 w-4.5 text-indigo-400" strokeWidth={1.75} />
+                </div>
+                <div>
+                  <p className="text-[11px] text-white/30">Project #{projectId}</p>
+                  <h1 className="text-xl font-bold tracking-tight text-white">
+                    {projectName ?? "Loading…"}
+                  </h1>
+                </div>
               </div>
-              <div>
-                <p className="text-[11px] text-white/30">Project #{projectId}</p>
-                <h1 className="text-xl font-bold tracking-tight text-white">
-                  {projectName ?? "Loading…"}
-                </h1>
-              </div>
+              <Link
+                href={`/reports/${projectId}`}
+                className="hidden items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs text-white/50 hover:border-white/20 hover:text-white/70 transition-colors sm:flex"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                View report
+              </Link>
             </div>
           </div>
 
@@ -93,6 +167,9 @@ export default function ProjectPage() {
             </div>
             <RunAnalysis projectId={projectId} />
           </section>
+
+          {/* Analysis history */}
+          <HistoryPanel projectId={projectId} />
         </div>
       </div>
     </AppShell>

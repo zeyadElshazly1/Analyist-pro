@@ -85,6 +85,16 @@ export function getSharedAnalysis(token: string) {
   );
 }
 
+export function getAnalysisHistory(projectId: number, limit = 10) {
+  return get<{ id: number; project_id: number; created_at: string; file_hash: string | null }[]>(
+    `/analysis/history/${projectId}?limit=${limit}`
+  );
+}
+
+export function runAnalysis(projectId: number) {
+  return post<Record<string, unknown>>("/analysis/run", { project_id: projectId });
+}
+
 // ── Charts ────────────────────────────────────────────────────────────────────
 
 export function getSuggestedCharts(projectId: number) {
