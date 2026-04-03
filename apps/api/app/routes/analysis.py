@@ -1,5 +1,6 @@
 import json
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -119,7 +120,7 @@ def get_analysis_history(project_id: int, limit: int = Query(10, ge=1, le=50), d
 def preview_dataset(project_id: int, rows: int = Query(10, ge=1, le=100)):
     """
     Return the first N rows of the raw uploaded dataset (before cleaning).
-    Useful for showing users a data preview before running full analysis.
+    Returns columns as a list and rows as a list-of-lists (frontend-friendly).
     """
     file_path = _get_file_path(project_id)
 
@@ -129,12 +130,52 @@ def preview_dataset(project_id: int, rows: int = Query(10, ge=1, le=100)):
         raise HTTPException(status_code=500, detail=f"Failed to load dataset: {e}")
 
     preview = df.head(rows)
+    columns = df.columns.tolist()
+    row_data = to_jsonable(preview.values.tolist())
     return {
         "project_id": project_id,
-        "columns": df.columns.tolist(),
-        "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
+        "columns": columns,
+        "rows": row_data,
         "total_rows": len(df),
         "total_columns": len(df.columns),
-        "preview_rows": to_jsonable(preview.to_dict(orient="records")),
         "missing_pct": round(df.isnull().sum().sum() / max(len(df) * len(df.columns), 1) * 100, 1),
+    }
+
+
+@router.post("/share/{project_id}")
+def create_share_link(project_id: int, db: Session = Depends(get_db)):
+    """Generate (or return existing) a public share token for the latest analysis."""
+    analysis = (
+        db.query(AnalysisResult)
+        .filter(AnalysisResult.project_id == project_id)
+        .order_by(AnalysisResult.created_at.desc())
+        .first()
+    )
+    if not analysis:
+        raise HTTPException(status_code=404, detail="No analysis results found. Run analysis first.")
+
+    if not analysis.share_token:
+        analysis.share_token = uuid.uuid4().hex
+        db.commit()
+        db.refresh(analysis)
+
+    return {"share_token": analysis.share_token}
+
+
+@router.get("/shared/{token}")
+def get_shared_analysis(token: str, db: Session = Depends(get_db)):
+    """Public endpoint — returns a full analysis result by share token."""
+    analysis = (
+        db.query(AnalysisResult)
+        .filter(AnalysisResult.share_token == token)
+        .first()
+    )
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Share link not found or expired.")
+
+    result = json.loads(analysis.result_json)
+    return {
+        "project_id": analysis.project_id,
+        "created_at": analysis.created_at.isoformat() if analysis.created_at else None,
+        "result": result,
     }

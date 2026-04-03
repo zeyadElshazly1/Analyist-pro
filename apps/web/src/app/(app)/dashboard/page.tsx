@@ -1,21 +1,68 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
 import { CreateProjectForm } from "@/components/dashboard/create-project-form";
 import { ProjectsList, ProjectsListHandle } from "@/components/dashboard/projects-list";
-import { Plus, ArrowRight, TrendingUp, FolderOpen, FileStack, Activity } from "lucide-react";
+import { getProjectStats } from "@/lib/api";
+import {
+  Plus,
+  ArrowRight,
+  TrendingUp,
+  FolderOpen,
+  FileStack,
+  CheckCircle2,
+  Activity,
+} from "lucide-react";
 
-const stats = [
-  { label: "Projects", value: "12", icon: FolderOpen, color: "text-indigo-400", bg: "bg-indigo-500/10" },
-  { label: "Files analyzed", value: "38", icon: FileStack, color: "text-violet-400", bg: "bg-violet-500/10" },
-  { label: "Reports", value: "19", icon: TrendingUp, color: "text-emerald-400", bg: "bg-emerald-500/10" },
-  { label: "Usage this month", value: "72%", icon: Activity, color: "text-amber-400", bg: "bg-amber-500/10" },
-];
+type Stats = {
+  total_projects: number;
+  total_files: number;
+  total_analyses: number;
+  ready_projects: number;
+};
 
 export default function DashboardPage() {
   const projectsListRef = useRef<ProjectsListHandle>(null);
+  const [stats, setStats] = useState<Stats | null>(null);
+
+  function refreshStats() {
+    getProjectStats().then(setStats).catch(() => {});
+  }
+
+  useEffect(() => { refreshStats(); }, []);
+
+  const statCards = [
+    {
+      label: "Projects",
+      value: stats ? String(stats.total_projects) : "—",
+      icon: FolderOpen,
+      color: "text-indigo-400",
+      bg: "bg-indigo-500/10",
+    },
+    {
+      label: "Files uploaded",
+      value: stats ? String(stats.total_files) : "—",
+      icon: FileStack,
+      color: "text-violet-400",
+      bg: "bg-violet-500/10",
+    },
+    {
+      label: "Analyses run",
+      value: stats ? String(stats.total_analyses) : "—",
+      icon: Activity,
+      color: "text-emerald-400",
+      bg: "bg-emerald-500/10",
+    },
+    {
+      label: "Ready projects",
+      value: stats ? String(stats.ready_projects) : "—",
+      icon: CheckCircle2,
+      color: "text-amber-400",
+      bg: "bg-amber-500/10",
+    },
+  ];
 
   return (
     <AppShell>
@@ -26,7 +73,7 @@ export default function DashboardPage() {
           <div className="flex items-start justify-between">
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-white">
-                Welcome back 👋
+                Welcome back
               </h1>
               <p className="mt-1 text-sm text-white/50">
                 Manage your projects and review your latest analyses.
@@ -41,9 +88,9 @@ export default function DashboardPage() {
             </Link>
           </div>
 
-          {/* Stats */}
+          {/* Live stats */}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {stats.map((stat) => (
+            {statCards.map((stat) => (
               <div
                 key={stat.label}
                 className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 transition-all hover:border-white/10 hover:bg-white/[0.04]"
@@ -83,7 +130,10 @@ export default function DashboardPage() {
               <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
                 <h2 className="mb-4 text-base font-semibold text-white">New project</h2>
                 <CreateProjectForm
-                  onCreated={() => projectsListRef.current?.reload()}
+                  onCreated={() => {
+                    projectsListRef.current?.reload();
+                    refreshStats();
+                  }}
                 />
               </div>
 

@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Play, CheckCircle2 } from "lucide-react";
+import { Loader2, Play, CheckCircle2, Share2, Copy, Check } from "lucide-react";
 
 import { StatsCards } from "@/components/analysis/stats-cards";
 import { InsightsList } from "@/components/analysis/insights-list";
@@ -26,6 +26,7 @@ import { PivotView } from "@/components/analysis/pivot-view";
 import { SegmentsView } from "@/components/analysis/segments-view";
 import { AbTestsView } from "@/components/analysis/ab-tests-view";
 import { QueryView } from "@/components/analysis/query-view";
+import { shareAnalysis } from "@/lib/api";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
@@ -72,6 +73,9 @@ export function RunAnalysis({ projectId }: Props) {
   const [tab, setTab] = useState("overview");
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<ProgressState | null>(null);
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const [copied, setCopied] = useState(false);
   const esRef = useRef<EventSource | null>(null);
 
   function handleRun() {
@@ -127,9 +131,30 @@ export function RunAnalysis({ projectId }: Props) {
     };
   }
 
+  async function handleShare() {
+    setSharing(true);
+    try {
+      const { share_token } = await shareAnalysis(projectId);
+      setShareToken(share_token);
+    } catch {
+      // silent — share button just won't show URL
+    } finally {
+      setSharing(false);
+    }
+  }
+
+  function handleCopy() {
+    if (!shareToken) return;
+    const url = `${window.location.origin}/share/${shareToken}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-3">
         <Button
           onClick={handleRun}
           disabled={loading}
@@ -147,11 +172,42 @@ export function RunAnalysis({ projectId }: Props) {
             </>
           )}
         </Button>
+
         {result && !loading && (
-          <span className="flex items-center gap-1.5 text-xs text-emerald-400">
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            Analysis complete
-          </span>
+          <>
+            <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Analysis complete
+            </span>
+
+            {!shareToken ? (
+              <Button
+                onClick={handleShare}
+                disabled={sharing}
+                variant="ghost"
+                className="gap-2 text-xs text-white/50 hover:text-white border border-white/10 hover:border-white/20"
+              >
+                {sharing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Share2 className="h-3.5 w-3.5" />
+                )}
+                Share
+              </Button>
+            ) : (
+              <button
+                onClick={handleCopy}
+                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-white/60 hover:text-white hover:border-white/20 transition-colors"
+              >
+                {copied ? (
+                  <Check className="h-3.5 w-3.5 text-emerald-400" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
+                {copied ? "Copied!" : "Copy share link"}
+              </button>
+            )}
+          </>
         )}
       </div>
 

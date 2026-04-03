@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Project
+from app.models import AnalysisResult, Project, ProjectFile
 from app.schemas.project import ProjectCreate, ProjectResponse
+from app.state import PROJECT_FILES
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -23,6 +24,22 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
     return project.to_dict()
 
 
+# NOTE: /stats must be declared before /{project_id} so FastAPI matches it first
+@router.get("/stats")
+def project_stats(db: Session = Depends(get_db)):
+    """Aggregate counts for the dashboard overview cards."""
+    total_projects = db.query(Project).count()
+    total_files = db.query(ProjectFile).count()
+    total_analyses = db.query(AnalysisResult).count()
+    ready_projects = db.query(Project).filter(Project.status == "ready").count()
+    return {
+        "total_projects": total_projects,
+        "total_files": total_files,
+        "total_analyses": total_analyses,
+        "ready_projects": ready_projects,
+    }
+
+
 @router.get("/{project_id}")
 def get_project(project_id: int, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -37,4 +54,5 @@ def delete_project(project_id: int, db: Session = Depends(get_db)):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
     db.delete(project)
+    PROJECT_FILES.pop(project_id, None)
     db.commit()
