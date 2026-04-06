@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { BarChart2 } from "lucide-react";
 
 export function Navbar() {
@@ -31,9 +32,12 @@ export function Navbar() {
         </nav>
 
         {/* CTA */}
-        <Button asChild className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 hover:bg-indigo-500 transition-colors">
-          <Link href="/signup">Start for free →</Link>
-        </Button>
+        <Link
+          href="/signup"
+          className={cn(buttonVariants(), "rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 hover:bg-indigo-500 transition-colors")}
+        >
+          Start for free →
+        </Link>
 
       </div>
     </header>

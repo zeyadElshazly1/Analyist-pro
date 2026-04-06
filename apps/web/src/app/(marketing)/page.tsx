@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { Navbar } from "@/components/layout/navbar";
 import {
   BarChart2,
@@ -49,14 +50,18 @@ export default function HomePage() {
 
         {/* CTAs */}
         <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
-          <Button asChild className="rounded-xl bg-indigo-600 px-8 py-3 text-base font-semibold text-white shadow-xl shadow-indigo-500/30 hover:bg-indigo-500 transition-all hover:-translate-y-0.5">
-            <Link href="/signup">Start for free</Link>
-          </Button>
-          <Button asChild variant="ghost" className="rounded-xl px-8 py-3 text-base font-medium text-white/70 hover:text-white hover:bg-white/5 transition-all">
-            <Link href="/pricing" className="flex items-center gap-2">
-              View pricing <ArrowRight className="h-4 w-4" />
-            </Link>
-          </Button>
+          <Link
+            href="/signup"
+            className={cn(buttonVariants(), "rounded-xl bg-indigo-600 px-8 py-3 text-base font-semibold text-white shadow-xl shadow-indigo-500/30 hover:bg-indigo-500 transition-all hover:-translate-y-0.5")}
+          >
+            Start for free
+          </Link>
+          <Link
+            href="/pricing"
+            className={cn(buttonVariants({ variant: "ghost" }), "flex items-center gap-2 rounded-xl px-8 py-3 text-base font-medium text-white/70 hover:text-white hover:bg-white/5 transition-all")}
+          >
+            View pricing <ArrowRight className="h-4 w-4" />
+          </Link>
         </div>
 
         <p className="mt-8 text-sm text-white/30">
@@ -206,12 +211,18 @@ export default function HomePage() {
               No setup. No SQL. No data science degree required. Just upload your file and let AI do the work.
             </p>
             <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
-              <Button asChild className="rounded-xl bg-indigo-600 px-8 py-3 text-base font-semibold text-white shadow-xl shadow-indigo-500/30 hover:bg-indigo-500 transition-all">
-                <Link href="/signup">Create free account</Link>
-              </Button>
-              <Button asChild variant="ghost" className="rounded-xl px-8 py-3 text-base font-medium text-white/60 hover:text-white hover:bg-white/5">
-                <Link href="/pricing">See pricing</Link>
-              </Button>
+              <Link
+                href="/signup"
+                className={cn(buttonVariants(), "rounded-xl bg-indigo-600 px-8 py-3 text-base font-semibold text-white shadow-xl shadow-indigo-500/30 hover:bg-indigo-500 transition-all")}
+              >
+                Create free account
+              </Link>
+              <Link
+                href="/pricing"
+                className={cn(buttonVariants({ variant: "ghost" }), "rounded-xl px-8 py-3 text-base font-medium text-white/60 hover:text-white hover:bg-white/5")}
+              >
+                See pricing
+              </Link>
             </div>
             <p className="mt-6 text-sm text-white/30">Free plan includes 3 projects. No credit card required.</p>
           </div>
