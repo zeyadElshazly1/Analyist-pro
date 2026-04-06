@@ -220,3 +220,169 @@ def generate_pdf_report(df: pd.DataFrame, analysis_result: dict, project_name: s
         return html.encode("utf-8")
     except Exception:
         return html.encode("utf-8")
+
+
+def generate_excel_report(
+    df: pd.DataFrame,
+    analysis_result: dict,
+    project_name: str = "Dataset Analysis",
+) -> bytes:
+    """
+    Generate a multi-sheet Excel workbook from an analysis result.
+    Returns raw bytes suitable for an HTTP response.
+
+    Sheets:
+        1. Summary       — dataset stats + health score
+        2. Insights      — all insights as a table
+        3. Column Profiles — per-column statistics
+        4. Cleaning Report — cleaning steps
+        5. Data Preview  — first 200 rows of raw data
+    """
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    DARK_FILL = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+    HEADER_FONT = Font(bold=True, color="F8FAFC", size=11)
+    TITLE_FONT = Font(bold=True, color="F8FAFC", size=14)
+    NORMAL_FONT = Font(color="CBD5E1", size=10)
+    THIN_BORDER = Border(
+        bottom=Side(style="thin", color="334155"),
+    )
+
+    def _style_header_row(ws, row_num: int, ncols: int):
+        for col in range(1, ncols + 1):
+            cell = ws.cell(row=row_num, column=col)
+            cell.fill = DARK_FILL
+            cell.font = HEADER_FONT
+            cell.alignment = Alignment(horizontal="left", vertical="center")
+            cell.border = THIN_BORDER
+
+    def _auto_width(ws, min_w: int = 10, max_w: int = 50):
+        for col in ws.columns:
+            max_len = max_w
+            col_letter = get_column_letter(col[0].column)
+            vals = [str(c.value or "") for c in col if c.value is not None]
+            if vals:
+                max_len = min(max(len(v) for v in vals) + 4, max_w)
+                max_len = max(max_len, min_w)
+            ws.column_dimensions[col_letter].width = max_len
+
+    wb = Workbook()
+
+    # ── Sheet 1: Summary ──────────────────────────────────────────────────────
+    ws1 = wb.active
+    ws1.title = "Summary"
+    ws1.sheet_view.showGridLines = False
+
+    ws1["A1"] = project_name
+    ws1["A1"].font = TITLE_FONT
+    ws1["A2"] = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    ws1["A2"].font = Font(color="64748B", size=10, italic=True)
+
+    summary = analysis_result.get("dataset_summary", {})
+    health = analysis_result.get("health_score", {})
+
+    headers = ["Metric", "Value"]
+    ws1.append([])
+    ws1.append(headers)
+    _style_header_row(ws1, ws1.max_row, 2)
+
+    stats = [
+        ("Rows", summary.get("rows", "—")),
+        ("Columns", summary.get("columns", "—")),
+        ("Numeric Columns", summary.get("numeric_cols", "—")),
+        ("Categorical Columns", summary.get("categorical_cols", "—")),
+        ("Missing Data %", f"{summary.get('missing_pct', 0):.1f}%"),
+        ("Health Score", f"{health.get('total', health.get('overall', '—'))}/100"),
+    ]
+    for label, val in stats:
+        ws1.append([label, val])
+
+    ws1.freeze_panes = "A5"
+    _auto_width(ws1)
+
+    # ── Sheet 2: Insights ─────────────────────────────────────────────────────
+    ws2 = wb.create_sheet("Insights")
+    ws2.sheet_view.showGridLines = False
+
+    headers2 = ["#", "Type", "Severity", "Finding", "Evidence", "Action"]
+    ws2.append(headers2)
+    _style_header_row(ws2, 1, len(headers2))
+    ws2.freeze_panes = "A2"
+
+    insights = analysis_result.get("insights", [])
+    for i, ins in enumerate(insights, 1):
+        ws2.append([
+            i,
+            ins.get("type", ""),
+            ins.get("severity", ""),
+            ins.get("finding", ins.get("title", "")),
+            ins.get("evidence", ""),
+            ins.get("action", ""),
+        ])
+
+    _auto_width(ws2, max_w=60)
+
+    # ── Sheet 3: Column Profiles ──────────────────────────────────────────────
+    ws3 = wb.create_sheet("Column Profiles")
+    ws3.sheet_view.showGridLines = False
+
+    headers3 = ["Column", "Type", "Missing %", "Unique", "Mean", "Std", "Min", "Max"]
+    ws3.append(headers3)
+    _style_header_row(ws3, 1, len(headers3))
+    ws3.freeze_panes = "A2"
+
+    profile = analysis_result.get("profile", {})
+    columns_profile = profile.get("columns", []) if isinstance(profile, dict) else []
+    for col in columns_profile:
+        ws3.append([
+            col.get("name", ""),
+            col.get("dtype", ""),
+            f"{col.get('missing_pct', 0):.1f}%",
+            col.get("unique_count", col.get("n_unique", "—")),
+            round(col.get("mean", 0) or 0, 4) if col.get("mean") is not None else "—",
+            round(col.get("std", 0) or 0, 4) if col.get("std") is not None else "—",
+            col.get("min", "—"),
+            col.get("max", "—"),
+        ])
+
+    _auto_width(ws3)
+
+    # ── Sheet 4: Cleaning Report ──────────────────────────────────────────────
+    ws4 = wb.create_sheet("Cleaning Report")
+    ws4.sheet_view.showGridLines = False
+
+    headers4 = ["Step", "Detail", "Impact"]
+    ws4.append(headers4)
+    _style_header_row(ws4, 1, len(headers4))
+    ws4.freeze_panes = "A2"
+
+    cleaning = analysis_result.get("cleaning_report", [])
+    for item in cleaning:
+        if isinstance(item, dict):
+            ws4.append([item.get("step", ""), item.get("detail", ""), item.get("impact", "")])
+        else:
+            ws4.append([str(item), "", ""])
+
+    _auto_width(ws4, max_w=60)
+
+    # ── Sheet 5: Data Preview ─────────────────────────────────────────────────
+    if not df.empty:
+        ws5 = wb.create_sheet("Data Preview")
+        ws5.sheet_view.showGridLines = False
+
+        preview = df.head(200)
+        ws5.append(list(preview.columns))
+        _style_header_row(ws5, 1, len(preview.columns))
+        ws5.freeze_panes = "A2"
+
+        for _, row in preview.iterrows():
+            ws5.append([str(v) if not isinstance(v, (int, float, type(None))) else v for v in row])
+
+        _auto_width(ws5)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

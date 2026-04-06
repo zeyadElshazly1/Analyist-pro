@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
   FolderOpen,
@@ -9,7 +10,9 @@ import {
   CreditCard,
   Settings,
   Sparkles,
+  LogOut,
 } from "lucide-react";
+import { getMe, logout } from "@/lib/api";
 
 const links = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -21,6 +24,18 @@ const links = [
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const [user, setUser] = useState<{ email: string; plan: string } | null>(null);
+
+  useEffect(() => {
+    getMe()
+      .then((u) => setUser(u))
+      .catch(() => setUser(null));
+  }, []);
+
+  const initial = user?.email?.[0]?.toUpperCase() ?? "U";
+  const planLabel = user?.plan
+    ? user.plan.charAt(0).toUpperCase() + user.plan.slice(1) + " plan"
+    : "Free plan";
 
   return (
     <aside className="hidden w-60 flex-shrink-0 flex-col border-r border-white/[0.05] bg-[#09090f] lg:flex">
@@ -62,32 +77,43 @@ export function AppSidebar() {
       </nav>
 
       {/* Upgrade nudge */}
-      <div className="mx-3 mb-3 rounded-xl border border-indigo-500/20 bg-indigo-600/8 p-3">
-        <div className="mb-1.5 flex items-center gap-2">
-          <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
-          <p className="text-xs font-semibold text-indigo-300">Free plan</p>
+      {(!user || user.plan === "free") && (
+        <div className="mx-3 mb-3 rounded-xl border border-indigo-500/20 bg-indigo-600/8 p-3">
+          <div className="mb-1.5 flex items-center gap-2">
+            <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
+            <p className="text-xs font-semibold text-indigo-300">Free plan</p>
+          </div>
+          <p className="mb-2.5 text-[11px] leading-relaxed text-white/40">
+            Upgrade to Pro for unlimited projects and AI insights.
+          </p>
+          <Link
+            href="/billing"
+            className="block rounded-lg bg-indigo-600 px-3 py-1.5 text-center text-[11px] font-semibold text-white transition-colors hover:bg-indigo-500"
+          >
+            Upgrade to Pro
+          </Link>
         </div>
-        <p className="mb-2.5 text-[11px] leading-relaxed text-white/40">
-          Upgrade to Pro for unlimited projects and AI insights.
-        </p>
-        <Link
-          href="/billing"
-          className="block rounded-lg bg-indigo-600 px-3 py-1.5 text-center text-[11px] font-semibold text-white transition-colors hover:bg-indigo-500"
-        >
-          Upgrade to Pro
-        </Link>
-      </div>
+      )}
 
       {/* User */}
       <div className="border-t border-white/[0.05] p-3">
-        <div className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-white/[0.03]">
+        <div className="flex items-center gap-2.5 rounded-lg px-2 py-2">
           <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-xs font-bold text-white">
-            U
+            {initial}
           </div>
-          <div className="min-w-0">
-            <p className="truncate text-xs font-medium text-white/80">User</p>
-            <p className="truncate text-[11px] text-white/35">Free plan</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-medium text-white/80">
+              {user?.email ?? "…"}
+            </p>
+            <p className="truncate text-[11px] text-white/35">{planLabel}</p>
           </div>
+          <button
+            onClick={logout}
+            title="Log out"
+            className="ml-1 flex-shrink-0 rounded p-1 text-white/30 transition-colors hover:text-white/70"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
     </aside>

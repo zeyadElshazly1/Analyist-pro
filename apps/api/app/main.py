@@ -20,6 +20,7 @@ from app.routes.stats import router as stats_router
 from app.routes.query import router as query_router
 from app.routes.features import router as features_router
 from app.routes.analysis_stream import router as analysis_stream_router
+from app.routes.auth import router as auth_router
 
 # ── Structured logging setup ──────────────────────────────────────────────────
 logging.basicConfig(
@@ -96,6 +97,7 @@ app.include_router(stats_router)
 app.include_router(query_router)
 app.include_router(features_router)
 app.include_router(analysis_stream_router)
+app.include_router(auth_router)
 
 # ── Exception handlers ────────────────────────────────────────────────────────
 @app.exception_handler(ValueError)

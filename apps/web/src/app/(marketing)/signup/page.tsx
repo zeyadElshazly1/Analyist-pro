@@ -13,6 +13,7 @@ export default function SignupPage() {
             title="Create your account"
             subtitle="Start analyzing data, generating insights, and exporting reports."
             actionText="Sign up"
+            mode="register"
           />
 
           <p className="mt-6 text-center text-sm text-white/60">

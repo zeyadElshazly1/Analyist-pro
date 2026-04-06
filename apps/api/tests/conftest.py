@@ -4,7 +4,6 @@ Uses an in-memory SQLite database so tests are fully isolated from production.
 """
 import io
 import os
-import tempfile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -77,10 +76,19 @@ def client(setup_db):
 
 
 @pytest.fixture
-def project(client):
+def auth_headers(client):
+    """Register a test user and return Authorization headers."""
+    r = client.post("/auth/register", json={"email": "test@example.com", "password": "testpass123"})
+    assert r.status_code == 200, r.text
+    token = r.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def project(client, auth_headers):
     """Create a project and return its JSON."""
-    r = client.post("/projects", json={"name": "Test Project"})
-    assert r.status_code == 200
+    r = client.post("/projects", json={"name": "Test Project"}, headers=auth_headers)
+    assert r.status_code == 200, r.text
     return r.json()
 
 
@@ -103,13 +111,14 @@ def csv_bytes():
 
 
 @pytest.fixture
-def uploaded_project(client, project, csv_bytes):
+def uploaded_project(client, project, csv_bytes, auth_headers):
     """Project with a CSV already uploaded. Returns project dict."""
     pid = project["id"]
     r = client.post(
         "/upload",
         files={"file": ("data.csv", io.BytesIO(csv_bytes), "text/csv")},
         data={"project_id": str(pid)},
+        headers=auth_headers,
     )
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text
     return project

@@ -134,6 +134,14 @@ export default function ReportDetailPage() {
                     Export HTML
                   </button>
 
+                  <button
+                    onClick={() => exportReport(projectId, "xlsx")}
+                    className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Export Excel
+                  </button>
+
                   {!shareToken ? (
                     <button
                       onClick={handleShare}

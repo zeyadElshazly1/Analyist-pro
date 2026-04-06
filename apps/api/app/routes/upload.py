@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.config import ALLOWED_EXTENSIONS, MAX_UPLOAD_BYTES, UPLOAD_DIR
 from app.db import get_db
-from app.models import Project, ProjectFile
+from app.middleware.auth import get_current_user
+from app.models import Project, ProjectFile, User
 from app.state import PROJECT_FILES
 
 router = APIRouter(prefix="/upload", tags=["upload"])
@@ -18,10 +19,13 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 async def upload_file(
     project_id: int = Form(...),
     file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # ── Validate project exists ───────────────────────────────────────────────
-    project = db.query(Project).filter(Project.id == project_id).first()
+    # ── Validate project exists and belongs to user ───────────────────────────
+    project = db.query(Project).filter(
+        Project.id == project_id, Project.user_id == current_user.id
+    ).first()
     if not project:
         raise HTTPException(status_code=404, detail=f"Project {project_id} not found.")
 
