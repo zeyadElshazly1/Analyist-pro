@@ -57,6 +57,7 @@ const TAB_GROUPS = [
     tabs: [
       { id: "query", label: "SQL" },
       { id: "ask-ai", label: "Ask AI" },
+      { id: "story", label: "Story" },
     ],
   },
 ];

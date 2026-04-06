@@ -115,6 +115,7 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
     # ── Persist to database ───────────────────────────────────────────────────
     file_info = PROJECT_FILES.get(project_id) or {}
     file_hash = file_info.get("file_hash")
+    analysis_id = None
     db = SessionLocal()
     try:
         analysis = AnalysisResult(
@@ -124,7 +125,9 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
         )
         db.add(analysis)
         db.commit()
-        logger.info(f"Stream analysis persisted for project {project_id}: {len(insights)} insights")
+        db.refresh(analysis)
+        analysis_id = analysis.id
+        logger.info(f"Stream analysis persisted for project {project_id}: {len(insights)} insights, id={analysis_id}")
     except Exception as e:
         logger.error(f"Failed to persist stream analysis for project {project_id}: {e}", exc_info=True)
         db.rollback()
@@ -135,6 +138,10 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
     PROJECT_FILES.setdefault(project_id, {})["last_insights"] = [
         i.get("finding", "") for i in insights[:5]
     ]
+
+    # Include analysis_id in result so frontend can use it for story generation
+    if analysis_id:
+        result["analysis_id"] = analysis_id
 
     yield emit("Complete", 100, "Analysis finished")
     yield _sse({"step": "result", "progress": 100, "result": result})

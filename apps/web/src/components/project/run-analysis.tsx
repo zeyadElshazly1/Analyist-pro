@@ -26,6 +26,7 @@ import { PivotView } from "@/components/analysis/pivot-view";
 import { SegmentsView } from "@/components/analysis/segments-view";
 import { AbTestsView } from "@/components/analysis/ab-tests-view";
 import { QueryView } from "@/components/analysis/query-view";
+import { DataStoryView } from "@/components/analysis/data-story-view";
 import { shareAnalysis } from "@/lib/api";
 
 const API_BASE_URL =
@@ -70,6 +71,7 @@ function ProgressBar({ progress, step, detail }: ProgressState) {
 export function RunAnalysis({ projectId }: Props) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [analysisId, setAnalysisId] = useState<number | null>(null);
   const [tab, setTab] = useState("overview");
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<ProgressState | null>(null);
@@ -104,6 +106,7 @@ export function RunAnalysis({ projectId }: Props) {
 
         if (data.result) {
           setResult(data.result);
+          if (data.result.analysis_id) setAnalysisId(data.result.analysis_id as number);
           setTab("overview");
           setLoading(false);
           setProgress(null);
@@ -368,6 +371,13 @@ export function RunAnalysis({ projectId }: Props) {
           {tab === "query" && (
             <TabPanel>
               <QueryView projectId={projectId} />
+            </TabPanel>
+          )}
+
+          {/* ── Data Story ───────────────────────────────────────────── */}
+          {tab === "story" && (
+            <TabPanel>
+              <DataStoryView analysisId={analysisId} />
             </TabPanel>
           )}
         </div>

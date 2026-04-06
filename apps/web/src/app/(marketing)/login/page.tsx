@@ -13,6 +13,7 @@ export default function LoginPage() {
             title="Welcome back"
             subtitle="Sign in to access your projects, reports, and saved analyses."
             actionText="Login"
+            mode="login"
           />
 
           <p className="mt-6 text-center text-sm text-white/60">

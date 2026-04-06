@@ -1,8 +1,36 @@
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 
+// ── Auth token helpers ────────────────────────────────────────────────────────
+
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("auth_token");
+}
+
+export function setToken(token: string) {
+  localStorage.setItem("auth_token", token);
+  // Also set a cookie so Next.js middleware can read it for route protection
+  document.cookie = `auth_token=${token}; path=/; SameSite=Strict; max-age=${60 * 60 * 24 * 7}`;
+}
+
+export function clearToken() {
+  localStorage.removeItem("auth_token");
+  document.cookie = "auth_token=; path=/; max-age=0";
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+// ── Base fetch helpers ────────────────────────────────────────────────────────
+
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, { cache: "no-store" });
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    cache: "no-store",
+    headers: authHeaders(),
+  });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || `GET ${path} failed: ${res.status}`);
@@ -13,7 +41,7 @@ async function get<T>(path: string): Promise<T> {
 async function post<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
-    headers: body ? { "Content-Type": "application/json" } : {},
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -21,6 +49,53 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
     throw new Error(text || `POST ${path} failed: ${res.status}`);
   }
   return res.json();
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  user: { id: number; email: string; plan: string; created_at: string };
+}
+
+export async function login(email: string, password: string): Promise<AuthResponse> {
+  const res = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || "Login failed");
+  }
+  const data: AuthResponse = await res.json();
+  setToken(data.access_token);
+  return data;
+}
+
+export async function register(email: string, password: string): Promise<AuthResponse> {
+  const res = await fetch(`${API_BASE_URL}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || "Registration failed");
+  }
+  const data: AuthResponse = await res.json();
+  setToken(data.access_token);
+  return data;
+}
+
+export function getMe() {
+  return get<{ id: number; email: string; plan: string; created_at: string }>("/auth/me");
+}
+
+export function logout() {
+  clearToken();
+  window.location.href = "/login";
 }
 
 // ── Projects ──────────────────────────────────────────────────────────────────
@@ -34,7 +109,10 @@ export function createProject(name: string) {
 }
 
 export function deleteProject(projectId: number) {
-  return fetch(`${API_BASE_URL}/projects/${projectId}`, { method: "DELETE" });
+  return fetch(`${API_BASE_URL}/projects/${projectId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
 }
 
 export function getProjectStats() {
@@ -54,6 +132,7 @@ export async function uploadFile(projectId: number, file: File) {
   formData.append("file", file);
   const res = await fetch(`${API_BASE_URL}/upload`, {
     method: "POST",
+    headers: authHeaders(),
     body: formData,
   });
   if (!res.ok) {
@@ -103,6 +182,22 @@ export function getAnalysisResult(analysisId: number) {
     file_hash: string | null;
     result: Record<string, unknown>;
   }>(`/analysis/result/${analysisId}`);
+}
+
+export interface StorySlide {
+  slide_num: number;
+  title: string;
+  narrative: string;
+  key_points: string[];
+}
+
+export interface DataStory {
+  title: string;
+  slides: StorySlide[];
+}
+
+export function generateStory(analysisId: number) {
+  return post<DataStory>(`/analysis/story/${analysisId}`);
 }
 
 // ── Charts ────────────────────────────────────────────────────────────────────
@@ -213,9 +308,23 @@ export function sendChatMessage(
 
 // ── Report Export ─────────────────────────────────────────────────────────────
 
-export function exportReport(projectId: number, format: "html" | "pdf" = "html") {
-  const url = `${process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000"}/reports/export/${projectId}?format=${format}`;
-  window.open(url, "_blank");
+export function exportReport(projectId: number, format: "html" | "pdf" | "xlsx" = "html") {
+  const token = getToken();
+  const tokenParam = token ? `&token=${encodeURIComponent(token)}` : "";
+  const url = `${API_BASE_URL}/reports/export/${projectId}?format=${format}`;
+  // For xlsx, trigger a direct download with auth header via anchor trick
+  if (format === "xlsx") {
+    fetch(url, { headers: authHeaders() })
+      .then((r) => r.blob())
+      .then((blob) => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `analysis_report_${projectId}.xlsx`;
+        a.click();
+      });
+    return;
+  }
+  window.open(url + tokenParam, "_blank");
 }
 
 // ── Pivot ─────────────────────────────────────────────────────────────────────
@@ -344,5 +453,21 @@ export function createFeature(projectId: number, name: string, formula: string) 
     project_id: projectId,
     name,
     formula,
+  });
+}
+
+// ── Segments ──────────────────────────────────────────────────────────────────
+
+export function getSegmentColumns(projectId: number) {
+  return get<{ categorical_columns: string[]; numeric_columns: string[] }>(
+    `/explore/segments/columns?project_id=${projectId}`
+  );
+}
+
+export function runSegments(projectId: number, segmentCol: string, metricCol: string) {
+  return post<Record<string, unknown>>("/explore/segments/run", {
+    project_id: projectId,
+    segment_col: segmentCol,
+    metric_col: metricCol,
   });
 }

@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import AnalysisResult, ProjectFile
+from app.middleware.auth import get_current_user, optional_current_user
+from app.models import AnalysisResult, Project, ProjectFile, User
 from app.schemas.analysis import AnalysisRequest
 from app.services.analyzer import analyze_dataset, get_dataset_summary
 from app.services.cleaner import clean_dataset
@@ -31,7 +32,11 @@ def _get_file_path(project_id: int) -> str:
 
 
 @router.post("/run")
-def run_analysis(payload: AnalysisRequest, db: Session = Depends(get_db)):
+def run_analysis(
+    payload: AnalysisRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     project_id = payload.project_id
     file_path = _get_file_path(project_id)
 
@@ -96,7 +101,12 @@ def run_analysis(payload: AnalysisRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/history/{project_id}")
-def get_analysis_history(project_id: int, limit: int = Query(10, ge=1, le=50), db: Session = Depends(get_db)):
+def get_analysis_history(
+    project_id: int,
+    limit: int = Query(10, ge=1, le=50),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Return the N most recent analysis runs for a project."""
     results = (
         db.query(AnalysisResult)
@@ -117,7 +127,11 @@ def get_analysis_history(project_id: int, limit: int = Query(10, ge=1, le=50), d
 
 
 @router.get("/result/{analysis_id}")
-def get_analysis_result(analysis_id: int, db: Session = Depends(get_db)):
+def get_analysis_result(
+    analysis_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Return the full result JSON for a specific stored analysis run."""
     analysis = db.query(AnalysisResult).filter(AnalysisResult.id == analysis_id).first()
     if not analysis:
@@ -132,7 +146,11 @@ def get_analysis_result(analysis_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/preview/{project_id}")
-def preview_dataset(project_id: int, rows: int = Query(10, ge=1, le=100)):
+def preview_dataset(
+    project_id: int,
+    rows: int = Query(10, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+):
     """
     Return the first N rows of the raw uploaded dataset (before cleaning).
     Returns columns as a list and rows as a list-of-lists (frontend-friendly).
@@ -158,7 +176,11 @@ def preview_dataset(project_id: int, rows: int = Query(10, ge=1, le=100)):
 
 
 @router.post("/share/{project_id}")
-def create_share_link(project_id: int, db: Session = Depends(get_db)):
+def create_share_link(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Generate (or return existing) a public share token for the latest analysis."""
     analysis = (
         db.query(AnalysisResult)
@@ -179,7 +201,7 @@ def create_share_link(project_id: int, db: Session = Depends(get_db)):
 
 @router.get("/shared/{token}")
 def get_shared_analysis(token: str, db: Session = Depends(get_db)):
-    """Public endpoint — returns a full analysis result by share token."""
+    """Public endpoint — returns a full analysis result by share token (no auth required)."""
     analysis = (
         db.query(AnalysisResult)
         .filter(AnalysisResult.share_token == token)
@@ -194,3 +216,24 @@ def get_shared_analysis(token: str, db: Session = Depends(get_db)):
         "created_at": analysis.created_at.isoformat() if analysis.created_at else None,
         "result": result,
     }
+
+
+@router.post("/story/{analysis_id}")
+def generate_story(
+    analysis_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Use Claude to generate a 5-slide data story from a stored analysis result."""
+    analysis = db.query(AnalysisResult).filter(AnalysisResult.id == analysis_id).first()
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Analysis result not found.")
+
+    try:
+        result = json.loads(analysis.result_json)
+        from app.services.ai_chat_service import generate_data_story
+        story = generate_data_story(result)
+        return story
+    except Exception as e:
+        logger.error(f"Story generation failed for analysis {analysis_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Story generation failed: {e}")

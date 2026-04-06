@@ -16,14 +16,37 @@ def _utcnow():
     return datetime.now(timezone.utc)
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    plan = Column(String(50), default="free")  # free | pro | team
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    projects = relationship("Project", back_populates="owner", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "email": self.email,
+            "plan": self.plan,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class Project(Base):
     __tablename__ = "projects"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     status = Column(String(50), default="created")  # created | uploading | ready | error
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    owner = relationship("User", back_populates="projects")
 
     # Relationships
     files = relationship("ProjectFile", back_populates="project", cascade="all, delete-orphan")
