@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Column, Integer, String, Text, DateTime, BigInteger, JSON, ForeignKey, Boolean,
+    Column, Integer, String, Text, DateTime, BigInteger, ForeignKey,
 )
 from sqlalchemy.orm import relationship
 
@@ -19,9 +19,9 @@ def _utcnow():
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    # UUID string from Supabase auth.users — not auto-incremented
+    id = Column(String(36), primary_key=True)
     email = Column(String(255), unique=True, index=True, nullable=False)
-    hashed_password = Column(String(255), nullable=False)
     plan = Column(String(50), default="free")  # free | pro | team
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
@@ -40,7 +40,7 @@ class Project(Base):
     __tablename__ = "projects"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     status = Column(String(50), default="created")  # created | uploading | ready | error
     created_at = Column(DateTime(timezone=True), default=_utcnow)

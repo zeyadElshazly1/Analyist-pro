@@ -1,3 +1,5 @@
+import { supabase } from "./supabase";
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 
@@ -51,49 +53,32 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   return res.json();
 }
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
+// ── Auth (Supabase) ───────────────────────────────────────────────────────────
 
-export interface AuthResponse {
-  access_token: string;
-  token_type: string;
-  user: { id: number; email: string; plan: string; created_at: string };
-}
-
-export async function login(email: string, password: string): Promise<AuthResponse> {
-  const res = await fetch(`${API_BASE_URL}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.detail || "Login failed");
-  }
-  const data: AuthResponse = await res.json();
-  setToken(data.access_token);
+export async function login(email: string, password: string) {
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw new Error(error.message);
+  const token = data.session!.access_token;
+  setToken(token);
   return data;
 }
 
-export async function register(email: string, password: string): Promise<AuthResponse> {
-  const res = await fetch(`${API_BASE_URL}/auth/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.detail || "Registration failed");
+export async function register(email: string, password: string) {
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  if (error) throw new Error(error.message);
+  // session is null if email confirmation is required
+  if (data.session) {
+    setToken(data.session.access_token);
   }
-  const data: AuthResponse = await res.json();
-  setToken(data.access_token);
   return data;
 }
 
 export function getMe() {
-  return get<{ id: number; email: string; plan: string; created_at: string }>("/auth/me");
+  return get<{ id: string; email: string; plan: string; created_at: string }>("/auth/me");
 }
 
-export function logout() {
+export async function logout() {
+  await supabase.auth.signOut();
   clearToken();
   window.location.href = "/login";
 }
