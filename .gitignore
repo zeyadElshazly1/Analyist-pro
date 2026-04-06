@@ -31,3 +31,6 @@ htmlcov/
 # IDE
 .vscode/
 .idea/
+
+# Upload artifacts
+apps/api/uploads/
