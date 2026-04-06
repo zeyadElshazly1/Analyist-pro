@@ -14,9 +14,9 @@ Usage (frontend):
 """
 import json
 import logging
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from app.db import SessionLocal
@@ -148,12 +148,34 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
 
 
 @router.get("/stream/{project_id}")
-async def stream_analysis(project_id: int):
+async def stream_analysis(
+    project_id: int,
+    token: Optional[str] = Query(None, description="JWT token (EventSource can't send headers)"),
+):
     """
     SSE endpoint — streams analysis progress in real time.
+    Auth token passed as ?token= query param (EventSource doesn't support Authorization headers).
     Returns `data: {...}` messages, ending with a `result` message containing
     the full analysis payload. Results are persisted to the database.
     """
+    # Validate token and verify project belongs to user
+    if token:
+        from app.middleware.auth import _decode_token
+        from app.models import Project
+        user_id = _decode_token(token)
+        if user_id is not None:
+            db = SessionLocal()
+            try:
+                project = db.query(Project).filter(
+                    Project.id == project_id,
+                    Project.user_id == user_id,
+                ).first()
+                if not project:
+                    raise HTTPException(status_code=404, detail="Project not found.")
+            finally:
+                db.close()
+        # If token is invalid we still allow the stream (backward compat with no-auth mode)
+
     return StreamingResponse(
         _run_analysis_stream(project_id),
         media_type="text/event-stream",

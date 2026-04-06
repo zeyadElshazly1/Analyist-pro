@@ -225,7 +225,12 @@ def generate_story(
     db: Session = Depends(get_db),
 ):
     """Use Claude to generate a 5-slide data story from a stored analysis result."""
-    analysis = db.query(AnalysisResult).filter(AnalysisResult.id == analysis_id).first()
+    analysis = (
+        db.query(AnalysisResult)
+        .join(Project)
+        .filter(AnalysisResult.id == analysis_id, Project.user_id == current_user.id)
+        .first()
+    )
     if not analysis:
         raise HTTPException(status_code=404, detail="Analysis result not found.")
 

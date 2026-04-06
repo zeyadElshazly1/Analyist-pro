@@ -2,7 +2,7 @@
 Authentication routes: register, login, me.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 class RegisterRequest(BaseModel):
-    email: str
+    email: str  # Validated manually below (EmailStr requires email-validator dep)
     password: str
 
 
@@ -35,7 +35,9 @@ class TokenResponse(BaseModel):
 
 @router.post("/register", response_model=TokenResponse)
 def register(req: RegisterRequest, db: Session = Depends(get_db)):
-    if not req.email or "@" not in req.email:
+    import re
+    email_re = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
+    if not req.email or not email_re.match(req.email.strip()):
         raise HTTPException(status_code=422, detail="Invalid email address.")
     if len(req.password) < 6:
         raise HTTPException(status_code=422, detail="Password must be at least 6 characters.")
