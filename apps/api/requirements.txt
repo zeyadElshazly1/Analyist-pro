@@ -17,3 +17,5 @@ sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.0
 chardet>=5.0.0
 sentry-sdk[fastapi]>=1.40.0
+PyJWT>=2.8.0
+cryptography>=41.0.0
