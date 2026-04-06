@@ -21,8 +21,38 @@ export function clearToken() {
   document.cookie = "auth_token=; path=/; max-age=0";
 }
 
-function authHeaders(): Record<string, string> {
-  const token = getToken();
+/**
+ * Always returns the freshest available token.
+ * Prefers the live Supabase session (auto-refreshed) over the cached localStorage value.
+ */
+async function getFreshToken(): Promise<string | null> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token ?? null;
+    if (token) {
+      // Keep localStorage + cookie in sync so middleware still works
+      setToken(token);
+    }
+    return token;
+  } catch {
+    // Supabase not available (SSR, missing env vars) — fall back to cached token
+    return getToken();
+  }
+}
+
+// Keep localStorage/cookie fresh whenever Supabase silently refreshes the session
+if (typeof window !== "undefined") {
+  supabase.auth.onAuthStateChange((_event, session) => {
+    if (session?.access_token) {
+      setToken(session.access_token);
+    } else {
+      clearToken();
+    }
+  });
+}
+
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await getFreshToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -31,7 +61,7 @@ function authHeaders(): Record<string, string> {
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     cache: "no-store",
-    headers: authHeaders(),
+    headers: await authHeaders(),
   });
   if (!res.ok) {
     const text = await res.text();
@@ -43,7 +73,7 @@ async function get<T>(path: string): Promise<T> {
 async function post<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -93,10 +123,10 @@ export function createProject(name: string) {
   return post<{ id: number; name: string }>("/projects", { name });
 }
 
-export function deleteProject(projectId: number) {
+export async function deleteProject(projectId: number) {
   return fetch(`${API_BASE_URL}/projects/${projectId}`, {
     method: "DELETE",
-    headers: authHeaders(),
+    headers: await authHeaders(),
   });
 }
 
@@ -117,7 +147,7 @@ export async function uploadFile(projectId: number, file: File) {
   formData.append("file", file);
   const res = await fetch(`${API_BASE_URL}/upload`, {
     method: "POST",
-    headers: authHeaders(),
+    headers: await authHeaders(),
     body: formData,
   });
   if (!res.ok) {
@@ -299,7 +329,7 @@ export function exportReport(projectId: number, format: "html" | "pdf" | "xlsx" 
   const url = `${API_BASE_URL}/reports/export/${projectId}?format=${format}`;
   // For xlsx, trigger a direct download with auth header via anchor trick
   if (format === "xlsx") {
-    fetch(url, { headers: authHeaders() })
+    authHeaders().then((hdrs) => fetch(url, { headers: hdrs }))
       .then((r) => r.blob())
       .then((blob) => {
         const a = document.createElement("a");
