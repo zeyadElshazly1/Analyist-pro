@@ -19,7 +19,11 @@ from app.db import get_db
 from app.models import User
 
 # ── Config ────────────────────────────────────────────────────────────────────
-SECRET_KEY = os.getenv("SUPABASE_JWT_SECRET", "").encode()
+# Read lazily so the .env loaded by db.py is always available by the time
+# a real request arrives, even if auth.py was imported before db.py ran load_dotenv.
+def _get_secret_key() -> bytes:
+    key = os.getenv("SUPABASE_JWT_SECRET", "")
+    return key.encode()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
@@ -43,13 +47,14 @@ def _decode_token(token: str) -> Optional[dict]:
     Payload contains: sub (UUID), email, role, exp, aud, etc.
     """
     try:
+        secret_key = _get_secret_key()
         parts = token.split(".")
         if len(parts) != 3:
             return None
         header, payload_b64, signature = parts
         signing_input = f"{header}.{payload_b64}".encode()
         expected_sig = _b64url_encode(
-            hmac.new(SECRET_KEY, signing_input, hashlib.sha256).digest()
+            hmac.new(secret_key, signing_input, hashlib.sha256).digest()
         )
         if not hmac.compare_digest(signature, expected_sig):
             return None

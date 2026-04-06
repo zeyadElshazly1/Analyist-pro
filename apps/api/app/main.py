@@ -81,6 +81,12 @@ def startup_event():
     from app.db import init_db
     init_db()
     logger.info("Database initialized")
+    # Verify critical env vars are loaded
+    jwt_secret = os.getenv("SUPABASE_JWT_SECRET", "")
+    if not jwt_secret:
+        logger.warning("SUPABASE_JWT_SECRET is not set — all authenticated requests will fail!")
+    else:
+        logger.info(f"SUPABASE_JWT_SECRET loaded ({len(jwt_secret)} chars)")
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(projects_router)
