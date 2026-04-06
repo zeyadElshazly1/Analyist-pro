@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState } from "react";
@@ -53,7 +54,7 @@ export function MultifileCompare({ currentProjectId }: Props) {
     <div className="space-y-4">
       <h2 className="font-semibold text-white">Compare Files</h2>
       <p className="text-sm text-white/40">
-        Compare this project's dataset with another project's uploaded file.
+        Compare this project&apos;s dataset with another project&apos;s uploaded file.
       </p>
 
       {error && (

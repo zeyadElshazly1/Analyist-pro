@@ -62,8 +62,8 @@ def get_project_file_info(project_id: int) -> dict[str, Any] | None:
         logger.warning(f"DB lookup for project {project_id} failed: {e}")
 
     # 3. Disk scan fallback (backward compat with pre-DB uploads)
-    api_root = Path(__file__).resolve().parents[1]
-    uploads_dir = api_root / "uploads"
+    from app.config import UPLOAD_DIR
+    uploads_dir = Path(UPLOAD_DIR)
     if not uploads_dir.exists():
         return None
 

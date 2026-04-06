@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState, useEffect } from "react";
@@ -11,8 +12,6 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
-  Line,
-  LineChart,
   BarChart,
   Bar,
   Legend,

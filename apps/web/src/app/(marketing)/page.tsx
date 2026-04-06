@@ -9,7 +9,6 @@ import {
   FileText,
   TrendingUp,
   Shield,
-  Zap,
   ArrowRight,
   CheckCircle,
 } from "lucide-react";
