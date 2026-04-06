@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Navbar } from "@/components/layout/navbar";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { CheckCircle, BarChart2 } from "lucide-react";
 
 const plans = [
@@ -152,13 +153,18 @@ function PlanCard({ plan }: { plan: typeof plans[number] }) {
         <p className="mt-2 text-sm text-white/50">{plan.description}</p>
       </div>
 
-      <Button asChild className={`mb-8 w-full rounded-xl py-2.5 text-sm font-semibold transition-all ${
-        plan.highlighted
-          ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 hover:bg-indigo-500"
-          : "bg-white/[0.07] text-white hover:bg-white/10"
-      }`}>
-        <Link href={plan.ctaHref}>{plan.cta}</Link>
-      </Button>
+      <Link
+        href={plan.ctaHref}
+        className={cn(
+          buttonVariants(),
+          "mb-8 w-full rounded-xl py-2.5 text-sm font-semibold transition-all text-center",
+          plan.highlighted
+            ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 hover:bg-indigo-500"
+            : "bg-white/[0.07] text-white hover:bg-white/10"
+        )}
+      >
+        {plan.cta}
+      </Link>
 
       <ul className="flex-1 space-y-3">
         {plan.features.map((f) => (
