@@ -13,34 +13,21 @@ def test_health(client):
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
-def test_register(client):
-    r = client.post("/auth/register", json={"email": "a@b.com", "password": "pass123"})
-    assert r.status_code == 200
-    assert "access_token" in r.json()
-    assert r.json()["user"]["email"] == "a@b.com"
-
-
-def test_login(client):
-    client.post("/auth/register", json={"email": "a@b.com", "password": "pass123"})
-    r = client.post("/auth/login", json={"email": "a@b.com", "password": "pass123"})
-    assert r.status_code == 200
-    assert "access_token" in r.json()
-
-
-def test_login_wrong_password(client):
-    client.post("/auth/register", json={"email": "a@b.com", "password": "pass123"})
-    r = client.post("/auth/login", json={"email": "a@b.com", "password": "wrongpass"})
-    assert r.status_code == 401
-
-
 def test_get_me(client, auth_headers):
+    """First call lazy-creates the user from the JWT, /me returns their data."""
     r = client.get("/auth/me", headers=auth_headers)
     assert r.status_code == 200
     assert r.json()["email"] == "test@example.com"
+    assert r.json()["plan"] == "free"
 
 
 def test_protected_requires_auth(client):
     r = client.get("/projects")
+    assert r.status_code == 401
+
+
+def test_invalid_token_rejected(client):
+    r = client.get("/projects", headers={"Authorization": "Bearer not-a-valid-jwt"})
     assert r.status_code == 401
 
 

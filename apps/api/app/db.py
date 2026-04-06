@@ -2,10 +2,20 @@
 Database connection and session management.
 
 Uses SQLite by default (zero-config, file-backed, survives restarts).
-Set DATABASE_URL env var to switch to PostgreSQL for production:
+Set DATABASE_URL env var (or .env file) to switch to PostgreSQL for production:
   DATABASE_URL=postgresql+psycopg2://user:pass@localhost/analyistpro
 """
 import os
+from pathlib import Path
+
+# Load .env from the api root (one level above this file's parent directory)
+try:
+    from dotenv import load_dotenv
+    _env_path = Path(__file__).resolve().parent.parent / ".env"
+    load_dotenv(_env_path, override=False)
+except ImportError:
+    pass
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 

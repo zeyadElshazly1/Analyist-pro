@@ -2,8 +2,13 @@
 Pytest fixtures shared across all tests.
 Uses an in-memory SQLite database so tests are fully isolated from production.
 """
+import base64
+import hashlib
+import hmac
 import io
+import json
 import os
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,15 +16,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-# Point to an in-memory DB before importing anything from app
+# Point to an in-memory DB and set a deterministic JWT secret before importing app
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("SENTRY_DSN", "")  # disable Sentry in tests
+TEST_JWT_SECRET = "test-jwt-secret-for-pytest-only"
+os.environ["SUPABASE_JWT_SECRET"] = TEST_JWT_SECRET
 
 from app.db import Base, get_db
 from app.main import app
 
 # ── In-memory test engine ─────────────────────────────────────────────────────
-# StaticPool ensures all connections share the same in-memory database instance.
 TEST_DB_URL = "sqlite:///:memory:"
 engine = create_engine(
     TEST_DB_URL,
@@ -27,6 +33,29 @@ engine = create_engine(
     poolclass=StaticPool,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
+TEST_USER_EMAIL = "test@example.com"
+
+
+def _make_test_jwt(user_id: str = TEST_USER_ID, email: str = TEST_USER_EMAIL) -> str:
+    """Create a valid HS256 JWT signed with TEST_JWT_SECRET for use in tests."""
+    secret = TEST_JWT_SECRET.encode()
+
+    def b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+    header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    payload = b64url(json.dumps({
+        "sub": user_id,
+        "email": email,
+        "role": "authenticated",
+        "aud": "authenticated",
+        "exp": int(time.time()) + 3600,
+    }).encode())
+    signing_input = f"{header}.{payload}".encode()
+    sig = b64url(hmac.new(secret, signing_input, hashlib.sha256).digest())
+    return f"{header}.{payload}.{sig}"
 
 
 def override_get_db():
@@ -39,24 +68,22 @@ def override_get_db():
 
 @pytest.fixture(scope="function", autouse=True)
 def setup_db(tmp_path, monkeypatch):
-    """Create all tables fresh for each test, drop afterwards.
-    Uses a per-test temp upload dir so disk-scan fallback in state.py
-    never finds files from a different test run."""
+    """Create all tables fresh for each test, drop afterwards."""
     from app.state import PROJECT_FILES
     import app.config as cfg
     import app.routes.upload as upload_mod
 
-    # Point uploads to a fresh temp directory for this test so the disk-scan
-    # fallback in state.py never finds files from a different test.
     test_upload_dir = str(tmp_path / "uploads")
     os.makedirs(test_upload_dir, exist_ok=True)
     monkeypatch.setattr(cfg, "UPLOAD_DIR", test_upload_dir)
-    monkeypatch.setattr(upload_mod, "UPLOAD_DIR", test_upload_dir)  # module-level copy
+    monkeypatch.setattr(upload_mod, "UPLOAD_DIR", test_upload_dir)
 
-    # Patch SessionLocal at the db module level so all inline imports
-    # (state.py, analysis_stream.py) get the test session factory
     import app.db as db_mod
     monkeypatch.setattr(db_mod, "SessionLocal", TestingSessionLocal)
+
+    # Also patch the SECRET_KEY in auth middleware to match TEST_JWT_SECRET
+    import app.middleware.auth as auth_mod
+    monkeypatch.setattr(auth_mod, "SECRET_KEY", TEST_JWT_SECRET.encode())
 
     PROJECT_FILES.clear()
     Base.metadata.create_all(bind=engine)
@@ -67,8 +94,7 @@ def setup_db(tmp_path, monkeypatch):
 
 @pytest.fixture(scope="function")
 def client(setup_db):
-    """FastAPI TestClient with DB dependency overridden to in-memory SQLite.
-    setup_db already patches app.db.SessionLocal so all direct imports also get the test factory."""
+    """FastAPI TestClient with DB dependency overridden to in-memory SQLite."""
     app.dependency_overrides[get_db] = override_get_db
     with TestClient(app) as c:
         yield c
@@ -77,10 +103,11 @@ def client(setup_db):
 
 @pytest.fixture
 def auth_headers(client):
-    """Register a test user and return Authorization headers."""
-    r = client.post("/auth/register", json={"email": "test@example.com", "password": "testpass123"})
-    assert r.status_code == 200, r.text
-    token = r.json()["access_token"]
+    """
+    Return Authorization headers with a valid test JWT.
+    The first authenticated API call will lazy-create the user in the DB.
+    """
+    token = _make_test_jwt()
     return {"Authorization": f"Bearer {token}"}
 
 
