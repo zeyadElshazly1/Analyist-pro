@@ -82,11 +82,14 @@ def startup_event():
     init_db()
     logger.info("Database initialized")
     # Verify critical env vars are loaded
-    jwt_secret = os.getenv("SUPABASE_JWT_SECRET", "")
-    if not jwt_secret:
-        logger.warning("SUPABASE_JWT_SECRET is not set — all authenticated requests will fail!")
+    supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL", "")
+    if supabase_url:
+        logger.info(f"Supabase JWKS endpoint: {supabase_url}/auth/v1/.well-known/jwks.json")
     else:
-        logger.info(f"SUPABASE_JWT_SECRET loaded ({len(jwt_secret)} chars)")
+        logger.warning("SUPABASE_URL is not set — JWT verification via JWKS will fail!")
+    jwt_secret = os.getenv("SUPABASE_JWT_SECRET", "")
+    if jwt_secret:
+        logger.info(f"Legacy SUPABASE_JWT_SECRET loaded ({len(jwt_secret)} chars) — HS256 fallback active")
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(projects_router)

@@ -1,16 +1,20 @@
 """
 JWT authentication middleware for FastAPI.
-Verifies Supabase-issued HS256 JWTs using SUPABASE_JWT_SECRET.
-Users are lazy-created in our DB on first authenticated request.
+Verifies Supabase-issued JWTs — supports both the new ECC P-256 (ES256)
+signing key and the legacy HS256 shared secret (for tokens issued before
+Supabase rotated its JWT key).
+
+Verification order:
+  1. JWKS endpoint (ES256/RS256) — handles all new Supabase tokens
+  2. Legacy HS256 shared secret — handles tokens issued before key rotation
+
+Users are lazy-created in our local DB on first authenticated request.
 """
-import base64
-import hashlib
-import hmac
-import json
 import os
-import time
 from typing import Optional
 
+import jwt
+from jwt import PyJWKClient, PyJWKClientError
 from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -18,53 +22,79 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import User
 
-# ── Config ────────────────────────────────────────────────────────────────────
-# Read lazily so the .env loaded by db.py is always available by the time
-# a real request arrives, even if auth.py was imported before db.py ran load_dotenv.
-def _get_secret_key() -> bytes:
-    key = os.getenv("SUPABASE_JWT_SECRET", "")
-    return key.encode()
+# ── Config helpers ────────────────────────────────────────────────────────────
+
+def _supabase_url() -> str:
+    """Read Supabase URL — supports both plain and NEXT_PUBLIC_ prefixed names."""
+    return (
+        os.getenv("SUPABASE_URL")
+        or os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+        or ""
+    )
+
+
+# Lazily-initialised JWKS client — fetches public keys from Supabase on first
+# use and caches them.  One instance for the process lifetime.
+_jwks_client: Optional[PyJWKClient] = None
+
+
+def _get_jwks_client() -> Optional[PyJWKClient]:
+    global _jwks_client
+    if _jwks_client is None:
+        url = _supabase_url()
+        if not url:
+            return None
+        jwks_uri = f"{url}/auth/v1/.well-known/jwks.json"
+        _jwks_client = PyJWKClient(jwks_uri, cache_keys=True)
+    return _jwks_client
+
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
 
-# ── JWT helpers ───────────────────────────────────────────────────────────────
-def _b64url_encode(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
-
-
-def _b64url_decode(s: str) -> bytes:
-    padding = 4 - len(s) % 4
-    if padding != 4:
-        s += "=" * padding
-    return base64.urlsafe_b64decode(s)
-
+# ── JWT verification ──────────────────────────────────────────────────────────
 
 def _decode_token(token: str) -> Optional[dict]:
     """
-    Verify a Supabase HS256 JWT and return its payload, or None if invalid/expired.
-    Payload contains: sub (UUID), email, role, exp, aud, etc.
-    """
-    try:
-        secret_key = _get_secret_key()
-        parts = token.split(".")
-        if len(parts) != 3:
-            return None
-        header, payload_b64, signature = parts
-        signing_input = f"{header}.{payload_b64}".encode()
-        expected_sig = _b64url_encode(
-            hmac.new(secret_key, signing_input, hashlib.sha256).digest()
-        )
-        if not hmac.compare_digest(signature, expected_sig):
-            return None
-        payload = json.loads(_b64url_decode(payload_b64))
-        if payload.get("exp", 0) < time.time():
-            return None
-        return payload
-    except Exception:
-        return None
+    Verify a Supabase JWT and return its payload, or None if invalid/expired.
 
+    Tries ES256/RS256 via JWKS first (Supabase default since key rotation),
+    then falls back to legacy HS256 shared secret.
+    """
+    # ── Strategy 1: JWKS / asymmetric (ES256, RS256) ─────────────────────────
+    try:
+        client = _get_jwks_client()
+        if client is not None:
+            signing_key = client.get_signing_key_from_jwt(token)
+            payload = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["ES256", "RS256"],
+                options={"verify_aud": False},  # Supabase aud varies by project
+            )
+            return payload
+    except (PyJWKClientError, jwt.PyJWTError, Exception):
+        pass  # Fall through to HS256 strategy
+
+    # ── Strategy 2: Legacy HS256 shared secret ────────────────────────────────
+    try:
+        secret = os.getenv("SUPABASE_JWT_SECRET", "")
+        if secret:
+            payload = jwt.decode(
+                token,
+                secret,
+                algorithms=["HS256"],
+                options={"verify_aud": False},
+            )
+            return payload
+    except (jwt.PyJWTError, Exception):
+        pass
+
+    return None
+
+
+# ── User helper ───────────────────────────────────────────────────────────────
 
 def _get_or_create_user(payload: dict, db: Session) -> User:
     """Look up user by Supabase UUID; create a local record if first login."""
@@ -81,6 +111,7 @@ def _get_or_create_user(payload: dict, db: Session) -> User:
 
 
 # ── FastAPI dependencies ──────────────────────────────────────────────────────
+
 def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
