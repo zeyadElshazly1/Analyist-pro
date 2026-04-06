@@ -89,7 +89,9 @@ export function RunAnalysis({ projectId }: Props) {
     setError("");
     setProgress({ step: "Starting…", progress: 0, detail: "" });
 
-    const es = new EventSource(`${API_BASE_URL}/analysis/stream/${projectId}`);
+    const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : "";
+    const es = new EventSource(`${API_BASE_URL}/analysis/stream/${projectId}${tokenParam}`);
     esRef.current = es;
 
     es.onmessage = (event) => {
