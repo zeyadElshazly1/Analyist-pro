@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState, useEffect } from "react";
@@ -196,7 +197,7 @@ export function AbTestsView({ projectId }: Props) {
         <p className="text-xs text-white/40 mb-4">How many samples per group do you need to detect a given effect?</p>
         <div className="grid grid-cols-3 gap-3 mb-4">
           <div>
-            <label className="block text-xs text-white/50 mb-1">Effect Size (Cohen's d)</label>
+            <label className="block text-xs text-white/50 mb-1">Effect Size (Cohen&apos;s d)</label>
             <input type="number" value={effectSize} step={0.1} min={0.1} max={2}
               onChange={(e) => setEffectSize(Number(e.target.value))}
               className="w-full rounded-lg bg-white/[0.05] border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500" />

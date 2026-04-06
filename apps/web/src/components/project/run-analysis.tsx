@@ -69,7 +69,7 @@ function ProgressBar({ progress, step, detail }: ProgressState) {
 
 export function RunAnalysis({ projectId }: Props) {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any | null>(null);
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [tab, setTab] = useState("overview");
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<ProgressState | null>(null);

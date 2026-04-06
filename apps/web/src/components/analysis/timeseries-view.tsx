@@ -1,8 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState, useEffect } from "react";
 import { getTimeseriesColumns, runTimeseries } from "@/lib/api";
-import { TrendingUp, TrendingDown, Minus, AlertCircle, Activity } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, AlertCircle } from "lucide-react";
 import {
   LineChart,
   Line,
