@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { trainModel, getMlColumns } from "@/lib/api";
+import { ColumnSelect } from "@/components/ui/column-select";
 import { Loader2, Brain, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -72,17 +73,13 @@ export function PredictionsView({ projectId }: Props) {
       )}
 
       <div className="flex gap-3 items-end flex-wrap">
-        <div className="flex-1 min-w-[200px]">
-          <label className="block text-xs text-white/50 mb-1">What do you want to predict?</label>
-          <select
-            className="w-full rounded-lg bg-white/[0.05] border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            value={targetCol}
-            onChange={(e) => setTargetCol(e.target.value)}
-          >
-            {columns.length === 0 && <option value="">Loading columns…</option>}
-            {columns.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
+        <ColumnSelect
+          label="What do you want to predict?"
+          value={targetCol}
+          options={columns}
+          onChange={setTargetCol}
+          className="flex-1 min-w-[200px]"
+        />
         <Button
           onClick={handleTrain}
           disabled={loading || !targetCol}

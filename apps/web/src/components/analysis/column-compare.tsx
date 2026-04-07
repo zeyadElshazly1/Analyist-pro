@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { getCompareColumnOptions, runColumnCompare } from "@/lib/api";
+import { ColumnSelect } from "@/components/ui/column-select";
 import { AlertCircle } from "lucide-react";
 import {
   ScatterChart,
@@ -74,22 +75,20 @@ export function ColumnCompare({ projectId }: Props) {
       )}
 
       <div className="flex flex-wrap items-end gap-3">
-        {["A", "B"].map((label, idx) => (
-          <div key={label}>
-            <p className="mb-1 text-xs text-white/40">Column {label}</p>
-            <select
-              value={idx === 0 ? colA : colB}
-              onChange={(e) => idx === 0 ? setColA(e.target.value) : setColB(e.target.value)}
-              className="rounded-lg border border-white/[0.08] bg-white/[0.05] px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            >
-              {columns.map((c) => (
-                <option key={c} value={c} className="bg-white text-black">
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-        ))}
+        <ColumnSelect
+          label="Column A"
+          value={colA}
+          options={columns}
+          onChange={setColA}
+          className="min-w-[180px]"
+        />
+        <ColumnSelect
+          label="Column B"
+          value={colB}
+          options={columns}
+          onChange={setColB}
+          className="min-w-[180px]"
+        />
         <button
           onClick={handleRun}
           disabled={loading || !colA || !colB || colA === colB}

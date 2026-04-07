@@ -27,7 +27,9 @@ import { SegmentsView } from "@/components/analysis/segments-view";
 import { AbTestsView } from "@/components/analysis/ab-tests-view";
 import { QueryView } from "@/components/analysis/query-view";
 import { DataStoryView } from "@/components/analysis/data-story-view";
+import { DataTableView } from "@/components/analysis/data-table-view";
 import { getFreshToken, shareAnalysis } from "@/lib/api";
+import { toast } from "@/components/ui/toast";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
@@ -148,8 +150,9 @@ export function RunAnalysis({ projectId }: Props) {
     try {
       const { share_token } = await shareAnalysis(projectId);
       setShareToken(share_token);
+      toast.success("Share link created. Copy it to share your analysis.");
     } catch {
-      // silent — share button just won't show URL
+      toast.error("Failed to create share link. Please try again.");
     } finally {
       setSharing(false);
     }
@@ -240,6 +243,14 @@ export function RunAnalysis({ projectId }: Props) {
       {result ? (
         <div className="space-y-4">
           <ProjectTabs value={tab} onChange={setTab} />
+
+          {/* ── Data Table ───────────────────────────────────────────── */}
+          {tab === "data-table" && (
+            <TabPanel>
+              <h2 className="mb-4 font-semibold text-white">Raw Data</h2>
+              <DataTableView projectId={projectId} />
+            </TabPanel>
+          )}
 
           {/* ── Overview ─────────────────────────────────────────────── */}
           {tab === "overview" && (

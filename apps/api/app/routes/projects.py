@@ -1,3 +1,4 @@
+import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -104,3 +105,39 @@ def delete_project(
     db.delete(project)
     PROJECT_FILES.pop(project_id, None)
     db.commit()
+
+
+@router.get("/{project_id}/latest-insights")
+def get_latest_insights(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the top insights from the most recent analysis run for a project."""
+    project = (
+        db.query(Project)
+        .filter(Project.id == project_id, Project.user_id == current_user.id)
+        .first()
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    analysis = (
+        db.query(AnalysisResult)
+        .filter(AnalysisResult.project_id == project_id)
+        .order_by(AnalysisResult.created_at.desc())
+        .first()
+    )
+    if not analysis:
+        return {"project_id": project_id, "project_name": project.name, "insights": [], "analysis_id": None}
+
+    result = json.loads(analysis.result_json)
+    insights = result.get("insights", [])[:5]  # top 5 only for dashboard widget
+    return {
+        "project_id": project_id,
+        "project_name": project.name,
+        "analysis_id": analysis.id,
+        "created_at": analysis.created_at.isoformat() if analysis.created_at else None,
+        "health_score": result.get("health_score", {}).get("score"),
+        "insights": insights,
+    }

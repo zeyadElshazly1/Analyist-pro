@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { getCohortColumns, runRfm, runRetention } from "@/lib/api";
+import { ColumnSelect } from "@/components/ui/column-select";
 import { Loader2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -143,20 +144,9 @@ export function SegmentsView({ projectId }: Props) {
       {mode === "rfm" && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {[
-              { label: "Customer ID Column", val: customerCol, set: setCustomerCol, opts: allCols },
-              { label: "Date Column", val: dateCol, set: setDateCol, opts: dateOptions },
-              { label: "Revenue Column", val: revenueCol, set: setRevenueCol, opts: numCols.length > 0 ? numCols : allCols },
-            ].map(({ label, val, set, opts }) => (
-              <div key={label}>
-                <label className="block text-xs text-white/50 mb-1">{label}</label>
-                <select value={val} onChange={(e) => set(e.target.value)}
-                  className="w-full rounded-lg bg-white/[0.05] border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                  {opts.length === 0 && <option value="">Loading…</option>}
-                  {opts.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-            ))}
+            <ColumnSelect label="Customer ID Column" value={customerCol} options={allCols} onChange={setCustomerCol} />
+            <ColumnSelect label="Date Column" value={dateCol} options={dateOptions} onChange={setDateCol} />
+            <ColumnSelect label="Revenue Column" value={revenueCol} options={numCols.length > 0 ? numCols : allCols} onChange={setRevenueCol} />
           </div>
           <Button onClick={handleRfm} disabled={rfmLoading} className="bg-indigo-600 hover:bg-indigo-500 text-white gap-2">
             {rfmLoading ? <><Loader2 className="h-4 w-4 animate-spin" />Analyzing…</> : "Run RFM Analysis"}
@@ -233,20 +223,9 @@ export function SegmentsView({ projectId }: Props) {
       {mode === "retention" && (
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {[
-              { label: "Cohort Column", val: cohortCol, set: setCohortCol },
-              { label: "Period Column", val: periodCol, set: setPeriodCol },
-              { label: "User Column", val: userCol, set: setUserCol },
-            ].map(({ label, val, set }) => (
-              <div key={label}>
-                <label className="block text-xs text-white/50 mb-1">{label}</label>
-                <select value={val} onChange={(e) => set(e.target.value)}
-                  className="w-full rounded-lg bg-white/[0.05] border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
-                  {allCols.length === 0 && <option value="">Loading…</option>}
-                  {allCols.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-            ))}
+            <ColumnSelect label="Cohort Column" value={cohortCol} options={allCols} onChange={setCohortCol} />
+            <ColumnSelect label="Period Column" value={periodCol} options={allCols} onChange={setPeriodCol} />
+            <ColumnSelect label="User Column" value={userCol} options={allCols} onChange={setUserCol} />
           </div>
           <Button onClick={handleRetention} disabled={retentionLoading} className="bg-indigo-600 hover:bg-indigo-500 text-white gap-2">
             {retentionLoading ? <><Loader2 className="h-4 w-4 animate-spin" />Analyzing…</> : "Build Retention Matrix"}
