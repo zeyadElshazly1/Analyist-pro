@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { getStatsColumns, runStatsTest, runPowerAnalysis } from "@/lib/api";
+import { ColumnSelect } from "@/components/ui/column-select";
 import { Loader2, FlaskConical, CheckCircle, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -97,33 +98,28 @@ export function AbTestsView({ projectId }: Props) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div>
-          <label className="block text-xs text-white/50 mb-1">Column A (primary / numeric)</label>
-          <select value={colA} onChange={(e) => setColA(e.target.value)}
-            className="w-full rounded-lg bg-white/[0.05] border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
-            {allCols.length === 0 && <option value="">Loading…</option>}
-            {allCols.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
+        <ColumnSelect
+          label="Column A (primary / numeric)"
+          value={colA}
+          options={allCols}
+          onChange={setColA}
+        />
         {testType !== "shapiro" && (
-          <div>
-            <label className="block text-xs text-white/50 mb-1">Column B (grouping / secondary)</label>
-            <select value={colB} onChange={(e) => setColB(e.target.value)}
-              className="w-full rounded-lg bg-white/[0.05] border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
-              <option value="">None</option>
-              {allCols.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
+          <ColumnSelect
+            label="Column B (grouping / secondary)"
+            value={colB}
+            options={["", ...allCols]}
+            optionLabels={{ "": "None" }}
+            onChange={setColB}
+          />
         )}
-        <div>
-          <label className="block text-xs text-white/50 mb-1">Significance Level (α)</label>
-          <select value={alpha} onChange={(e) => setAlpha(Number(e.target.value))}
-            className="w-full rounded-lg bg-white/[0.05] border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
-            <option value={0.01}>0.01 (strict)</option>
-            <option value={0.05}>0.05 (standard)</option>
-            <option value={0.10}>0.10 (lenient)</option>
-          </select>
-        </div>
+        <ColumnSelect
+          label="Significance Level (α)"
+          value={String(alpha)}
+          options={["0.01", "0.05", "0.1"]}
+          optionLabels={{ "0.01": "0.01 (strict)", "0.05": "0.05 (standard)", "0.1": "0.10 (lenient)" }}
+          onChange={(v) => setAlpha(Number(v))}
+        />
       </div>
 
       <Button onClick={handleTest} disabled={loading} className="bg-indigo-600 hover:bg-indigo-500 text-white gap-2">
@@ -204,14 +200,13 @@ export function AbTestsView({ projectId }: Props) {
             <div className="text-xs text-white/30 mt-1">small=0.2, medium=0.5, large=0.8</div>
           </div>
           <div>
-            <label className="block text-xs text-white/50 mb-1">Desired Power (1-β)</label>
-            <select value={power} onChange={(e) => setPower(Number(e.target.value))}
-              className="w-full rounded-lg bg-white/[0.05] border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
-              <option value={0.70}>0.70</option>
-              <option value={0.80}>0.80 (standard)</option>
-              <option value={0.90}>0.90</option>
-              <option value={0.95}>0.95</option>
-            </select>
+            <ColumnSelect
+              label="Desired Power (1-β)"
+              value={String(power)}
+              options={["0.7", "0.8", "0.9", "0.95"]}
+              optionLabels={{ "0.7": "0.70", "0.8": "0.80 (standard)", "0.9": "0.90", "0.95": "0.95" }}
+              onChange={(v) => setPower(Number(v))}
+            />
           </div>
           <div className="flex items-end">
             <Button onClick={handlePower} disabled={powerLoading} className="w-full bg-white/[0.08] hover:bg-white/[0.12] text-white text-sm">

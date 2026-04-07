@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { getPivotColumns, runPivot } from "@/lib/api";
+import { ColumnSelect } from "@/components/ui/column-select";
 import { Loader2, Table2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -95,30 +96,20 @@ export function PivotView({ projectId }: Props) {
           </div>
         </div>
 
-        <div>
-          <label className="block text-xs text-white/50 mb-1 uppercase tracking-wider">Values Column</label>
-          <select
-            className="w-full rounded-lg bg-white/[0.05] border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            value={values}
-            onChange={(e) => setValues(e.target.value)}
-          >
-            {allCols.length === 0 && <option value="">Loading…</option>}
-            {allCols.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
+        <ColumnSelect
+          label="Values Column"
+          value={values}
+          options={allCols}
+          onChange={setValues}
+        />
 
-        <div>
-          <label className="block text-xs text-white/50 mb-1 uppercase tracking-wider">Aggregation</label>
-          <select
-            className="w-full rounded-lg bg-white/[0.05] border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            value={aggfunc}
-            onChange={(e) => setAggfunc(e.target.value)}
-          >
-            {["sum", "mean", "count", "median", "min", "max", "std"].map((f) => (
-              <option key={f} value={f}>{f.charAt(0).toUpperCase() + f.slice(1)}</option>
-            ))}
-          </select>
-        </div>
+        <ColumnSelect
+          label="Aggregation"
+          value={aggfunc}
+          options={["sum", "mean", "count", "median", "min", "max", "std"]}
+          optionLabels={{ sum: "Sum", mean: "Mean", count: "Count", median: "Median", min: "Min", max: "Max", std: "Std Dev" }}
+          onChange={setAggfunc}
+        />
       </div>
 
       <Button onClick={handleRun} disabled={loading} className="bg-indigo-600 hover:bg-indigo-500 text-white gap-2">

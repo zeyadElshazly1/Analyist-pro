@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { getOutlierColumns, runOutlierAnalysis } from "@/lib/api";
+import { ColumnSelect } from "@/components/ui/column-select";
 import { AlertCircle } from "lucide-react";
 import {
   BarChart,
@@ -68,16 +69,13 @@ export function OutlierView({ projectId }: Props) {
       )}
 
       <div className="flex flex-wrap items-end gap-3">
-        <div>
-          <label className="mb-1 block text-xs text-white/40">Column</label>
-          <select
-            value={column}
-            onChange={(e) => setColumn(e.target.value)}
-            className="rounded-lg border border-white/[0.08] bg-white/[0.05] px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-          >
-            {columns.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
+        <ColumnSelect
+          label="Column"
+          value={column}
+          options={columns}
+          onChange={setColumn}
+          className="min-w-[180px]"
+        />
         <button
           onClick={handleRun}
           disabled={loading || !column}

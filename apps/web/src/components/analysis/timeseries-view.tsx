@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { getTimeseriesColumns, runTimeseries } from "@/lib/api";
+import { ColumnSelect } from "@/components/ui/column-select";
 import { TrendingUp, TrendingDown, Minus, AlertCircle } from "lucide-react";
 import {
   LineChart,
@@ -87,26 +88,18 @@ export function TimeseriesView({ projectId }: Props) {
 
       {cols && (
         <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="mb-1 block text-xs text-white/40">Date column</label>
-            <select
-              value={dateCol}
-              onChange={(e) => setDateCol(e.target.value)}
-              className="rounded-lg border border-white/[0.08] bg-white/[0.05] px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            >
-              {cols.date_columns.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-white/40">Value column</label>
-            <select
-              value={valueCol}
-              onChange={(e) => setValueCol(e.target.value)}
-              className="rounded-lg border border-white/[0.08] bg-white/[0.05] px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-            >
-              {cols.value_columns.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
+          <ColumnSelect
+            label="Date column"
+            value={dateCol}
+            options={cols.date_columns}
+            onChange={setDateCol}
+          />
+          <ColumnSelect
+            label="Value column"
+            value={valueCol}
+            options={cols.value_columns}
+            onChange={setValueCol}
+          />
           <button
             onClick={handleRun}
             disabled={loading || !dateCol || !valueCol}
