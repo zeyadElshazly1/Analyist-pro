@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -46,11 +47,29 @@ if SENTRY_DSN:
     except ImportError:
         logger.warning("sentry-sdk not installed; skipping Sentry integration")
 
+# ── Lifespan (replaces deprecated @app.on_event) ─────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):  # noqa: ARG001
+    from app.db import init_db
+    init_db()
+    logger.info("Database initialized")
+    supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL", "")
+    if supabase_url:
+        logger.info(f"Supabase JWKS endpoint: {supabase_url}/auth/v1/.well-known/jwks.json")
+    else:
+        logger.warning("SUPABASE_URL is not set — JWT verification via JWKS will fail!")
+    jwt_secret = os.getenv("SUPABASE_JWT_SECRET", "")
+    if jwt_secret:
+        logger.info(f"Legacy SUPABASE_JWT_SECRET loaded ({len(jwt_secret)} chars) — HS256 fallback active")
+    yield  # Application runs here
+
+
 # ── App factory ───────────────────────────────────────────────────────────────
 app = FastAPI(
     title="AnalystPro API",
     version="2.0.0",
     description="AI-powered data analytics platform",
+    lifespan=lifespan,
 )
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
@@ -74,22 +93,6 @@ async def log_requests(request: Request, call_next):
         f"status={response.status_code} duration_ms={duration_ms}"
     )
     return response
-
-# ── Startup: initialize DB ────────────────────────────────────────────────────
-@app.on_event("startup")
-def startup_event():
-    from app.db import init_db
-    init_db()
-    logger.info("Database initialized")
-    # Verify critical env vars are loaded
-    supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL", "")
-    if supabase_url:
-        logger.info(f"Supabase JWKS endpoint: {supabase_url}/auth/v1/.well-known/jwks.json")
-    else:
-        logger.warning("SUPABASE_URL is not set — JWT verification via JWKS will fail!")
-    jwt_secret = os.getenv("SUPABASE_JWT_SECRET", "")
-    if jwt_secret:
-        logger.info(f"Legacy SUPABASE_JWT_SECRET loaded ({len(jwt_secret)} chars) — HS256 fallback active")
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(projects_router)

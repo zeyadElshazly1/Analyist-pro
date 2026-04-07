@@ -27,7 +27,7 @@ import { SegmentsView } from "@/components/analysis/segments-view";
 import { AbTestsView } from "@/components/analysis/ab-tests-view";
 import { QueryView } from "@/components/analysis/query-view";
 import { DataStoryView } from "@/components/analysis/data-story-view";
-import { shareAnalysis } from "@/lib/api";
+import { getFreshToken, shareAnalysis } from "@/lib/api";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
@@ -80,7 +80,7 @@ export function RunAnalysis({ projectId }: Props) {
   const [copied, setCopied] = useState(false);
   const esRef = useRef<EventSource | null>(null);
 
-  function handleRun() {
+  async function handleRun() {
     if (esRef.current) {
       esRef.current.close();
     }
@@ -89,8 +89,15 @@ export function RunAnalysis({ projectId }: Props) {
     setError("");
     setProgress({ step: "Starting…", progress: 0, detail: "" });
 
-    const token = typeof window !== "undefined" ? localStorage.getItem("auth_token") : null;
-    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : "";
+    // Get a fresh token (not stale localStorage) before opening the SSE stream
+    const token = await getFreshToken();
+    if (!token) {
+      setError("Not authenticated. Please log in again.");
+      setLoading(false);
+      setProgress(null);
+      return;
+    }
+    const tokenParam = `?token=${encodeURIComponent(token)}`;
     const es = new EventSource(`${API_BASE_URL}/analysis/stream/${projectId}${tokenParam}`);
     esRef.current = es;
 

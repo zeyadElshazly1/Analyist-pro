@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from app.middleware.auth import get_current_user
+from app.models import User
 from app.services.cleaner import clean_dataset
 from app.services.file_loader import load_dataset
 from app.services.pivot_service import run_pivot
@@ -34,7 +36,7 @@ class PivotRequest(BaseModel):
 
 
 @router.post("/run")
-def pivot_run(req: PivotRequest):
+def pivot_run(req: PivotRequest, current_user: User = Depends(get_current_user)):
     df = _load(req.project_id)
     try:
         result = run_pivot(df, req.rows, req.cols, req.values, req.aggfunc, req.top_n)
@@ -46,7 +48,7 @@ def pivot_run(req: PivotRequest):
 
 
 @router.get("/columns")
-def pivot_columns(project_id: int = Query(...)):
+def pivot_columns(project_id: int = Query(...), current_user: User = Depends(get_current_user)):
     df = _load(project_id)
     numeric = df.select_dtypes(include="number").columns.tolist()
     return {

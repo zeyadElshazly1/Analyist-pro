@@ -162,19 +162,24 @@ async def stream_analysis(
     if token:
         from app.middleware.auth import _decode_token
         from app.models import Project
-        user_id = _decode_token(token)
-        if user_id is not None:
-            db = SessionLocal()
-            try:
-                project = db.query(Project).filter(
-                    Project.id == project_id,
-                    Project.user_id == user_id,
-                ).first()
-                if not project:
-                    raise HTTPException(status_code=404, detail="Project not found.")
-            finally:
-                db.close()
-        # If token is invalid we still allow the stream (backward compat with no-auth mode)
+        payload = _decode_token(token)
+        if payload is None:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        user_id: str = payload.get("sub", "")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Token missing subject claim")
+        db = SessionLocal()
+        try:
+            project = db.query(Project).filter(
+                Project.id == project_id,
+                Project.user_id == user_id,
+            ).first()
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found.")
+        finally:
+            db.close()
+    else:
+        raise HTTPException(status_code=401, detail="Authentication required")
 
     return StreamingResponse(
         _run_analysis_stream(project_id),

@@ -1,7 +1,9 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 import pandas as pd
 from pydantic import BaseModel
 
+from app.middleware.auth import get_current_user
+from app.models import User
 from app.services.cleaner import clean_dataset
 from app.services.cohort_service import retention_matrix, rfm_segmentation
 from app.services.file_loader import load_dataset
@@ -40,7 +42,7 @@ class RetentionRequest(BaseModel):
 
 
 @router.post("/rfm")
-def rfm(req: RfmRequest):
+def rfm(req: RfmRequest, current_user: User = Depends(get_current_user)):
     df = _load(req.project_id)
     for col in [req.customer_col, req.date_col, req.revenue_col]:
         if col not in df.columns:
@@ -53,7 +55,7 @@ def rfm(req: RfmRequest):
 
 
 @router.post("/retention")
-def retention(req: RetentionRequest):
+def retention(req: RetentionRequest, current_user: User = Depends(get_current_user)):
     df = _load(req.project_id)
     for col in [req.cohort_col, req.period_col, req.user_col]:
         if col not in df.columns:
@@ -66,7 +68,7 @@ def retention(req: RetentionRequest):
 
 
 @router.get("/columns")
-def cohort_columns(project_id: int = Query(...)):
+def cohort_columns(project_id: int = Query(...), current_user: User = Depends(get_current_user)):
     df = _load(project_id)
     numeric = df.select_dtypes(include="number").columns.tolist()
     datetime_cols = df.select_dtypes(include=["datetime64"]).columns.tolist()

@@ -14,7 +14,7 @@ from app.state import get_project_file_info
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
-def _get_stored_analysis(project_id: int, user_id: int, db: Session) -> tuple:
+def _get_stored_analysis(project_id: int, user_id: str, db: Session) -> tuple:
     """Fetch the latest stored analysis for a project, scoped to the current user."""
     analysis = (
         db.query(AnalysisResult)
@@ -50,7 +50,7 @@ def _load_df(project_id: int):
 @router.get("/export/{project_id}")
 def export_report(
     project_id: int,
-    format: str = Query("html", regex="^(html|pdf|xlsx)$"),
+    format: str = Query("html", pattern="^(html|pdf|xlsx)$"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):

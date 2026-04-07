@@ -81,9 +81,11 @@ def setup_db(tmp_path, monkeypatch):
     import app.db as db_mod
     monkeypatch.setattr(db_mod, "SessionLocal", TestingSessionLocal)
 
-    # Also patch the SECRET_KEY in auth middleware to match TEST_JWT_SECRET
+    # Bypass the JWKS client in tests (no network needed) so _decode_token falls
+    # through to the HS256 path, which uses SUPABASE_JWT_SECRET from the env
+    # (already set to TEST_JWT_SECRET above).
     import app.middleware.auth as auth_mod
-    monkeypatch.setattr(auth_mod, "SECRET_KEY", TEST_JWT_SECRET.encode())
+    monkeypatch.setattr(auth_mod, "_get_jwks_client", lambda: None)
 
     PROJECT_FILES.clear()
     Base.metadata.create_all(bind=engine)

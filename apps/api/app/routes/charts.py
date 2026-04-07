@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.middleware.auth import get_current_user
+from app.models import User
 from app.state import PROJECT_FILES
 from app.services.file_loader import load_dataset
 from app.services.cleaner import clean_dataset
@@ -14,7 +16,7 @@ class ChartRequest(BaseModel):
 
 
 @router.post("/suggest")
-def suggest_chart(payload: ChartRequest):
+def suggest_chart(payload: ChartRequest, current_user: User = Depends(get_current_user)):
     project_id = payload.project_id
 
     if project_id not in PROJECT_FILES:

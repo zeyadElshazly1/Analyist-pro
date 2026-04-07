@@ -107,7 +107,13 @@ def get_analysis_history(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Return the N most recent analysis runs for a project."""
+    """Return the N most recent analysis runs for a project (scoped to current user)."""
+    # Verify project belongs to the current user before returning history
+    project = db.query(Project).filter(
+        Project.id == project_id, Project.user_id == current_user.id
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
     results = (
         db.query(AnalysisResult)
         .filter(AnalysisResult.project_id == project_id)
@@ -132,8 +138,13 @@ def get_analysis_result(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Return the full result JSON for a specific stored analysis run."""
-    analysis = db.query(AnalysisResult).filter(AnalysisResult.id == analysis_id).first()
+    """Return the full result JSON for a specific stored analysis run (scoped to current user)."""
+    analysis = (
+        db.query(AnalysisResult)
+        .join(Project)
+        .filter(AnalysisResult.id == analysis_id, Project.user_id == current_user.id)
+        .first()
+    )
     if not analysis:
         raise HTTPException(status_code=404, detail="Analysis result not found.")
     return {
