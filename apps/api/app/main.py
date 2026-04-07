@@ -1,11 +1,16 @@
 import os
 import time
+import uuid
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
+
+from app.exceptions import AppError
 
 from app.routes.projects import router as projects_router
 from app.routes.upload import router as upload_router
@@ -82,15 +87,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Request timing middleware ─────────────────────────────────────────────────
+# ── Request ID + timing middleware ────────────────────────────────────────────
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    request_id = str(uuid.uuid4())[:8]
+    request.state.request_id = request_id
     start = time.monotonic()
     response = await call_next(request)
     duration_ms = int((time.monotonic() - start) * 1000)
-    logger.info(
-        f"method={request.method} path={request.url.path} "
-        f"status={response.status_code} duration_ms={duration_ms}"
+    response.headers["X-Request-ID"] = request_id
+    log_level = logging.WARNING if response.status_code >= 500 else logging.INFO
+    logger.log(
+        log_level,
+        f"req={request_id} method={request.method} path={request.url.path} "
+        f"status={response.status_code} duration_ms={duration_ms}",
     )
     return response
 
@@ -112,28 +122,102 @@ app.include_router(analysis_stream_router)
 app.include_router(auth_router)
 
 # ── Exception handlers ────────────────────────────────────────────────────────
+
+def _request_id(request: Request) -> str:
+    return getattr(request.state, "request_id", "?")
+
+
+@app.exception_handler(AppError)
+async def app_error_handler(request: Request, exc: AppError):
+    """Structured handler for all our custom AppError subclasses."""
+    rid = _request_id(request)
+    if exc.status_code >= 500:
+        logger.error(
+            f"req={rid} AppError[{exc.error_code}]: {exc.dev_detail}", exc_info=True
+        )
+    else:
+        logger.warning(
+            f"req={rid} AppError[{exc.error_code}]: {exc.dev_detail}"
+        )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": exc.user_message,
+            "code": exc.error_code,
+            "request_id": rid,
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    rid = _request_id(request)
+    # Build a concise field→message map for the frontend
+    field_errors = {}
+    for err in exc.errors():
+        loc = " → ".join(str(l) for l in err["loc"] if l != "body")
+        field_errors[loc or "input"] = err["msg"]
+    logger.warning(f"req={rid} ValidationError: {field_errors}")
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": "Request validation failed. Please check your input.",
+            "code": "VALIDATION_ERROR",
+            "fields": field_errors,
+            "request_id": rid,
+        },
+    )
+
+
+@app.exception_handler(SQLAlchemyError)
+async def sqlalchemy_error_handler(request: Request, exc: SQLAlchemyError):
+    rid = _request_id(request)
+    logger.error(f"req={rid} DatabaseError: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=503,
+        content={
+            "error": "A database error occurred. Please try again in a moment.",
+            "code": "DATABASE_ERROR",
+            "request_id": rid,
+        },
+    )
+
+
 @app.exception_handler(ValueError)
 async def value_error_handler(request: Request, exc: ValueError):
+    rid = _request_id(request)
+    logger.warning(f"req={rid} ValueError: {exc}")
     return JSONResponse(
         status_code=400,
-        content={"error": "Bad request", "detail": str(exc), "code": 400},
+        content={"error": str(exc), "code": "VALIDATION_ERROR", "request_id": rid},
     )
 
 
 @app.exception_handler(KeyError)
 async def key_error_handler(request: Request, exc: KeyError):
+    rid = _request_id(request)
+    logger.warning(f"req={rid} KeyError: {exc}")
     return JSONResponse(
         status_code=400,
-        content={"error": "Missing key", "detail": f"Column or key not found: {exc}", "code": 400},
+        content={
+            "error": f"Column or field not found: {exc}",
+            "code": "NOT_FOUND",
+            "request_id": rid,
+        },
     )
 
 
 @app.exception_handler(Exception)
 async def generic_error_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    rid = _request_id(request)
+    logger.error(f"req={rid} Unhandled {type(exc).__name__}: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={"error": "Internal server error", "detail": str(exc), "code": 500},
+        content={
+            "error": "An unexpected server error occurred. Our team has been notified.",
+            "code": "INTERNAL_ERROR",
+            "request_id": rid,
+        },
     )
 
 
