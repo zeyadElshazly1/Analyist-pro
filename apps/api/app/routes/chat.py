@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.middleware.auth import get_current_user
+from app.models import User
 from app.services.ai_chat_service import chat_with_data
 from app.services.cleaner import clean_dataset
 from app.services.file_loader import load_dataset
@@ -36,7 +38,7 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/query")
-def chat_query(req: ChatRequest):
+def chat_query(req: ChatRequest, current_user: User = Depends(get_current_user)):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
 

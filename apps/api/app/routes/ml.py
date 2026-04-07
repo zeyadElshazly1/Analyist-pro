@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from app.middleware.auth import get_current_user
+from app.models import User
 from app.services.automl_service import detect_problem_type, train_models
 from app.services.cleaner import clean_dataset
 from app.services.file_loader import load_dataset
@@ -30,7 +32,7 @@ class TrainRequest(BaseModel):
 
 
 @router.post("/train")
-def train(req: TrainRequest):
+def train(req: TrainRequest, current_user: User = Depends(get_current_user)):
     df = _load(req.project_id)
     if req.target_col not in df.columns:
         raise HTTPException(status_code=400, detail=f"Column '{req.target_col}' not found.")
@@ -44,6 +46,6 @@ def train(req: TrainRequest):
 
 
 @router.get("/columns")
-def get_columns(project_id: int = Query(...)):
+def get_columns(project_id: int = Query(...), current_user: User = Depends(get_current_user)):
     df = _load(project_id)
     return {"columns": df.columns.tolist()}

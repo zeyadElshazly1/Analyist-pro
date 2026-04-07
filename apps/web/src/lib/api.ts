@@ -24,8 +24,9 @@ export function clearToken() {
 /**
  * Always returns the freshest available token.
  * Prefers the live Supabase session (auto-refreshed) over the cached localStorage value.
+ * Exported so SSE endpoints (EventSource) can also get a fresh token before connecting.
  */
-async function getFreshToken(): Promise<string | null> {
+export async function getFreshToken(): Promise<string | null> {
   try {
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token ?? null;
@@ -323,23 +324,19 @@ export function sendChatMessage(
 
 // ── Report Export ─────────────────────────────────────────────────────────────
 
-export function exportReport(projectId: number, format: "html" | "pdf" | "xlsx" = "html") {
-  const token = getToken();
-  const tokenParam = token ? `&token=${encodeURIComponent(token)}` : "";
+export async function exportReport(projectId: number, format: "html" | "pdf" | "xlsx" = "html") {
+  const token = await getFreshToken();
   const url = `${API_BASE_URL}/reports/export/${projectId}?format=${format}`;
-  // For xlsx, trigger a direct download with auth header via anchor trick
-  if (format === "xlsx") {
-    authHeaders().then((hdrs) => fetch(url, { headers: hdrs }))
-      .then((r) => r.blob())
-      .then((blob) => {
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = `analysis_report_${projectId}.xlsx`;
-        a.click();
-      });
-    return;
-  }
-  window.open(url + tokenParam, "_blank");
+  const hdrs = token ? { Authorization: `Bearer ${token}` } : {};
+  // All formats: download via fetch so the Authorization header is sent
+  const res = await fetch(url, { headers: hdrs });
+  if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  const ext = format === "xlsx" ? "xlsx" : format === "pdf" ? "pdf" : "html";
+  a.download = `analysis_report_${projectId}.${ext}`;
+  a.click();
 }
 
 // ── Pivot ─────────────────────────────────────────────────────────────────────

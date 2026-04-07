@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from app.middleware.auth import get_current_user
+from app.models import User
 from app.services.cleaner import clean_dataset
 from app.services.file_loader import load_dataset
 from app.services.serializers import to_jsonable
@@ -30,7 +32,7 @@ class QueryRequest(BaseModel):
 
 
 @router.post("/execute")
-def query_execute(req: QueryRequest):
+def query_execute(req: QueryRequest, current_user: User = Depends(get_current_user)):
     if not req.sql.strip():
         raise HTTPException(status_code=400, detail="SQL query cannot be empty.")
     try:
@@ -52,6 +54,6 @@ def query_execute(req: QueryRequest):
 
 
 @router.get("/schema")
-def query_schema(project_id: int = Query(...)):
+def query_schema(project_id: int = Query(...), current_user: User = Depends(get_current_user)):
     df = _load(project_id)
     return {"columns": get_schema(df), "table_name": "data"}

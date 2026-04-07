@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from app.middleware.auth import get_current_user
+from app.models import User
 from app.services.cleaner import clean_dataset
 from app.services.file_loader import load_dataset
 from app.services.serializers import to_jsonable
@@ -40,7 +42,7 @@ class PowerRequest(BaseModel):
 
 
 @router.post("/test")
-def stats_test(req: TestRequest):
+def stats_test(req: TestRequest, current_user: User = Depends(get_current_user)):
     df = _load(req.project_id)
     try:
         result = run_test(df, req.test_type, req.col_a, req.col_b, req.alpha)
@@ -61,7 +63,7 @@ def stats_power(req: PowerRequest):
 
 
 @router.get("/columns")
-def stats_columns(project_id: int = Query(...)):
+def stats_columns(project_id: int = Query(...), current_user: User = Depends(get_current_user)):
     df = _load(project_id)
     numeric = df.select_dtypes(include="number").columns.tolist()
     categorical = df.select_dtypes(include=["object", "category"]).columns.tolist()

@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from app.middleware.auth import get_current_user
+from app.models import User
 from app.state import PROJECT_FILES, get_project_file_info
 from app.services.file_loader import load_dataset
 from app.services.cleaner import clean_dataset
@@ -34,7 +36,7 @@ def _load(project_id: int):
 # ── Time Series ───────────────────────────────────────────────────────────────
 
 @router.get("/timeseries/columns")
-def timeseries_columns(project_id: int = Query(...)):
+def timeseries_columns(project_id: int = Query(...), current_user: User = Depends(get_current_user)):
     df = _load(project_id)
     date_cols = detect_date_columns(df)
     numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
@@ -49,7 +51,7 @@ class TimeseriesRequest(BaseModel):
 
 
 @router.post("/timeseries/run")
-def timeseries_run(payload: TimeseriesRequest):
+def timeseries_run(payload: TimeseriesRequest, current_user: User = Depends(get_current_user)):
     df = _load(payload.project_id)
     try:
         result = run_timeseries(df, payload.date_col, payload.value_col, payload.aggregation)
@@ -67,7 +69,7 @@ class ProjectRequest(BaseModel):
 
 
 @router.post("/duplicates")
-def duplicates(payload: ProjectRequest):
+def duplicates(payload: ProjectRequest, current_user: User = Depends(get_current_user)):
     df = _load(payload.project_id)
     try:
         result = detect_duplicates(df)
@@ -79,7 +81,7 @@ def duplicates(payload: ProjectRequest):
 # ── Outliers ──────────────────────────────────────────────────────────────────
 
 @router.get("/outliers/columns")
-def outlier_columns(project_id: int = Query(...)):
+def outlier_columns(project_id: int = Query(...), current_user: User = Depends(get_current_user)):
     df = _load(project_id)
     return {"numeric_columns": get_numeric_columns(df)}
 
@@ -90,7 +92,7 @@ class OutlierRequest(BaseModel):
 
 
 @router.post("/outliers/run")
-def outliers_run(payload: OutlierRequest):
+def outliers_run(payload: OutlierRequest, current_user: User = Depends(get_current_user)):
     df = _load(payload.project_id)
     try:
         result = explore_outliers(df, payload.column)
@@ -104,7 +106,7 @@ def outliers_run(payload: OutlierRequest):
 # ── Correlations ──────────────────────────────────────────────────────────────
 
 @router.post("/correlations")
-def correlations(payload: ProjectRequest):
+def correlations(payload: ProjectRequest, current_user: User = Depends(get_current_user)):
     df = _load(payload.project_id)
     try:
         result = build_correlation_matrix(df)
@@ -118,7 +120,7 @@ def correlations(payload: ProjectRequest):
 # ── Column Compare ────────────────────────────────────────────────────────────
 
 @router.get("/compare-columns/columns")
-def compare_columns_options(project_id: int = Query(...)):
+def compare_columns_options(project_id: int = Query(...), current_user: User = Depends(get_current_user)):
     df = _load(project_id)
     return {"columns": get_columns(df)}
 
@@ -130,7 +132,7 @@ class ColumnCompareRequest(BaseModel):
 
 
 @router.post("/compare-columns/run")
-def compare_columns_run(payload: ColumnCompareRequest):
+def compare_columns_run(payload: ColumnCompareRequest, current_user: User = Depends(get_current_user)):
     df = _load(payload.project_id)
     try:
         result = compare_columns(df, payload.col_a, payload.col_b)
@@ -149,7 +151,7 @@ class MultifileRequest(BaseModel):
 
 
 @router.post("/multifile")
-def multifile_compare(payload: MultifileRequest):
+def multifile_compare(payload: MultifileRequest, current_user: User = Depends(get_current_user)):
     file_a = get_project_file_info(payload.project_id_a)
     if not file_a:
         raise HTTPException(status_code=404, detail=f"No file for project {payload.project_id_a}")
@@ -167,3 +169,40 @@ def multifile_compare(payload: MultifileRequest):
         return to_jsonable(result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Multi-file comparison failed: {e}")
+
+
+# ── Segments ──────────────────────────────────────────────────────────────────
+
+@router.get("/segments/columns")
+def segment_columns(project_id: int = Query(...), current_user: User = Depends(get_current_user)):
+    df = _load(project_id)
+    categorical = df.select_dtypes(include=["object", "category"]).columns.tolist()
+    numeric = df.select_dtypes(include="number").columns.tolist()
+    return {"categorical_columns": categorical, "numeric_columns": numeric}
+
+
+class SegmentRequest(BaseModel):
+    project_id: int
+    segment_col: str
+    metric_col: str
+
+
+@router.post("/segments/run")
+def segment_run(payload: SegmentRequest, current_user: User = Depends(get_current_user)):
+    df = _load(payload.project_id)
+    if payload.segment_col not in df.columns:
+        raise HTTPException(status_code=400, detail=f"Column '{payload.segment_col}' not found.")
+    if payload.metric_col not in df.columns:
+        raise HTTPException(status_code=400, detail=f"Column '{payload.metric_col}' not found.")
+    try:
+        grouped = df.groupby(payload.segment_col)[payload.metric_col].agg(
+            count="count", mean="mean", median="median", std="std", min="min", max="max"
+        ).reset_index()
+        grouped.columns = ["segment", "count", "mean", "median", "std", "min", "max"]
+        return to_jsonable({
+            "segment_col": payload.segment_col,
+            "metric_col": payload.metric_col,
+            "segments": grouped.to_dict(orient="records"),
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Segment analysis failed: {e}")
