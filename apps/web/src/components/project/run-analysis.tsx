@@ -28,8 +28,9 @@ import { AbTestsView } from "@/components/analysis/ab-tests-view";
 import { QueryView } from "@/components/analysis/query-view";
 import { DataStoryView } from "@/components/analysis/data-story-view";
 import { DataTableView } from "@/components/analysis/data-table-view";
-import { getFreshToken, shareAnalysis } from "@/lib/api";
+import { ApiError, getFreshToken, shareAnalysis } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
+import { SafePanel } from "@/components/ui/error-boundary";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
@@ -137,10 +138,15 @@ export function RunAnalysis({ projectId }: Props) {
       }
     };
 
-    es.onerror = () => {
-      setError("Analysis stream disconnected. Please try again.");
-      setLoading(false);
-      setProgress(null);
+    es.onerror = (event) => {
+      // Only show error if we were actively loading (not a clean close)
+      if (loading) {
+        setError(
+          "The analysis stream was interrupted. This may be due to a network issue or server restart. Please try again."
+        );
+        setLoading(false);
+        setProgress(null);
+      }
       es.close();
     };
   }
@@ -151,8 +157,9 @@ export function RunAnalysis({ projectId }: Props) {
       const { share_token } = await shareAnalysis(projectId);
       setShareToken(share_token);
       toast.success("Share link created. Copy it to share your analysis.");
-    } catch {
-      toast.error("Failed to create share link. Please try again.");
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.userMessage : "Failed to create share link. Please try again.";
+      toast.error(msg);
     } finally {
       setSharing(false);
     }
@@ -246,159 +253,164 @@ export function RunAnalysis({ projectId }: Props) {
 
           {/* ── Data Table ───────────────────────────────────────────── */}
           {tab === "data-table" && (
-            <TabPanel>
-              <h2 className="mb-4 font-semibold text-white">Raw Data</h2>
-              <DataTableView projectId={projectId} />
-            </TabPanel>
+            <SafePanel label="Data Table">
+              <TabPanel>
+                <h2 className="mb-4 font-semibold text-white">Raw Data</h2>
+                <DataTableView projectId={projectId} />
+              </TabPanel>
+            </SafePanel>
           )}
 
           {/* ── Overview ─────────────────────────────────────────────── */}
           {tab === "overview" && (
-            <div className="space-y-4">
-              <StatsCards summary={result.dataset_summary} />
-
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <SafePanel label="Overview">
+              <div className="space-y-4">
+                <StatsCards summary={result.dataset_summary} />
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <TabPanel><HealthScore score={result.health_score} /></TabPanel>
+                  <TabPanel>
+                    <h2 className="mb-4 text-sm font-semibold text-white/70 uppercase tracking-wider">Cleaning Summary</h2>
+                    <CleaningSummaryCards summary={result.cleaning_summary} />
+                  </TabPanel>
+                </div>
                 <TabPanel>
-                  <HealthScore score={result.health_score} />
+                  <h2 className="mb-4 font-semibold text-white">Top Highlights</h2>
+                  <InsightHighlights insights={result.insights} />
                 </TabPanel>
-                <TabPanel>
-                  <h2 className="mb-4 text-sm font-semibold text-white/70 uppercase tracking-wider">
-                    Cleaning Summary
-                  </h2>
-                  <CleaningSummaryCards summary={result.cleaning_summary} />
-                </TabPanel>
+                <RecommendedAction insights={result.insights} />
               </div>
-
-              <TabPanel>
-                <h2 className="mb-4 font-semibold text-white">Top Highlights</h2>
-                <InsightHighlights insights={result.insights} />
-              </TabPanel>
-
-              <RecommendedAction insights={result.insights} />
-            </div>
+            </SafePanel>
           )}
 
           {/* ── Profile ──────────────────────────────────────────────── */}
           {tab === "profile" && (
-            <TabPanel>
-              <h2 className="mb-4 font-semibold text-white">Column Profiles</h2>
-              <ProfileView profile={result.profile} />
-            </TabPanel>
+            <SafePanel label="Column Profiles">
+              <TabPanel>
+                <h2 className="mb-4 font-semibold text-white">Column Profiles</h2>
+                <ProfileView profile={result.profile} />
+              </TabPanel>
+            </SafePanel>
           )}
 
           {/* ── Insights ─────────────────────────────────────────────── */}
           {tab === "insights" && (
-            <TabPanel>
-              <h2 className="mb-4 font-semibold text-white">All Insights</h2>
-              <InsightsList insights={result.insights} />
-            </TabPanel>
+            <SafePanel label="Insights">
+              <TabPanel>
+                <h2 className="mb-4 font-semibold text-white">All Insights</h2>
+                <InsightsList insights={result.insights} />
+              </TabPanel>
+            </SafePanel>
           )}
 
           {/* ── Cleaning ─────────────────────────────────────────────── */}
           {tab === "cleaning" && (
-            <TabPanel>
-              <h2 className="mb-4 font-semibold text-white">Cleaning Report</h2>
-              <CleaningReport items={result.cleaning_report} />
-            </TabPanel>
+            <SafePanel label="Cleaning Report">
+              <TabPanel>
+                <h2 className="mb-4 font-semibold text-white">Cleaning Report</h2>
+                <CleaningReport items={result.cleaning_report} />
+              </TabPanel>
+            </SafePanel>
           )}
 
           {/* ── Charts ───────────────────────────────────────────────── */}
           {tab === "charts" && (
-            <TabPanel>
-              <h2 className="mb-4 font-semibold text-white">Charts</h2>
-              <ChartViewer projectId={projectId} autoLoad />
-            </TabPanel>
+            <SafePanel label="Charts">
+              <TabPanel>
+                <h2 className="mb-4 font-semibold text-white">Charts</h2>
+                <ChartViewer projectId={projectId} autoLoad />
+              </TabPanel>
+            </SafePanel>
           )}
 
           {/* ── Time Series ──────────────────────────────────────────── */}
           {tab === "timeseries" && (
-            <TabPanel>
-              <TimeseriesView projectId={projectId} />
-            </TabPanel>
+            <SafePanel label="Time Series">
+              <TabPanel><TimeseriesView projectId={projectId} /></TabPanel>
+            </SafePanel>
           )}
 
           {/* ── Duplicates ───────────────────────────────────────────── */}
           {tab === "duplicates" && (
-            <TabPanel>
-              <DuplicatesView projectId={projectId} />
-            </TabPanel>
+            <SafePanel label="Duplicates">
+              <TabPanel><DuplicatesView projectId={projectId} /></TabPanel>
+            </SafePanel>
           )}
 
           {/* ── Outliers ─────────────────────────────────────────────── */}
           {tab === "outliers" && (
-            <TabPanel>
-              <OutlierView projectId={projectId} />
-            </TabPanel>
+            <SafePanel label="Outliers">
+              <TabPanel><OutlierView projectId={projectId} /></TabPanel>
+            </SafePanel>
           )}
 
           {/* ── Correlations ─────────────────────────────────────────── */}
           {tab === "correlations" && (
-            <TabPanel>
-              <CorrelationMatrix projectId={projectId} />
-            </TabPanel>
+            <SafePanel label="Correlations">
+              <TabPanel><CorrelationMatrix projectId={projectId} /></TabPanel>
+            </SafePanel>
           )}
 
           {/* ── Compare Columns ──────────────────────────────────────── */}
           {tab === "compare-cols" && (
-            <TabPanel>
-              <ColumnCompare projectId={projectId} />
-            </TabPanel>
+            <SafePanel label="Column Comparison">
+              <TabPanel><ColumnCompare projectId={projectId} /></TabPanel>
+            </SafePanel>
           )}
 
           {/* ── Compare Files ────────────────────────────────────────── */}
           {tab === "compare-files" && (
-            <TabPanel>
-              <MultifileCompare currentProjectId={projectId} />
-            </TabPanel>
+            <SafePanel label="File Comparison">
+              <TabPanel><MultifileCompare currentProjectId={projectId} /></TabPanel>
+            </SafePanel>
           )}
 
           {/* ── Predictions ──────────────────────────────────────────── */}
           {tab === "predictions" && (
-            <TabPanel>
-              <PredictionsView projectId={projectId} />
-            </TabPanel>
+            <SafePanel label="Predictions">
+              <TabPanel><PredictionsView projectId={projectId} /></TabPanel>
+            </SafePanel>
           )}
 
           {/* ── Ask AI ───────────────────────────────────────────────── */}
           {tab === "ask-ai" && (
-            <TabPanel>
-              <AiChatView projectId={projectId} />
-            </TabPanel>
+            <SafePanel label="AI Chat">
+              <TabPanel><AiChatView projectId={projectId} /></TabPanel>
+            </SafePanel>
           )}
 
           {/* ── Pivot ────────────────────────────────────────────────── */}
           {tab === "pivot" && (
-            <TabPanel>
-              <PivotView projectId={projectId} />
-            </TabPanel>
+            <SafePanel label="Pivot Table">
+              <TabPanel><PivotView projectId={projectId} /></TabPanel>
+            </SafePanel>
           )}
 
           {/* ── Segments ─────────────────────────────────────────────── */}
           {tab === "segments" && (
-            <TabPanel>
-              <SegmentsView projectId={projectId} />
-            </TabPanel>
+            <SafePanel label="Segments">
+              <TabPanel><SegmentsView projectId={projectId} /></TabPanel>
+            </SafePanel>
           )}
 
           {/* ── A/B Tests ────────────────────────────────────────────── */}
           {tab === "ab-tests" && (
-            <TabPanel>
-              <AbTestsView projectId={projectId} />
-            </TabPanel>
+            <SafePanel label="Statistical Tests">
+              <TabPanel><AbTestsView projectId={projectId} /></TabPanel>
+            </SafePanel>
           )}
 
           {/* ── SQL Query ────────────────────────────────────────────── */}
           {tab === "query" && (
-            <TabPanel>
-              <QueryView projectId={projectId} />
-            </TabPanel>
+            <SafePanel label="SQL Query">
+              <TabPanel><QueryView projectId={projectId} /></TabPanel>
+            </SafePanel>
           )}
 
           {/* ── Data Story ───────────────────────────────────────────── */}
           {tab === "story" && (
-            <TabPanel>
-              <DataStoryView analysisId={analysisId} />
-            </TabPanel>
+            <SafePanel label="Data Story">
+              <TabPanel><DataStoryView analysisId={analysisId} /></TabPanel>
+            </SafePanel>
           )}
         </div>
       ) : (

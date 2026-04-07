@@ -77,6 +77,7 @@ def run_analysis(
         }
 
         # ── Persist analysis result to DB ─────────────────────────────────────
+        from sqlalchemy.exc import SQLAlchemyError
         file_info = PROJECT_FILES.get(project_id) or {}
         file_hash = file_info.get("file_hash")
         analysis = AnalysisResult(
@@ -85,20 +86,34 @@ def run_analysis(
             result_json=json.dumps(result, default=str),
         )
         db.add(analysis)
+        try:
+            db.commit()
+        except SQLAlchemyError as e:
+            db.rollback()
+            logger.error(f"DB commit failed for analysis project {project_id}: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=503,
+                detail="Analysis completed but could not be saved. Please try again.",
+            )
 
-        # Cache last insights for AI chat context
+        # Update in-memory cache ONLY after successful commit
         PROJECT_FILES.setdefault(project_id, {})["last_insights"] = [
-            i.get("finding", "") for i in insights[:5]
+            i.get("finding", "") for i in insights[:5] if isinstance(i, dict)
         ]
 
-        db.commit()
         logger.info(f"Analysis completed for project {project_id}: {len(insights)} insights")
         return result
 
     except HTTPException:
         raise
+    except MemoryError:
+        logger.error(f"Out of memory during analysis for project {project_id}", exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="The dataset is too large to analyze with the current server resources. Try a smaller file.",
+        )
     except Exception as e:
-        logger.error(f"Analysis failed for project {project_id}: {e}", exc_info=True)
+        logger.error(f"Analysis failed for project {project_id}: {type(e).__name__}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
 
 

@@ -10,6 +10,7 @@ Verification order:
 
 Users are lazy-created in our local DB on first authenticated request.
 """
+import logging
 import os
 from typing import Optional
 
@@ -17,10 +18,13 @@ import jwt
 from jwt import PyJWKClient, PyJWKClientError
 from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import User
+
+logger = logging.getLogger(__name__)
 
 # ── Config helpers ────────────────────────────────────────────────────────────
 
@@ -73,9 +77,19 @@ def _decode_token(token: str) -> Optional[dict]:
                 algorithms=["ES256", "RS256"],
                 options={"verify_aud": False},  # Supabase aud varies by project
             )
+            if not isinstance(payload.get("sub"), str) or not payload["sub"]:
+                logger.warning("JWT payload missing or invalid 'sub' claim")
+                return None
             return payload
-    except (PyJWKClientError, jwt.PyJWTError, Exception):
-        pass  # Fall through to HS256 strategy
+    except PyJWKClientError as e:
+        logger.debug(f"JWKS key lookup failed (will try HS256 fallback): {e}")
+    except jwt.ExpiredSignatureError:
+        logger.debug("JWT expired (JWKS path)")
+        return None  # Expired — don't try HS256, the token is just expired
+    except jwt.PyJWTError as e:
+        logger.debug(f"JWT decode failed via JWKS: {e}")
+    except Exception as e:
+        logger.warning(f"Unexpected error in JWKS verification: {e}")
 
     # ── Strategy 2: Legacy HS256 shared secret ────────────────────────────────
     try:
@@ -87,9 +101,17 @@ def _decode_token(token: str) -> Optional[dict]:
                 algorithms=["HS256"],
                 options={"verify_aud": False},
             )
+            if not isinstance(payload.get("sub"), str) or not payload["sub"]:
+                logger.warning("HS256 JWT payload missing or invalid 'sub' claim")
+                return None
             return payload
-    except (jwt.PyJWTError, Exception):
-        pass
+    except jwt.ExpiredSignatureError:
+        logger.debug("JWT expired (HS256 path)")
+        return None
+    except jwt.PyJWTError as e:
+        logger.debug(f"JWT decode failed via HS256: {e}")
+    except Exception as e:
+        logger.warning(f"Unexpected error in HS256 verification: {e}")
 
     return None
 
@@ -97,17 +119,45 @@ def _decode_token(token: str) -> Optional[dict]:
 # ── User helper ───────────────────────────────────────────────────────────────
 
 def _get_or_create_user(payload: dict, db: Session) -> User:
-    """Look up user by Supabase UUID; create a local record if first login."""
+    """
+    Look up user by Supabase UUID; create a local record if first login.
+
+    Handles the race condition where two concurrent first-logins for the same
+    user both attempt to INSERT — the second commit raises IntegrityError and
+    we simply re-fetch the now-existing row.
+    """
     user_id: str = payload["sub"]
     email: str = payload.get("email", "")
 
     user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
+    if user is not None:
+        return user
+
+    try:
         user = User(id=user_id, email=email, plan="free")
         db.add(user)
         db.commit()
         db.refresh(user)
-    return user
+        logger.info(f"Created local user record for {user_id[:8]}…")
+        return user
+    except IntegrityError:
+        # Another concurrent request already created the user — roll back and fetch
+        db.rollback()
+        user = db.query(User).filter(User.id == user_id).first()
+        if user is None:
+            # Should never happen, but guard against it
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Could not create user session. Please try again.",
+            )
+        return user
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to create user record for {user_id[:8]}…: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable. Please try again.",
+        )
 
 
 # ── FastAPI dependencies ──────────────────────────────────────────────────────

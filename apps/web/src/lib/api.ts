@@ -3,6 +3,83 @@ import { supabase } from "./supabase";
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 
+// ── Structured API error ──────────────────────────────────────────────────────
+
+/**
+ * Every failed API call throws an ApiError instead of a raw Error.
+ * This lets callers inspect error.code and error.status to show
+ * appropriate UI (401 → redirect to login, 503 → "try again", etc.).
+ */
+export class ApiError extends Error {
+  constructor(
+    /** User-friendly message — safe to display directly */
+    public readonly userMessage: string,
+    /** Machine-readable code from the backend (e.g. "NOT_FOUND") */
+    public readonly code: string,
+    /** HTTP status code */
+    public readonly status: number,
+    /** Request ID for cross-referencing server logs */
+    public readonly requestId?: string,
+    /** Validation field errors (status 422 only) */
+    public readonly fields?: Record<string, string>,
+  ) {
+    super(userMessage);
+    this.name = "ApiError";
+  }
+
+  get isAuthError() { return this.status === 401; }
+  get isForbidden()  { return this.status === 403; }
+  get isNotFound()   { return this.status === 404; }
+  get isValidation() { return this.status === 422; }
+  get isServer()     { return this.status >= 500; }
+  get isNetwork()    { return this.status === 0; }
+  get isRetryable()  { return this.status === 503 || this.status === 504 || this.status === 429; }
+}
+
+/**
+ * Parse a failed Response into a structured ApiError.
+ * Handles both our backend's JSON error format and raw text errors.
+ */
+async function parseError(res: Response, context: string): Promise<ApiError> {
+  let body: Record<string, unknown> = {};
+  const requestId = res.headers.get("X-Request-ID") ?? undefined;
+
+  try {
+    const text = await res.text();
+    if (text) body = JSON.parse(text);
+  } catch {
+    // Non-JSON response body — use a generic message
+  }
+
+  const code = String(body.code ?? "UNKNOWN_ERROR");
+  const fields = body.fields as Record<string, string> | undefined;
+
+  // Map status codes to user-friendly defaults if the backend didn't provide one
+  let userMessage = String(body.error ?? body.detail ?? "");
+  if (!userMessage) {
+    userMessage = statusToMessage(res.status, context);
+  }
+
+  return new ApiError(userMessage, code, res.status, requestId, fields);
+}
+
+function statusToMessage(status: number, context: string): string {
+  switch (status) {
+    case 400: return `Invalid request. Please check your input.`;
+    case 401: return `Your session has expired. Please sign in again.`;
+    case 403: return `You don't have permission to perform this action.`;
+    case 404: return `${context} not found.`;
+    case 409: return `A conflict occurred. The resource may already exist.`;
+    case 413: return `The file is too large to upload.`;
+    case 415: return `This file type is not supported.`;
+    case 422: return `The request data is invalid. Please check your input.`;
+    case 429: return `Too many requests. Please wait a moment and try again.`;
+    case 503: return `The service is temporarily unavailable. Please try again in a moment.`;
+    case 504: return `The request timed out. Please try again.`;
+    default:  return `An unexpected error occurred (${status}). Please try again.`;
+  }
+}
+
 // ── Auth token helpers ────────────────────────────────────────────────────────
 
 export function getToken(): string | null {
@@ -60,28 +137,74 @@ async function authHeaders(): Promise<Record<string, string>> {
 // ── Base fetch helpers ────────────────────────────────────────────────────────
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    cache: "no-store",
-    headers: await authHeaders(),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `GET ${path} failed: ${res.status}`);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      cache: "no-store",
+      headers: await authHeaders(),
+    });
+  } catch (e) {
+    // Network-level failure (offline, DNS, CORS, etc.)
+    throw new ApiError(
+      "Could not reach the server. Please check your connection.",
+      "NETWORK_ERROR",
+      0,
+    );
   }
-  return res.json();
+
+  if (res.status === 401) {
+    // Token expired — clear stale credentials and let the caller handle redirect
+    clearToken();
+  }
+
+  if (!res.ok) {
+    throw await parseError(res, path.split("/").filter(Boolean).pop() ?? "Resource");
+  }
+
+  try {
+    return await res.json();
+  } catch {
+    throw new ApiError(
+      "The server returned an unexpected response format.",
+      "PARSE_ERROR",
+      res.status,
+    );
+  }
 }
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `POST ${path} failed: ${res.status}`);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    throw new ApiError(
+      "Could not reach the server. Please check your connection.",
+      "NETWORK_ERROR",
+      0,
+    );
   }
-  return res.json();
+
+  if (res.status === 401) {
+    clearToken();
+  }
+
+  if (!res.ok) {
+    throw await parseError(res, path.split("/").filter(Boolean).pop() ?? "Resource");
+  }
+
+  try {
+    return await res.json();
+  } catch {
+    throw new ApiError(
+      "The server returned an unexpected response format.",
+      "PARSE_ERROR",
+      res.status,
+    );
+  }
 }
 
 // ── Auth (Supabase) ───────────────────────────────────────────────────────────
@@ -385,15 +508,30 @@ export async function exportReport(projectId: number, format: "html" | "pdf" | "
   const token = await getFreshToken();
   const url = `${API_BASE_URL}/reports/export/${projectId}?format=${format}`;
   const hdrs = token ? { Authorization: `Bearer ${token}` } : {};
-  // All formats: download via fetch so the Authorization header is sent
-  const res = await fetch(url, { headers: hdrs });
-  if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: hdrs });
+  } catch {
+    throw new ApiError(
+      "Could not reach the server to export the report. Please check your connection.",
+      "NETWORK_ERROR",
+      0,
+    );
+  }
+
+  if (!res.ok) {
+    throw await parseError(res, "Report");
+  }
+
   const blob = await res.blob();
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   const ext = format === "xlsx" ? "xlsx" : format === "pdf" ? "pdf" : "html";
   a.download = `analysis_report_${projectId}.${ext}`;
   a.click();
+  // Clean up object URL after a short delay
+  setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
 }
 
 // ── Pivot ─────────────────────────────────────────────────────────────────────

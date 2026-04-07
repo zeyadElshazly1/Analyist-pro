@@ -1,15 +1,17 @@
 import json
-from typing import Optional
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.middleware.auth import get_current_user, optional_current_user
+from app.middleware.auth import get_current_user
 from app.models import AnalysisResult, Project, ProjectFile, User
 from app.schemas.project import ProjectCreate, ProjectResponse
 from app.state import PROJECT_FILES
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
@@ -33,11 +35,20 @@ def create_project(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    project = Project(name=payload.name, status="created", user_id=current_user.id)
-    db.add(project)
-    db.commit()
-    db.refresh(project)
-    return project.to_dict()
+    try:
+        project = Project(name=payload.name, status="created", user_id=current_user.id)
+        db.add(project)
+        db.commit()
+        db.refresh(project)
+        logger.info(f"Project created: id={project.id} user={current_user.id[:8]}…")
+        return project.to_dict()
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Failed to create project for user {current_user.id[:8]}…: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not create the project due to a database error. Please try again.",
+        )
 
 
 # NOTE: /stats must be declared before /{project_id} so FastAPI matches it first
@@ -102,9 +113,22 @@ def delete_project(
     )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
-    db.delete(project)
-    PROJECT_FILES.pop(project_id, None)
-    db.commit()
+
+    try:
+        db.delete(project)
+        db.commit()
+        # Only clear the cache after a successful DB commit
+        PROJECT_FILES.pop(project_id, None)
+        logger.info(
+            f"Project deleted: id={project_id} user={current_user.id[:8]}… name='{project.name}'"
+        )
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Failed to delete project {project_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not delete the project due to a database error. Please try again.",
+        )
 
 
 @router.get("/{project_id}/latest-insights")
@@ -129,15 +153,37 @@ def get_latest_insights(
         .first()
     )
     if not analysis:
-        return {"project_id": project_id, "project_name": project.name, "insights": [], "analysis_id": None}
+        return {
+            "project_id": project_id,
+            "project_name": project.name,
+            "insights": [],
+            "analysis_id": None,
+            "created_at": None,
+            "health_score": None,
+        }
 
-    result = json.loads(analysis.result_json)
-    insights = result.get("insights", [])[:5]  # top 5 only for dashboard widget
+    try:
+        result = json.loads(analysis.result_json)
+    except (json.JSONDecodeError, TypeError) as e:
+        logger.warning(f"Corrupted result_json for analysis {analysis.id}: {e}")
+        return {
+            "project_id": project_id,
+            "project_name": project.name,
+            "insights": [],
+            "analysis_id": analysis.id,
+            "created_at": analysis.created_at.isoformat() if analysis.created_at else None,
+            "health_score": None,
+        }
+
+    insights = result.get("insights", [])[:5]  # top 5 for dashboard widget
+    health = result.get("health_score", {})
+    health_score = health.get("score") if isinstance(health, dict) else None
+
     return {
         "project_id": project_id,
         "project_name": project.name,
         "analysis_id": analysis.id,
         "created_at": analysis.created_at.isoformat() if analysis.created_at else None,
-        "health_score": result.get("health_score", {}).get("score"),
+        "health_score": health_score,
         "insights": insights,
     }

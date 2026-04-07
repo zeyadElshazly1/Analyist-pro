@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 _FORBIDDEN_CODE = re.compile(
     r"\b(import\s|open\s*\(|os\.|sys\.|subprocess|__import__|eval\s*\(|exec\s*\()\b",
@@ -38,8 +41,8 @@ def _build_context(df: pd.DataFrame, insights: list | None = None) -> str:
     try:
         sample = df.head(3).to_string(max_cols=10, max_colwidth=30)
         lines.append(sample)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not render sample rows: {e}")
 
     if insights:
         lines.append("\nTop insights:")
@@ -117,44 +120,64 @@ Instructions:
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
     openai_key = os.environ.get("OPENAI_API_KEY", "")
 
+    # Model names are configurable via env so they can be updated without code deploys
+    claude_model = os.environ.get("CLAUDE_CHAT_MODEL", "claude-haiku-4-5-20251001")
+    openai_model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+
     if anthropic_key:
         try:
-            import anthropic
-
+            import anthropic  # noqa: PLC0415
             client = anthropic.Anthropic(api_key=anthropic_key)
             messages = list(conversation_history) + [{"role": "user", "content": user_message}]
             response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model=claude_model,
                 max_tokens=1024,
                 system=system_prompt,
                 messages=messages,
             )
             answer_text = response.content[0].text
-            model_used = "claude-haiku-4-5-20251001"
+            model_used = claude_model
         except ImportError:
-            pass
+            logger.warning(
+                "anthropic package not installed — AI chat unavailable. "
+                "Run: pip install anthropic"
+            )
         except Exception as e:
-            answer_text = f"AI service error: {e}. Falling back to basic analysis."
+            logger.error(f"Anthropic API call failed: {type(e).__name__}: {e}", exc_info=True)
+            answer_text = (
+                "The AI assistant is temporarily unavailable. "
+                "Your question has been received but cannot be answered right now. "
+                "Please try again in a moment."
+            )
 
     elif openai_key:
         try:
-            import openai
-
+            import openai  # noqa: PLC0415
             client = openai.OpenAI(api_key=openai_key)
             messages = [{"role": "system", "content": system_prompt}]
             messages += [{"role": m["role"], "content": m["content"]} for m in conversation_history]
             messages.append({"role": "user", "content": user_message})
             response = client.chat.completions.create(
-                model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+                model=openai_model,
                 max_tokens=1024,
                 messages=messages,
             )
             answer_text = response.choices[0].message.content
-            model_used = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+            model_used = openai_model
         except ImportError:
-            answer_text = "openai package not installed. Run: pip install openai"
+            logger.warning(
+                "openai package not installed — AI chat unavailable. "
+                "Run: pip install openai"
+            )
+            answer_text = (
+                "The AI assistant is not configured. "
+                "Please set ANTHROPIC_API_KEY or OPENAI_API_KEY to enable AI-powered responses."
+            )
         except Exception as e:
-            answer_text = f"OpenAI error: {e}. Falling back to basic analysis."
+            logger.error(f"OpenAI API call failed: {type(e).__name__}: {e}", exc_info=True)
+            answer_text = (
+                "The AI assistant is temporarily unavailable. Please try again in a moment."
+            )
 
     if answer_text is None:
         answer_text = _fallback_answer(df, user_message)
@@ -299,13 +322,14 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
   ]
 }}"""
 
+    story_model = os.environ.get("CLAUDE_STORY_MODEL", "claude-sonnet-4-6")
+
     if anthropic_key:
         try:
-            import anthropic
-
+            import anthropic  # noqa: PLC0415
             client = anthropic.Anthropic(api_key=anthropic_key)
             response = client.messages.create(
-                model="claude-sonnet-4-6",
+                model=story_model,
                 max_tokens=2048,
                 messages=[{"role": "user", "content": prompt}],
             )
@@ -316,8 +340,12 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
                 if text.startswith("json"):
                     text = text[4:]
             return _json.loads(text)
-        except Exception:
-            pass  # fall through to rule-based
+        except ImportError:
+            logger.warning("anthropic package not installed — falling back to rule-based story")
+        except _json.JSONDecodeError as e:
+            logger.warning(f"Story generation returned invalid JSON: {e} — falling back to rule-based")
+        except Exception as e:
+            logger.error(f"Story generation failed ({type(e).__name__}: {e}) — using rule-based fallback", exc_info=True)
 
     # ── Rule-based fallback ───────────────────────────────────────────────────
     top_insights = insights[:3]

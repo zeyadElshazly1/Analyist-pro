@@ -1,7 +1,10 @@
 import hashlib
+import logging
 import os
+import tempfile
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.config import ALLOWED_EXTENSIONS, MAX_UPLOAD_BYTES, UPLOAD_DIR
@@ -10,6 +13,7 @@ from app.middleware.auth import get_current_user
 from app.models import Project, ProjectFile, User
 from app.state import PROJECT_FILES
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/upload", tags=["upload"])
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -54,39 +58,74 @@ async def upload_file(
     # ── Compute hash for cache invalidation ───────────────────────────────────
     file_hash = hashlib.sha256(content).hexdigest()
 
-    # ── Save file to disk ─────────────────────────────────────────────────────
+    # ── Atomic file write: write to temp file, then rename ───────────────────
+    # This prevents partial files being seen by readers if the write is interrupted.
     safe_filename = f"project_{project_id}_{filename}"
-    path = os.path.join(UPLOAD_DIR, safe_filename)
-    with open(path, "wb") as f:
-        f.write(content)
+    final_path = os.path.join(UPLOAD_DIR, safe_filename)
 
-    # ── Persist to database ───────────────────────────────────────────────────
-    project_file = ProjectFile(
-        project_id=project_id,
-        filename=filename,
-        stored_path=path,
-        size_bytes=size_bytes,
-        file_hash=file_hash,
-    )
-    db.add(project_file)
+    try:
+        fd, tmp_path = tempfile.mkstemp(dir=UPLOAD_DIR, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(content)
+            os.replace(tmp_path, final_path)  # atomic on POSIX
+        except Exception:
+            # Clean up the temp file if rename failed
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+    except OSError as e:
+        logger.error(f"File write failed for project {project_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not save the uploaded file. Please try again.",
+        )
 
-    # Update project status
-    project.status = "ready"
-    db.commit()
-    db.refresh(project_file)
+    # ── Persist to database (with rollback on failure) ───────────────────────
+    try:
+        project_file = ProjectFile(
+            project_id=project_id,
+            filename=filename,
+            stored_path=final_path,
+            size_bytes=size_bytes,
+            file_hash=file_hash,
+        )
+        db.add(project_file)
+        project.status = "ready"
+        db.commit()
+        db.refresh(project_file)
+    except SQLAlchemyError as e:
+        db.rollback()
+        # Remove the file we just wrote — DB record doesn't exist
+        try:
+            os.unlink(final_path)
+        except OSError:
+            pass
+        logger.error(f"DB write failed for project {project_id} upload: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=503,
+            detail="Could not save file metadata to the database. Please try again.",
+        )
 
-    # ── Update in-memory cache (backward compat with existing services) ───────
+    # ── Update in-memory cache only after successful DB commit ────────────────
     PROJECT_FILES[project_id] = {
         "filename": filename,
-        "path": path,
+        "path": final_path,
         "file_hash": file_hash,
         "size_bytes": size_bytes,
     }
 
+    logger.info(
+        f"Upload: project={project_id} user={current_user.id[:8]}… "
+        f"file='{filename}' size={size_bytes} hash={file_hash[:8]}…"
+    )
+
     return {
         "project_id": project_id,
         "filename": filename,
-        "path": path,
+        "path": final_path,
         "size_bytes": size_bytes,
         "file_hash": file_hash,
     }
