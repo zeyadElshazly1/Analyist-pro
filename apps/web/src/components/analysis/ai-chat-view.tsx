@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { sendChatMessage } from "@/lib/api";
+import { sendChatMessage, ApiError } from "@/lib/api";
 import { Loader2, Send, Bot, User, Code2, Table2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -52,11 +52,12 @@ export function AiChatView({ projectId }: Props) {
         numberResult: res.number_result,
       };
       setMessages((prev) => [...prev, assistantMsg]);
-    } catch (e: any) {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: `Error: ${e.message}` },
-      ]);
+    } catch (e) {
+      const userMessage =
+        e instanceof ApiError
+          ? e.userMessage
+          : "Sorry, I couldn't process your request. Please try again.";
+      setMessages((prev) => [...prev, { role: "assistant", content: userMessage }]);
     } finally {
       setLoading(false);
     }

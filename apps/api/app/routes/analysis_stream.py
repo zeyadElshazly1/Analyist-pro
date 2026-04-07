@@ -54,11 +54,12 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
     try:
         df = load_dataset(info["path"])
     except Exception as e:
-        yield _sse({"error": f"Failed to load dataset: {e}"})
+        logger.error(f"Failed to load dataset for project {project_id}: {e}", exc_info=True)
+        yield _sse({"error": "Could not read the uploaded file. It may be corrupted or in an unsupported format."})
         return
 
     if df.empty:
-        yield _sse({"error": "Uploaded dataset is empty."})
+        yield _sse({"error": "Uploaded dataset is empty. Please upload a file with at least one row of data."})
         return
 
     yield emit("Dataset loaded", 10, f"{len(df):,} rows × {len(df.columns)} columns")
@@ -68,11 +69,12 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
     try:
         df_clean, cleaning_report, cleaning_summary = clean_dataset(df)
     except Exception as e:
-        yield _sse({"error": f"Cleaning failed: {e}"})
+        logger.error(f"Data cleaning failed for project {project_id}: {e}", exc_info=True)
+        yield _sse({"error": "Data cleaning failed. Please check your file format and try again."})
         return
 
     if df_clean.empty:
-        yield _sse({"error": "Dataset became empty after cleaning."})
+        yield _sse({"error": "Dataset became empty after cleaning. Your file may contain only headers or invalid rows."})
         return
 
     yield emit("Data cleaned", 35, f"{cleaning_summary.get('steps', 0)} cleaning operations applied")
@@ -83,7 +85,8 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
         profile = profile_dataset(df_clean)
         health_score = calculate_health_score(df_clean)
     except Exception as e:
-        yield _sse({"error": f"Profiling failed: {e}"})
+        logger.error(f"Column profiling failed for project {project_id}: {e}", exc_info=True)
+        yield _sse({"error": "Column profiling failed. The dataset may contain unsupported data types."})
         return
 
     grade = health_score.get("grade", "?")
@@ -95,7 +98,8 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
         insights, narrative = analyze_dataset(df_clean)
         dataset_summary = get_dataset_summary(df_clean)
     except Exception as e:
-        yield _sse({"error": f"Insight generation failed: {e}"})
+        logger.error(f"Insight generation failed for project {project_id}: {e}", exc_info=True)
+        yield _sse({"error": "Insight generation failed. Please try running the analysis again."})
         return
 
     yield emit("Insights ready", 90, f"{len(insights)} insights found")

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { uploadFile, getDataPreview } from "@/lib/api";
+import { uploadFile, getDataPreview, ApiError } from "@/lib/api";
 import { Upload, FileText, CheckCircle2, AlertCircle, TableIcon } from "lucide-react";
 
 type Props = {
@@ -48,13 +48,15 @@ export function UploadDataset({ projectId, onUploaded }: Props) {
       setStatus("success");
       setMessage(`${file.name} uploaded successfully.`);
       onUploaded?.();
-      // fetch preview in background — non-blocking
+      // fetch preview in background — non-blocking, failure is not critical
       getDataPreview(projectId, 5)
         .then(setPreview)
-        .catch(() => {/* preview is best-effort */});
+        .catch((err) => {
+          console.warn("[UploadDataset] Preview failed (non-critical):", err instanceof ApiError ? err.userMessage : err);
+        });
     } catch (e) {
       setStatus("error");
-      setMessage(e instanceof Error ? e.message : "Upload failed.");
+      setMessage(e instanceof ApiError ? e.userMessage : "Upload failed. Please try again.");
     }
   }
 
