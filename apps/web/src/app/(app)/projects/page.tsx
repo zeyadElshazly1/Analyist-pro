@@ -36,7 +36,7 @@ export default function ProjectsPage() {
           {/* List */}
           <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
             <h2 className="mb-5 text-sm font-semibold text-white">All projects</h2>
-            <ProjectsList ref={listRef} />
+            <ProjectsList ref={listRef} showSearch />
           </div>
         </div>
       </div>

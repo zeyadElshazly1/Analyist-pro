@@ -1,6 +1,8 @@
 import json
 import logging
+import math
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -253,3 +255,117 @@ def generate_story(
     except Exception as e:
         logger.error(f"Story generation failed for analysis {analysis_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Story generation failed: {e}")
+
+
+@router.get("/data-table")
+def get_data_table(
+    project_id: int = Query(...),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=10, le=500),
+    sort_col: Optional[str] = Query(None),
+    sort_dir: str = Query("asc", pattern="^(asc|desc)$"),
+    search: Optional[str] = Query(None, max_length=200),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Return a paginated, sortable, searchable view of the raw dataset.
+
+    - page / per_page: pagination controls
+    - sort_col / sort_dir: column sorting (asc | desc)
+    - search: full-text search across all string columns (case-insensitive)
+    """
+    # Verify project ownership
+    project = db.query(Project).filter(
+        Project.id == project_id, Project.user_id == current_user.id
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    file_path = _get_file_path(project_id)
+    try:
+        df = load_dataset(file_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load dataset: {e}")
+
+    if df.empty:
+        raise HTTPException(status_code=404, detail="Dataset is empty.")
+
+    # ── Build column metadata ─────────────────────────────────────────────────
+    import pandas as pd
+    import numpy as np
+
+    def _col_dtype(series: pd.Series) -> str:
+        if pd.api.types.is_integer_dtype(series):
+            return "integer"
+        if pd.api.types.is_float_dtype(series):
+            return "float"
+        if pd.api.types.is_bool_dtype(series):
+            return "boolean"
+        if pd.api.types.is_datetime64_any_dtype(series):
+            return "datetime"
+        return "text"
+
+    columns_meta = []
+    for col in df.columns:
+        series = df[col]
+        dtype = _col_dtype(series)
+        null_count = int(series.isnull().sum())
+        null_pct = round(null_count / max(len(series), 1) * 100, 1)
+        unique_count = int(series.nunique(dropna=True))
+        meta: dict = {
+            "name": col,
+            "dtype": dtype,
+            "null_count": null_count,
+            "null_pct": null_pct,
+            "unique_count": unique_count,
+        }
+        if dtype in ("integer", "float"):
+            valid = series.dropna()
+            if len(valid) > 0:
+                meta["min"] = to_jsonable(valid.min())
+                meta["max"] = to_jsonable(valid.max())
+                meta["mean"] = to_jsonable(round(float(valid.mean()), 4))
+        columns_meta.append(meta)
+
+    # ── Full-text search across string columns ────────────────────────────────
+    if search and search.strip():
+        q = search.strip().lower()
+        str_cols = df.select_dtypes(include=["object", "string"]).columns.tolist()
+        if str_cols:
+            mask = df[str_cols].apply(
+                lambda col: col.astype(str).str.lower().str.contains(q, na=False, regex=False)
+            ).any(axis=1)
+            df = df[mask]
+
+    # ── Sorting ───────────────────────────────────────────────────────────────
+    if sort_col and sort_col in df.columns:
+        ascending = sort_dir == "asc"
+        try:
+            df = df.sort_values(by=sort_col, ascending=ascending, na_position="last")
+        except Exception:
+            pass  # Non-sortable column — leave unsorted
+
+    # ── Pagination ────────────────────────────────────────────────────────────
+    total_rows = len(df)
+    total_pages = max(1, math.ceil(total_rows / per_page))
+    page = min(page, total_pages)
+    offset = (page - 1) * per_page
+    page_df = df.iloc[offset : offset + per_page]
+
+    # Serialize rows: convert NaN → None, numpy scalars → Python scalars
+    raw_rows = page_df.where(pd.notna(page_df), other=None).values.tolist()
+    rows = to_jsonable(raw_rows)
+
+    return {
+        "project_id": project_id,
+        "columns": columns_meta,
+        "rows": rows,
+        "total_rows": total_rows,
+        "total_pages": total_pages,
+        "page": page,
+        "per_page": per_page,
+        "sort_col": sort_col,
+        "sort_dir": sort_dir,
+        "search": search or "",
+    }

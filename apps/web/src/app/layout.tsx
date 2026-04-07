@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { ToastContainer } from "@/components/ui/toast";
 
 export const metadata: Metadata = {
-  title: "Analyst Pro",
-  description: "AI analytics SaaS for startups and small teams",
+  title: "Analyst Pro — AI-Powered Data Analytics",
+  description: "Upload data, get instant AI insights, charts, and reports. Built for analysts.",
 };
 
 export default function RootLayout({
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className="bg-[#0a0a0b] text-white antialiased">{children}</body>
+      <body className="bg-[#0a0a0b] text-white antialiased">
+        {children}
+        <ToastContainer />
+      </body>
     </html>
   );
 }

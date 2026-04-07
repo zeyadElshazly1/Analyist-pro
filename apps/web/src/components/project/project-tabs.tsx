@@ -7,6 +7,13 @@ type Props = {
 
 const TAB_GROUPS = [
   {
+    id: "data-group",
+    label: "Data",
+    tabs: [
+      { id: "data-table", label: "Table" },
+    ],
+  },
+  {
     id: "overview-group",
     label: "Overview",
     tabs: [

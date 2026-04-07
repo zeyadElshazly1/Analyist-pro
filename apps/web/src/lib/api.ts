@@ -174,6 +174,63 @@ export function getDataPreview(projectId: number, rows = 5) {
   }>(`/analysis/preview/${projectId}?rows=${rows}`);
 }
 
+export interface DataTableColumn {
+  name: string;
+  dtype: "integer" | "float" | "boolean" | "datetime" | "text";
+  null_count: number;
+  null_pct: number;
+  unique_count: number;
+  min?: number | string;
+  max?: number | string;
+  mean?: number;
+}
+
+export interface DataTableResponse {
+  project_id: number;
+  columns: DataTableColumn[];
+  rows: (string | number | boolean | null)[][];
+  total_rows: number;
+  total_pages: number;
+  page: number;
+  per_page: number;
+  sort_col: string | null;
+  sort_dir: "asc" | "desc";
+  search: string;
+}
+
+export function getDataTable(
+  projectId: number,
+  opts: {
+    page?: number;
+    perPage?: number;
+    sortCol?: string;
+    sortDir?: "asc" | "desc";
+    search?: string;
+  } = {}
+) {
+  const params = new URLSearchParams();
+  params.set("project_id", String(projectId));
+  if (opts.page) params.set("page", String(opts.page));
+  if (opts.perPage) params.set("per_page", String(opts.perPage));
+  if (opts.sortCol) params.set("sort_col", opts.sortCol);
+  if (opts.sortDir) params.set("sort_dir", opts.sortDir);
+  if (opts.search) params.set("search", opts.search);
+  return get<DataTableResponse>(`/analysis/data-table?${params.toString()}`);
+}
+
+export interface ProjectInsights {
+  project_id: number;
+  project_name: string;
+  analysis_id: number | null;
+  created_at: string | null;
+  health_score: number | null;
+  insights: { type: string; title: string; finding: string; severity: string }[];
+}
+
+export function getProjectLatestInsights(projectId: number) {
+  return get<ProjectInsights>(`/projects/${projectId}/latest-insights`);
+}
+
 export function shareAnalysis(projectId: number) {
   return post<{ share_token: string }>(`/analysis/share/${projectId}`);
 }

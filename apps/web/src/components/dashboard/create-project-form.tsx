@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createProject } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { toast } from "@/components/ui/toast";
 
 type CreateProjectFormProps = {
   onCreated?: () => void;
@@ -12,27 +13,23 @@ type CreateProjectFormProps = {
 export function CreateProjectForm({ onCreated }: CreateProjectFormProps) {
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
     if (!name.trim()) {
-      setMessage("Project name is required.");
+      toast.error("Project name is required.");
       return;
     }
 
     try {
       setLoading(true);
-      setMessage("");
-
       await createProject(name.trim());
-
       setName("");
-      setMessage("Project created successfully.");
+      toast.success(`Project "${name.trim()}" created.`);
       onCreated?.();
     } catch {
-      setMessage("Failed to create project.");
+      toast.error("Failed to create project. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -48,11 +45,9 @@ export function CreateProjectForm({ onCreated }: CreateProjectFormProps) {
           className="border-white/10 bg-black/30 text-white placeholder:text-white/30"
         />
         <Button type="submit" disabled={loading} className="rounded-xl">
-          {loading ? "Creating..." : "Create new analysis"}
+          {loading ? "Creating…" : "Create project"}
         </Button>
       </div>
-
-      {message ? <p className="text-sm text-white/60">{message}</p> : null}
     </form>
   );
 }

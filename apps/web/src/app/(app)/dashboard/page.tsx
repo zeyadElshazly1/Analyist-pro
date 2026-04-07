@@ -6,6 +6,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { CreateProjectForm } from "@/components/dashboard/create-project-form";
 import { ProjectsList, ProjectsListHandle } from "@/components/dashboard/projects-list";
 import { getProjectStats } from "@/lib/api";
+import { InsightsWidget } from "@/components/dashboard/insights-widget";
 import {
   Plus,
   ArrowRight,
@@ -120,7 +121,7 @@ export default function DashboardPage() {
                   View all <ArrowRight className="h-3 w-3" />
                 </Link>
               </div>
-              <ProjectsList ref={projectsListRef} />
+              <ProjectsList ref={projectsListRef} showSearch limit={10} />
             </div>
 
             {/* Right column */}
@@ -135,6 +136,20 @@ export default function DashboardPage() {
                     refreshStats();
                   }}
                 />
+              </div>
+
+              {/* Latest insights widget */}
+              <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-base font-semibold text-white">Latest insights</h2>
+                  <Link
+                    href="/projects"
+                    className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                  >
+                    All projects <ArrowRight className="h-3 w-3" />
+                  </Link>
+                </div>
+                <InsightsWidget />
               </div>
 
               {/* Getting started card */}
