@@ -8,6 +8,14 @@ MAX_UPLOAD_BYTES = 100 * 1024 * 1024   # 100 MB
 ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
 UPLOAD_DIR = "uploads"
 
+# ── Object Storage (S3-compatible) ────────────────────────────────────────────
+import os as _os
+S3_BUCKET  = _os.getenv("S3_BUCKET", "")           # empty → use local disk
+AWS_REGION = _os.getenv("AWS_REGION", "us-east-1")
+# AWS credentials are resolved by boto3 standard chain:
+# env vars (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY), ~/.aws/credentials,
+# or an EC2/ECS/Lambda IAM role — no extra config needed for managed deployments.
+
 # ── Correlation Analysis ──────────────────────────────────────────────────────
 MIN_CORRELATION = 0.3          # Minimum |r| to report a correlation
 MAX_CORR_COLS = 20             # Max columns for full pairwise correlation
