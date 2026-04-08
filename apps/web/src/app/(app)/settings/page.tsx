@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
-import { getMe } from "@/lib/api";
+import { useUser } from "@/lib/user-context";
 import { User, Bell, Shield, Loader2, Check } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 
@@ -67,18 +66,8 @@ function Toggle({
   );
 }
 
-type UserData = { id: string; email: string; plan: string; created_at: string };
-
 export default function SettingsPage() {
-  const [user, setUser] = useState<UserData | null>(null);
-  const [loadingUser, setLoadingUser] = useState(true);
-
-  useEffect(() => {
-    getMe()
-      .then(setUser)
-      .catch(() => {})
-      .finally(() => setLoadingUser(false));
-  }, []);
+  const { user, loading: loadingUser } = useUser();
 
   const initial = user?.email?.[0]?.toUpperCase() ?? "U";
   const planLabel =
