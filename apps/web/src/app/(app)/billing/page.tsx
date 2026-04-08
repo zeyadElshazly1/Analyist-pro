@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
-import { getProjectStats, getMe } from "@/lib/api";
+import { getProjectStats } from "@/lib/api";
+import { useUser } from "@/lib/user-context";
 import { CheckCircle, Sparkles, Zap, Users, ArrowRight } from "lucide-react";
 
 type Stats = { total_projects: number; total_analyses: number };
-type UserData = { plan: string };
 
 const PLANS = [
   {
@@ -69,11 +69,10 @@ const PLAN_ICONS = { free: Sparkles, pro: Zap, team: Users } as const;
 
 export default function BillingPage() {
   const [stats, setStats] = useState<Stats | null>(null);
-  const [user, setUser] = useState<UserData | null>(null);
+  const { user } = useUser();
 
   useEffect(() => {
     getProjectStats().then(setStats).catch(() => {});
-    getMe().then(setUser).catch(() => {});
   }, []);
 
   const currentPlan = user?.plan ?? "free";

@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
   FolderOpen,
@@ -12,7 +11,8 @@ import {
   Sparkles,
   LogOut,
 } from "lucide-react";
-import { getMe, logout } from "@/lib/api";
+import { logout } from "@/lib/api";
+import { useUser } from "@/lib/user-context";
 
 const links = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -24,13 +24,7 @@ const links = [
 
 export function AppSidebar() {
   const pathname = usePathname();
-  const [user, setUser] = useState<{ email: string; plan: string } | null>(null);
-
-  useEffect(() => {
-    getMe()
-      .then((u) => setUser(u))
-      .catch(() => setUser(null));
-  }, []);
+  const { user } = useUser();
 
   const initial = user?.email?.[0]?.toUpperCase() ?? "U";
   const planLabel = user?.plan
