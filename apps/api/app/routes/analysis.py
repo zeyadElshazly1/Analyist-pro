@@ -285,15 +285,18 @@ def get_data_table(
     sort_col: Optional[str] = Query(None),
     sort_dir: str = Query("asc", pattern="^(asc|desc)$"),
     search: Optional[str] = Query(None, max_length=200),
+    column_filters: Optional[str] = Query(None, max_length=4000),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Return a paginated, sortable, searchable view of the raw dataset.
+    Return a paginated, sortable, searchable, filterable view of the raw dataset.
 
     - page / per_page: pagination controls
     - sort_col / sort_dir: column sorting (asc | desc)
     - search: full-text search across all string columns (case-insensitive)
+    - column_filters: JSON array of filter objects, each with:
+        { "col": str, "op": "eq"|"neq"|"contains"|"gt"|"gte"|"lt"|"lte"|"is_null"|"not_null", "value": str }
     """
     # Verify project ownership
     project = db.query(Project).filter(
@@ -349,6 +352,52 @@ def get_data_table(
                 meta["mean"] = to_jsonable(round(float(valid.mean()), 4))
         columns_meta.append(meta)
 
+    # ── Column-level filters ──────────────────────────────────────────────────
+    active_filters: list[dict] = []
+    if column_filters and column_filters.strip():
+        try:
+            raw_filters = json.loads(column_filters)
+            if isinstance(raw_filters, list):
+                for f in raw_filters:
+                    col_name = f.get("col", "")
+                    op = f.get("op", "")
+                    val = str(f.get("value", ""))
+                    if col_name not in df.columns or not op:
+                        continue
+                    series = df[col_name]
+                    try:
+                        if op == "is_null":
+                            df = df[series.isnull()]
+                        elif op == "not_null":
+                            df = df[series.notnull()]
+                        elif op == "contains":
+                            df = df[series.astype(str).str.lower().str.contains(val.lower(), na=False, regex=False)]
+                        elif op == "eq":
+                            numeric = pd.to_numeric(series, errors="coerce")
+                            if numeric.notna().any():
+                                df = df[pd.to_numeric(series, errors="coerce") == float(val)]
+                            else:
+                                df = df[series.astype(str).str.lower() == val.lower()]
+                        elif op == "neq":
+                            numeric = pd.to_numeric(series, errors="coerce")
+                            if numeric.notna().any():
+                                df = df[pd.to_numeric(series, errors="coerce") != float(val)]
+                            else:
+                                df = df[series.astype(str).str.lower() != val.lower()]
+                        elif op == "gt":
+                            df = df[pd.to_numeric(series, errors="coerce") > float(val)]
+                        elif op == "gte":
+                            df = df[pd.to_numeric(series, errors="coerce") >= float(val)]
+                        elif op == "lt":
+                            df = df[pd.to_numeric(series, errors="coerce") < float(val)]
+                        elif op == "lte":
+                            df = df[pd.to_numeric(series, errors="coerce") <= float(val)]
+                        active_filters.append(f)
+                    except (ValueError, TypeError):
+                        pass  # Skip unparseable filter values silently
+        except (json.JSONDecodeError, TypeError):
+            logger.warning(f"Invalid column_filters JSON for project {project_id}")
+
     # ── Full-text search across string columns ────────────────────────────────
     if search and search.strip():
         q = search.strip().lower()
@@ -389,4 +438,5 @@ def get_data_table(
         "sort_col": sort_col,
         "sort_dir": sort_dir,
         "search": search or "",
+        "active_filters": active_filters,
     }

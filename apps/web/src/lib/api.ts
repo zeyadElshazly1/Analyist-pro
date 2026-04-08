@@ -345,6 +345,17 @@ export interface DataTableColumn {
   mean?: number;
 }
 
+export type ColumnFilterOp =
+  | "eq" | "neq" | "contains"
+  | "gt" | "gte" | "lt" | "lte"
+  | "is_null" | "not_null";
+
+export interface ColumnFilter {
+  col: string;
+  op: ColumnFilterOp;
+  value: string;
+}
+
 export interface DataTableResponse {
   project_id: number;
   columns: DataTableColumn[];
@@ -356,6 +367,7 @@ export interface DataTableResponse {
   sort_col: string | null;
   sort_dir: "asc" | "desc";
   search: string;
+  active_filters: ColumnFilter[];
 }
 
 export function getDataTable(
@@ -366,6 +378,7 @@ export function getDataTable(
     sortCol?: string;
     sortDir?: "asc" | "desc";
     search?: string;
+    columnFilters?: ColumnFilter[];
   } = {}
 ) {
   const params = new URLSearchParams();
@@ -375,6 +388,9 @@ export function getDataTable(
   if (opts.sortCol) params.set("sort_col", opts.sortCol);
   if (opts.sortDir) params.set("sort_dir", opts.sortDir);
   if (opts.search) params.set("search", opts.search);
+  if (opts.columnFilters && opts.columnFilters.length > 0) {
+    params.set("column_filters", JSON.stringify(opts.columnFilters));
+  }
   return get<DataTableResponse>(`/analysis/data-table?${params.toString()}`);
 }
 
