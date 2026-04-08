@@ -2,9 +2,9 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { getSuggestedCharts } from "@/lib/api";
-import { TrendingUp } from "lucide-react";
+import { TrendingUp, Download } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -52,6 +52,70 @@ const DARK_TOOLTIP = {
 };
 
 const PIE_COLORS = ["#6366f1", "#8b5cf6", "#a78bfa", "#c4b5fd", "#818cf8", "#4f46e5", "#7c3aed", "#6d28d9"];
+const BG_COLOR = "#0c0c14";
+
+function slugify(title: string) {
+  return title.replace(/[^a-z0-9]+/gi, "_").toLowerCase().replace(/^_+|_+$/g, "");
+}
+
+function exportChart(containerEl: HTMLDivElement, chart: ChartDef, format: "svg" | "png") {
+  const svgEl = containerEl.querySelector("svg");
+  if (!svgEl) return;
+
+  const width = svgEl.clientWidth || 600;
+  const height = svgEl.clientHeight || 300;
+
+  // Clone and patch background + explicit dimensions
+  const clone = svgEl.cloneNode(true) as SVGSVGElement;
+  clone.setAttribute("width", String(width));
+  clone.setAttribute("height", String(height));
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+
+  const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  bg.setAttribute("width", "100%");
+  bg.setAttribute("height", "100%");
+  bg.setAttribute("fill", BG_COLOR);
+  clone.insertBefore(bg, clone.firstChild);
+
+  const svgStr = new XMLSerializer().serializeToString(clone);
+  const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const filename = slugify(chart.title);
+
+  if (format === "svg") {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${filename}.svg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    return;
+  }
+
+  // PNG: render SVG into canvas at 2× for retina
+  const scale = 2;
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = width * scale;
+    canvas.height = height * scale;
+    const ctx = canvas.getContext("2d")!;
+    ctx.scale(scale, scale);
+    ctx.fillStyle = BG_COLOR;
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
+    URL.revokeObjectURL(url);
+    const a = document.createElement("a");
+    a.href = canvas.toDataURL("image/png");
+    a.download = `${filename}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+  img.onerror = () => URL.revokeObjectURL(url);
+  img.src = url;
+}
 
 function SingleChart({ chart }: { chart: ChartDef }) {
   if (!chart.data || chart.data.length === 0) {
@@ -149,12 +213,60 @@ function SingleChart({ chart }: { chart: ChartDef }) {
   );
 }
 
+function DownloadMenu({
+  onExport,
+}: {
+  onExport: (fmt: "svg" | "png") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="Download chart"
+        className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-white/40 hover:bg-white/[0.06] hover:text-white/70 transition-colors"
+      >
+        <Download className="h-3.5 w-3.5" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-1 w-28 rounded-lg border border-white/[0.08] bg-[#111118] shadow-xl overflow-hidden">
+          {(["PNG", "SVG"] as const).map((fmt) => (
+            <button
+              key={fmt}
+              onClick={() => {
+                setOpen(false);
+                onExport(fmt.toLowerCase() as "svg" | "png");
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-xs text-white/60 hover:bg-white/[0.06] hover:text-white transition-colors"
+            >
+              <Download className="h-3 w-3" />
+              {fmt === "PNG" ? "Download PNG" : "Download SVG"}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ChartViewer({ projectId, autoLoad }: Props) {
   const [loading, setLoading] = useState(false);
   const [charts, setCharts] = useState<ChartDef[]>([]);
   const [error, setError] = useState("");
+  const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  async function loadCharts() {
+  const loadCharts = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
@@ -165,11 +277,11 @@ export function ChartViewer({ projectId, autoLoad }: Props) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [projectId]);
 
   useEffect(() => {
     if (autoLoad) loadCharts();
-  }, [projectId, autoLoad]);
+  }, [projectId, autoLoad, loadCharts]);
 
   if (loading) {
     return (
@@ -225,23 +337,33 @@ export function ChartViewer({ projectId, autoLoad }: Props) {
         {charts.map((chart, i) => (
           <div
             key={i}
+            ref={(el) => { cardRefs.current[i] = el; }}
             className={`rounded-xl border bg-white/[0.03] p-4 space-y-2 ${chart.recommended ? "border-indigo-500/30" : "border-white/[0.07]"}`}
           >
             <div className="flex items-start justify-between gap-2">
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   {chart.recommended && (
                     <TrendingUp className="h-3.5 w-3.5 text-indigo-400 flex-shrink-0" />
                   )}
-                  <h3 className="text-sm font-semibold text-white">{chart.title}</h3>
+                  <h3 className="text-sm font-semibold text-white truncate">{chart.title}</h3>
                 </div>
                 {chart.insight && (
-                  <p className="mt-0.5 text-xs text-white/40">{chart.insight}</p>
+                  <p className="mt-0.5 text-xs text-white/40 line-clamp-2">{chart.insight}</p>
                 )}
               </div>
-              <span className="flex-shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-xs text-white/40">
-                {chart.type}
-              </span>
+              <div className="flex flex-shrink-0 items-center gap-1">
+                <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-xs text-white/40">
+                  {chart.type}
+                </span>
+                <DownloadMenu
+                  onExport={(fmt) => {
+                    if (cardRefs.current[i]) {
+                      exportChart(cardRefs.current[i]!, chart, fmt);
+                    }
+                  }}
+                />
+              </div>
             </div>
             <SingleChart chart={chart} />
           </div>
