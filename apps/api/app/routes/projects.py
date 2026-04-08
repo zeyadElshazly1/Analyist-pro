@@ -84,6 +84,47 @@ def project_stats(
     }
 
 
+@router.get("/with-latest-run")
+def projects_with_latest_run(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns all projects for the current user, each decorated with the date
+    of their most recent analysis run — in a single round-trip to the DB.
+    Eliminates the N+1 pattern on the Reports list page.
+    """
+    from sqlalchemy import func
+
+    # Subquery: latest analysis created_at per project
+    latest_run_sq = (
+        db.query(
+            AnalysisResult.project_id,
+            func.max(AnalysisResult.created_at).label("latest_run_at"),
+            func.max(AnalysisResult.id).label("latest_run_id"),
+        )
+        .group_by(AnalysisResult.project_id)
+        .subquery()
+    )
+
+    rows = (
+        db.query(Project, latest_run_sq.c.latest_run_at, latest_run_sq.c.latest_run_id)
+        .outerjoin(latest_run_sq, Project.id == latest_run_sq.c.project_id)
+        .filter(Project.user_id == current_user.id)
+        .order_by(latest_run_sq.c.latest_run_at.desc().nulls_last(), Project.created_at.desc())
+        .all()
+    )
+
+    return [
+        {
+            **p.to_dict(),
+            "latest_run_at": run_at.isoformat() if run_at else None,
+            "latest_run_id": run_id,
+        }
+        for p, run_at, run_id in rows
+    ]
+
+
 @router.get("/{project_id}")
 def get_project(
     project_id: int,

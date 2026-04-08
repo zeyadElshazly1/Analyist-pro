@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
-import { getProjects, getAnalysisHistory } from "@/lib/api";
+import { getProjectsWithLatestRun, ApiError } from "@/lib/api";
 import {
   BarChart2,
   Clock,
@@ -11,43 +11,30 @@ import {
   FileText,
   Loader2,
   FolderOpen,
+  AlertCircle,
 } from "lucide-react";
 
-type Project = { id: number; name: string; status: string; created_at?: string };
-type HistoryEntry = { id: number; project_id: number; created_at: string };
-
-type ProjectWithHistory = Project & { latestRun: HistoryEntry | null };
+type ProjectRow = {
+  id: number;
+  name: string;
+  status: string;
+  created_at: string;
+  latest_run_at: string | null;
+  latest_run_id: number | null;
+};
 
 export default function ReportsPage() {
-  const [items, setItems] = useState<ProjectWithHistory[]>([]);
+  const [items, setItems] = useState<ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    async function load() {
-      try {
-        const projects = await getProjects();
-        const withHistory = await Promise.all(
-          projects.map(async (p) => {
-            try {
-              const history = await getAnalysisHistory(p.id, 1);
-              return { ...p, latestRun: history[0] ?? null };
-            } catch {
-              return { ...p, latestRun: null };
-            }
-          })
-        );
-        // Put projects with runs first
-        withHistory.sort((a, b) => {
-          if (a.latestRun && !b.latestRun) return -1;
-          if (!a.latestRun && b.latestRun) return 1;
-          return 0;
-        });
-        setItems(withHistory);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
+    getProjectsWithLatestRun()
+      .then(setItems)
+      .catch((e) => {
+        setError(e instanceof ApiError ? e.userMessage : "Failed to load reports. Please try again.");
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   return (
@@ -69,7 +56,14 @@ export default function ReportsPage() {
             </div>
           )}
 
-          {!loading && items.length === 0 && (
+          {!loading && error && (
+            <div className="flex flex-col items-center gap-3 py-16 text-center">
+              <AlertCircle className="h-8 w-8 text-red-400" />
+              <p className="text-sm text-white/60">{error}</p>
+            </div>
+          )}
+
+          {!loading && !error && items.length === 0 && (
             <div className="flex flex-col items-center gap-3 py-20 text-center">
               <FolderOpen className="h-10 w-10 text-white/20" />
               <p className="text-sm text-white/40">No projects yet. Create one to get started.</p>
@@ -82,7 +76,7 @@ export default function ReportsPage() {
             </div>
           )}
 
-          {!loading && items.length > 0 && (
+          {!loading && !error && items.length > 0 && (
             <div className="divide-y divide-white/[0.06] rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
               {items.map((item) => (
                 <div
@@ -95,10 +89,10 @@ export default function ReportsPage() {
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-white">{item.name}</p>
-                      {item.latestRun ? (
+                      {item.latest_run_at ? (
                         <p className="mt-0.5 flex items-center gap-1 text-xs text-white/35">
-                          <Clock className="h-3 w-3" />
-                          Last run {new Date(item.latestRun.created_at).toLocaleString()}
+                          <Clock className="h-3 w-3 flex-shrink-0" />
+                          Last run {new Date(item.latest_run_at).toLocaleString()}
                         </p>
                       ) : (
                         <p className="mt-0.5 text-xs text-white/25 italic">No analysis yet</p>
@@ -107,7 +101,7 @@ export default function ReportsPage() {
                   </div>
 
                   <div className="ml-4 flex items-center gap-3 flex-shrink-0">
-                    {item.latestRun ? (
+                    {item.latest_run_at ? (
                       <Link
                         href={`/reports/${item.id}`}
                         className="flex items-center gap-1.5 rounded-lg bg-indigo-600/15 px-3 py-1.5 text-xs font-medium text-indigo-300 hover:bg-indigo-600/25 transition-colors"
