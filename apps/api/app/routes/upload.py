@@ -11,6 +11,7 @@ from app.config import ALLOWED_EXTENSIONS, MAX_UPLOAD_BYTES, UPLOAD_DIR
 from app.db import get_db
 from app.middleware.auth import get_current_user
 from app.models import Project, ProjectFile, User
+from app.services.storage import get_local_path, save_file
 from app.state import PROJECT_FILES
 
 logger = logging.getLogger(__name__)
@@ -58,26 +59,22 @@ async def upload_file(
     # ── Compute hash for cache invalidation ───────────────────────────────────
     file_hash = hashlib.sha256(content).hexdigest()
 
-    # ── Atomic file write: write to temp file, then rename ───────────────────
-    # This prevents partial files being seen by readers if the write is interrupted.
+    # ── Write to temp file, then hand off to storage backend ─────────────────
+    # storage.save_file() performs an atomic local rename *or* an S3 upload,
+    # returning the stored_path that goes into the database.
     safe_filename = f"project_{project_id}_{filename}"
-    final_path = os.path.join(UPLOAD_DIR, safe_filename)
-
+    fd, tmp_path = tempfile.mkstemp(dir=UPLOAD_DIR, suffix=".tmp")
     try:
-        fd, tmp_path = tempfile.mkstemp(dir=UPLOAD_DIR, suffix=".tmp")
+        with os.fdopen(fd, "wb") as f:
+            f.write(content)
+        stored_path = save_file(project_id, safe_filename, tmp_path)
+    except Exception as e:
+        # Clean up the temp file on any failure before storage.save_file()
         try:
-            with os.fdopen(fd, "wb") as f:
-                f.write(content)
-            os.replace(tmp_path, final_path)  # atomic on POSIX
-        except Exception:
-            # Clean up the temp file if rename failed
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
-    except OSError as e:
-        logger.error(f"File write failed for project {project_id}: {e}", exc_info=True)
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        logger.error(f"File save failed for project {project_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=503,
             detail="Could not save the uploaded file. Please try again.",
@@ -88,7 +85,7 @@ async def upload_file(
         project_file = ProjectFile(
             project_id=project_id,
             filename=filename,
-            stored_path=final_path,
+            stored_path=stored_path,
             size_bytes=size_bytes,
             file_hash=file_hash,
         )
@@ -98,10 +95,11 @@ async def upload_file(
         db.refresh(project_file)
     except SQLAlchemyError as e:
         db.rollback()
-        # Remove the file we just wrote — DB record doesn't exist
+        # Best-effort cleanup of the stored file
+        from app.services.storage import delete_file
         try:
-            os.unlink(final_path)
-        except OSError:
+            delete_file(stored_path)
+        except Exception:
             pass
         logger.error(f"DB write failed for project {project_id} upload: {e}", exc_info=True)
         raise HTTPException(
@@ -110,9 +108,13 @@ async def upload_file(
         )
 
     # ── Update in-memory cache only after successful DB commit ────────────────
+    # For S3: path=stored_path (S3 key); get_project_file_info() will download
+    # on first access. For local: path is the filesystem path.
+    local = get_local_path(stored_path)
     PROJECT_FILES[project_id] = {
         "filename": filename,
-        "path": final_path,
+        "path": local or stored_path,
+        "stored_path": stored_path,
         "file_hash": file_hash,
         "size_bytes": size_bytes,
     }
@@ -125,7 +127,7 @@ async def upload_file(
     return {
         "project_id": project_id,
         "filename": filename,
-        "path": final_path,
+        "stored_path": stored_path,
         "size_bytes": size_bytes,
         "file_hash": file_hash,
     }

@@ -46,6 +46,11 @@ services:
       # SENTRY_DSN: ""
       # Set ANTHROPIC_API_KEY for AI chat
       # ANTHROPIC_API_KEY: ""
+      # S3 file storage (leave S3_BUCKET empty to use local disk volume)
+      # S3_BUCKET: ""
+      # AWS_REGION: us-east-1
+      # AWS_ACCESS_KEY_ID: ""
+      # AWS_SECRET_ACCESS_KEY: ""
     volumes:
       - uploads_data:/app/uploads
     depends_on:

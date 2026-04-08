@@ -38,6 +38,7 @@ def get_project_file_info(project_id: int) -> dict[str, Any] | None:
     try:
         from app.db import SessionLocal
         from app.models import ProjectFile
+        from app.services.storage import get_local_path
         db = SessionLocal()
         try:
             pf = (
@@ -46,16 +47,19 @@ def get_project_file_info(project_id: int) -> dict[str, Any] | None:
                 .order_by(ProjectFile.uploaded_at.desc())
                 .first()
             )
-            if pf and Path(pf.stored_path).exists():
-                info = {
-                    "filename": pf.filename,
-                    "path": pf.stored_path,
-                    "file_hash": pf.file_hash,
-                    "size_bytes": pf.size_bytes,
-                }
-                PROJECT_FILES[project_id] = info
-                logger.debug(f"Restored project {project_id} file info from DB")
-                return info
+            if pf:
+                local_path = get_local_path(pf.stored_path)
+                if local_path:
+                    info = {
+                        "filename": pf.filename,
+                        "path": local_path,
+                        "stored_path": pf.stored_path,
+                        "file_hash": pf.file_hash,
+                        "size_bytes": pf.size_bytes,
+                    }
+                    PROJECT_FILES[project_id] = info
+                    logger.debug(f"Restored project {project_id} file info from DB")
+                    return info
         finally:
             db.close()
     except Exception as e:
