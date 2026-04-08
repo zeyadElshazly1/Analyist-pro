@@ -11,6 +11,7 @@ from app.config import ALLOWED_EXTENSIONS, MAX_UPLOAD_BYTES, UPLOAD_DIR
 from app.db import get_db
 from app.middleware.auth import get_current_user
 from app.models import Project, ProjectFile, User
+from app.services.cache import invalidate_project_cache
 from app.services.storage import get_local_path, save_file
 from app.state import PROJECT_FILES
 
@@ -118,6 +119,11 @@ async def upload_file(
         "file_hash": file_hash,
         "size_bytes": size_bytes,
     }
+
+    # Invalidate any cached analysis for the previous file
+    old_info = PROJECT_FILES.get(project_id)
+    if old_info and old_info.get("file_hash") and old_info["file_hash"] != file_hash:
+        invalidate_project_cache(project_id, old_info["file_hash"])
 
     logger.info(
         f"Upload: project={project_id} user={current_user.id[:8]}… "
