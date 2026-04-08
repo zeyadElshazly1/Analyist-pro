@@ -3,19 +3,20 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
-import { getProjectStats } from "@/lib/api";
+import { getProjectStats, getMe } from "@/lib/api";
 import { CheckCircle, Sparkles, Zap, Users, ArrowRight } from "lucide-react";
 
 type Stats = { total_projects: number; total_analyses: number };
+type UserData = { plan: string };
 
 const PLANS = [
   {
+    id: "free",
     name: "Free",
     price: "$0",
     period: "forever",
-    current: true,
     highlighted: false,
-    limits: { projects: 3, rowsPerFile: "10K" },
+    projectLimit: 3,
     features: [
       "3 projects",
       "Basic analysis pipeline",
@@ -24,15 +25,14 @@ const PLANS = [
       "Community support",
     ],
     cta: "Current plan",
-    ctaDisabled: true,
   },
   {
+    id: "pro",
     name: "Pro",
     price: "$19",
     period: "/ month",
-    current: false,
     highlighted: true,
-    limits: { projects: Infinity, rowsPerFile: "1M" },
+    projectLimit: Infinity,
     features: [
       "Unlimited projects",
       "Full AI insight engine",
@@ -44,15 +44,14 @@ const PLANS = [
       "Priority email support",
     ],
     cta: "Upgrade to Pro",
-    ctaDisabled: false,
   },
   {
+    id: "team",
     name: "Team",
     price: "$49",
     period: "/ month",
-    current: false,
     highlighted: false,
-    limits: { projects: Infinity, rowsPerFile: "Unlimited" },
+    projectLimit: Infinity,
     features: [
       "Everything in Pro",
       "5 team seats",
@@ -63,22 +62,30 @@ const PLANS = [
       "Dedicated support",
     ],
     cta: "Contact sales",
-    ctaDisabled: false,
   },
 ];
 
-const PLAN_ICONS = { Free: Sparkles, Pro: Zap, Team: Users } as const;
+const PLAN_ICONS = { free: Sparkles, pro: Zap, team: Users } as const;
 
 export default function BillingPage() {
   const [stats, setStats] = useState<Stats | null>(null);
+  const [user, setUser] = useState<UserData | null>(null);
 
   useEffect(() => {
     getProjectStats().then(setStats).catch(() => {});
+    getMe().then(setUser).catch(() => {});
   }, []);
 
-  const projectUsagePct = stats
-    ? Math.min(100, (stats.total_projects / 3) * 100)
-    : 0;
+  const currentPlan = user?.plan ?? "free";
+
+  const activePlan = PLANS.find((p) => p.id === currentPlan) ?? PLANS[0];
+  const projectLimit = activePlan.projectLimit;
+  const projectUsagePct =
+    stats && projectLimit !== Infinity
+      ? Math.min(100, (stats.total_projects / projectLimit) * 100)
+      : stats
+        ? Math.min(100, (stats.total_projects / 3) * 100)
+        : 0;
 
   return (
     <AppShell>
@@ -98,16 +105,20 @@ export default function BillingPage() {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-widest text-indigo-400">Current plan</p>
-                <h2 className="mt-1 text-2xl font-bold text-white">Free</h2>
-                <p className="mt-1 text-sm text-white/50">$0 / month · Renews never</p>
+                <h2 className="mt-1 text-2xl font-bold text-white capitalize">{currentPlan}</h2>
+                <p className="mt-1 text-sm text-white/50">
+                  {currentPlan === "free" ? "$0 / month · No expiry" : "Billed monthly"}
+                </p>
               </div>
-              <Link
-                href="#plans"
-                className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 hover:bg-indigo-500 transition-all"
-              >
-                <Zap className="h-4 w-4" />
-                Upgrade plan
-              </Link>
+              {currentPlan === "free" && (
+                <a
+                  href="#plans"
+                  className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 hover:bg-indigo-500 transition-all"
+                >
+                  <Zap className="h-4 w-4" />
+                  Upgrade plan
+                </a>
+              )}
             </div>
 
             {/* Usage bars */}
@@ -116,15 +127,20 @@ export default function BillingPage() {
                 <div className="mb-1.5 flex justify-between text-xs">
                   <span className="text-white/50">Projects used</span>
                   <span className="text-white/70">
-                    {stats?.total_projects ?? 0} / 3
+                    {stats?.total_projects ?? 0}
+                    {projectLimit !== Infinity ? ` / ${projectLimit}` : " (unlimited)"}
                   </span>
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-white/[0.06]">
                   <div
                     className={`h-full rounded-full transition-all duration-700 ${
-                      projectUsagePct >= 90 ? "bg-red-500" : projectUsagePct >= 66 ? "bg-amber-500" : "bg-indigo-500"
+                      projectUsagePct >= 90
+                        ? "bg-red-500"
+                        : projectUsagePct >= 66
+                          ? "bg-amber-500"
+                          : "bg-indigo-500"
                     }`}
-                    style={{ width: `${projectUsagePct}%` }}
+                    style={{ width: projectLimit === Infinity ? "0%" : `${projectUsagePct}%` }}
                   />
                 </div>
               </div>
@@ -136,7 +152,7 @@ export default function BillingPage() {
                 <div className="h-2 w-full overflow-hidden rounded-full bg-white/[0.06]">
                   <div className="h-full w-full rounded-full bg-white/10" />
                 </div>
-                <p className="mt-1 text-[11px] text-white/25">Unlimited on Free plan</p>
+                <p className="mt-1 text-[11px] text-white/25">Unlimited on all plans</p>
               </div>
             </div>
           </div>
@@ -146,14 +162,15 @@ export default function BillingPage() {
             <h2 className="mb-4 text-base font-semibold text-white">Available plans</h2>
             <div className="grid gap-4 md:grid-cols-3">
               {PLANS.map((plan) => {
-                const Icon = PLAN_ICONS[plan.name as keyof typeof PLAN_ICONS];
+                const Icon = PLAN_ICONS[plan.id as keyof typeof PLAN_ICONS];
+                const isCurrent = plan.id === currentPlan;
                 return (
                   <div
-                    key={plan.name}
+                    key={plan.id}
                     className={`relative flex flex-col rounded-2xl border p-6 transition-all ${
                       plan.highlighted
                         ? "border-indigo-500/50 bg-gradient-to-b from-indigo-600/10 to-transparent"
-                        : plan.current
+                        : isCurrent
                           ? "border-white/20 bg-white/[0.03]"
                           : "border-white/[0.07] bg-white/[0.02] hover:border-white/10"
                     }`}
@@ -167,14 +184,18 @@ export default function BillingPage() {
                     )}
 
                     <div className="mb-4 flex items-center gap-2.5">
-                      <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-                        plan.highlighted ? "bg-indigo-600/20" : "bg-white/[0.06]"
-                      }`}>
-                        <Icon className={`h-4 w-4 ${plan.highlighted ? "text-indigo-400" : "text-white/50"}`} />
+                      <div
+                        className={`flex h-8 w-8 items-center justify-center rounded-lg ${
+                          plan.highlighted ? "bg-indigo-600/20" : "bg-white/[0.06]"
+                        }`}
+                      >
+                        <Icon
+                          className={`h-4 w-4 ${plan.highlighted ? "text-indigo-400" : "text-white/50"}`}
+                        />
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-white">{plan.name}</p>
-                        {plan.current && (
+                        {isCurrent && (
                           <span className="text-[10px] text-emerald-400 font-medium">Active</span>
                         )}
                       </div>
@@ -188,26 +209,39 @@ export default function BillingPage() {
                     <ul className="mb-6 flex-1 space-y-2.5">
                       {plan.features.map((f) => (
                         <li key={f} className="flex items-start gap-2 text-xs text-white/60">
-                          <CheckCircle className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${
-                            plan.highlighted ? "text-indigo-400" : "text-white/25"
-                          }`} />
+                          <CheckCircle
+                            className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${
+                              plan.highlighted ? "text-indigo-400" : "text-white/25"
+                            }`}
+                          />
                           {f}
                         </li>
                       ))}
                     </ul>
 
-                    <button
-                      disabled={plan.ctaDisabled}
-                      className={`w-full rounded-xl py-2 text-sm font-semibold transition-all ${
-                        plan.ctaDisabled
-                          ? "bg-white/[0.05] text-white/30 cursor-default"
-                          : plan.highlighted
+                    {isCurrent ? (
+                      <div className="w-full rounded-xl bg-white/[0.05] py-2 text-center text-sm text-white/30">
+                        Current plan
+                      </div>
+                    ) : plan.id === "team" ? (
+                      <a
+                        href="mailto:sales@analystpro.com"
+                        className="block w-full rounded-xl bg-white/[0.07] py-2 text-center text-sm font-semibold text-white hover:bg-white/10 transition-all"
+                      >
+                        {plan.cta}
+                      </a>
+                    ) : (
+                      <button
+                        onClick={() => alert("Payment integration coming soon. Thank you for your interest!")}
+                        className={`w-full rounded-xl py-2 text-sm font-semibold transition-all ${
+                          plan.highlighted
                             ? "bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20"
                             : "bg-white/[0.07] text-white hover:bg-white/10"
-                      }`}
-                    >
-                      {plan.cta}
-                    </button>
+                        }`}
+                      >
+                        {plan.cta}
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -221,7 +255,9 @@ export default function BillingPage() {
               <ArrowRight className="h-4 w-4 text-white/20" />
             </div>
             <p className="mt-3 text-sm text-white/35 italic">
-              No invoices yet — you&apos;re on the Free plan.
+              {currentPlan === "free"
+                ? "No invoices yet — you're on the Free plan."
+                : "Invoice history will appear here."}
             </p>
           </div>
         </div>

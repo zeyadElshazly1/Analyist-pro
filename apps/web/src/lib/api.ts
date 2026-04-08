@@ -243,15 +243,41 @@ export function getProjects() {
   return get<{ id: number; name: string; status?: string; created_at?: string }[]>("/projects");
 }
 
+export function getProject(projectId: number) {
+  return get<{ id: number; name: string; status: string; created_at: string }>(`/projects/${projectId}`);
+}
+
 export function createProject(name: string) {
   return post<{ id: number; name: string }>("/projects", { name });
 }
 
 export async function deleteProject(projectId: number) {
-  return fetch(`${API_BASE_URL}/projects/${projectId}`, {
-    method: "DELETE",
-    headers: await authHeaders(),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/projects/${projectId}`, {
+      method: "DELETE",
+      headers: await authHeaders(),
+    });
+  } catch {
+    throw new ApiError(
+      "Could not reach the server. Please check your connection.",
+      "NETWORK_ERROR",
+      0,
+    );
+  }
+  if (res.status === 401) clearToken();
+  if (!res.ok) throw await parseError(res, "Project");
+}
+
+export function getProjectsWithLatestRun() {
+  return get<{
+    id: number;
+    name: string;
+    status: string;
+    created_at: string;
+    latest_run_at: string | null;
+    latest_run_id: number | null;
+  }[]>("/projects/with-latest-run");
 }
 
 export function getProjectStats() {
@@ -269,16 +295,27 @@ export async function uploadFile(projectId: number, file: File) {
   const formData = new FormData();
   formData.append("project_id", String(projectId));
   formData.append("file", file);
-  const res = await fetch(`${API_BASE_URL}/upload`, {
-    method: "POST",
-    headers: await authHeaders(),
-    body: formData,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Upload failed: ${text}`);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/upload`, {
+      method: "POST",
+      headers: await authHeaders(),
+      body: formData,
+    });
+  } catch {
+    throw new ApiError(
+      "Could not reach the server. Please check your connection.",
+      "NETWORK_ERROR",
+      0,
+    );
   }
-  return res.json();
+  if (res.status === 401) clearToken();
+  if (!res.ok) throw await parseError(res, "Upload");
+  try {
+    return await res.json();
+  } catch {
+    throw new ApiError("The server returned an unexpected response format.", "PARSE_ERROR", res.status);
+  }
 }
 
 // ── Analysis ──────────────────────────────────────────────────────────────────

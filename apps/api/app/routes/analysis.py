@@ -49,7 +49,8 @@ def run_analysis(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to load dataset: {e}")
+        logger.error(f"Failed to load dataset for project {project_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not read the uploaded file. It may be corrupted or in an unsupported format.")
 
     try:
         if df.empty:
@@ -114,7 +115,10 @@ def run_analysis(
         )
     except Exception as e:
         logger.error(f"Analysis failed for project {project_id}: {type(e).__name__}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Analysis failed due to an unexpected error. Please try again.",
+        )
 
 
 @router.get("/history/{project_id}")
@@ -188,7 +192,8 @@ def preview_dataset(
     try:
         df = load_dataset(file_path)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to load dataset: {e}")
+        logger.error(f"Failed to load dataset for preview (project {project_id}): {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not read the uploaded file for preview.")
 
     preview = df.head(rows)
     columns = df.columns.tolist()
@@ -301,7 +306,8 @@ def get_data_table(
     try:
         df = load_dataset(file_path)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to load dataset: {e}")
+        logger.error(f"Failed to load dataset for data-table (project {project_id}): {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not read the uploaded file.")
 
     if df.empty:
         raise HTTPException(status_code=404, detail="Dataset is empty.")

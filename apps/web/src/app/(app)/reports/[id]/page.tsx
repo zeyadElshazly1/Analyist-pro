@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
-import { getProjects, getAnalysisHistory, getAnalysisResult, shareAnalysis, exportReport } from "@/lib/api";
+import { getProject, getAnalysisHistory, getAnalysisResult, shareAnalysis, exportReport, ApiError } from "@/lib/api";
 import { StatsCards } from "@/components/analysis/stats-cards";
 import { HealthScore } from "@/components/analysis/health-score";
 import { InsightHighlights } from "@/components/analysis/insight-highlights";
@@ -48,12 +48,11 @@ export default function ReportDetailPage() {
     async function load() {
       try {
         // Load project name and analysis history in parallel
-        const [projects, hist] = await Promise.all([
-          getProjects(),
+        const [project, hist] = await Promise.all([
+          getProject(projectId).catch(() => null),
           getAnalysisHistory(projectId, 5).catch(() => [] as HistoryEntry[]),
         ]);
-        const p = projects.find((x: any) => x.id === projectId);
-        if (p) setProjectName(p.name);
+        if (project) setProjectName(project.name);
         setHistory(hist);
 
         if (hist.length === 0) {
@@ -65,7 +64,7 @@ export default function ReportDetailPage() {
         const stored = await getAnalysisResult(hist[0].id);
         setResult(stored.result);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load report.");
+        setError(e instanceof ApiError ? e.userMessage : "Failed to load report. Please try again.");
       } finally {
         setLoading(false);
       }

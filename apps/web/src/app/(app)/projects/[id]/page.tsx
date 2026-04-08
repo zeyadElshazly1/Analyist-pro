@@ -7,7 +7,7 @@ import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
 import { UploadDataset } from "@/components/project/upload-dataset";
 import { RunAnalysis } from "@/components/project/run-analysis";
-import { getProjects, getAnalysisHistory } from "@/lib/api";
+import { getProject, getAnalysisHistory } from "@/lib/api";
 import { ArrowLeft, Database, Zap, Clock, FileText } from "lucide-react";
 
 type HistoryEntry = { id: number; project_id: number; created_at: string; file_hash: string | null };
@@ -84,11 +84,8 @@ export default function ProjectPage() {
 
   useEffect(() => {
     if (!projectId || isNaN(projectId)) return;
-    getProjects()
-      .then((list: any[]) => {
-        const p = list.find((p) => p.id === projectId);
-        if (p) setProjectName(p.name);
-      })
+    getProject(projectId)
+      .then((p) => setProjectName(p.name))
       .catch(() => {});
   }, [projectId]);
 
