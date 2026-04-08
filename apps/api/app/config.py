@@ -72,6 +72,7 @@ SQL_MAX_ROWS = 500
 
 # ── Analysis Cache ────────────────────────────────────────────────────────────
 CACHE_TTL_SECONDS = 3600       # Cache analysis results for 1 hour
+REDIS_URL = _os.getenv("REDIS_URL", "")  # empty = no Redis caching
 
 # ── Cohorts ───────────────────────────────────────────────────────────────────
 RFM_QUINTILES = 5              # Number of RFM scoring buckets

@@ -22,6 +22,7 @@ from fastapi.responses import StreamingResponse
 from app.db import SessionLocal
 from app.models import AnalysisResult
 from app.services.analyzer import analyze_dataset, get_dataset_summary
+from app.services.cache import get_cached_analysis, set_cached_analysis
 from app.services.cleaner import clean_dataset
 from app.services.file_loader import load_dataset
 from app.services.profiler import calculate_health_score, profile_dataset
@@ -49,6 +50,15 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
     info = get_project_file_info(project_id)
     if not info:
         yield _sse({"error": "No uploaded file found for this project."})
+        return
+
+    # ── Cache check ───────────────────────────────────────────────────────────
+    file_hash = info.get("file_hash")
+    cached = get_cached_analysis(project_id, file_hash)
+    if cached:
+        yield emit("Loading from cache", 80, "Previous analysis found — loading instantly")
+        yield emit("Complete", 100, "Loaded from cache")
+        yield _sse({"step": "result", "progress": 100, "result": cached, "from_cache": True})
         return
 
     try:
@@ -118,7 +128,7 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
 
     # ── Persist to database ───────────────────────────────────────────────────
     file_info = PROJECT_FILES.get(project_id) or {}
-    file_hash = file_info.get("file_hash")
+    # file_hash already resolved above (used for cache check); re-use it here
     analysis_id = None
     db = SessionLocal()
     try:
@@ -137,6 +147,9 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
         db.rollback()
     finally:
         db.close()
+
+    # ── Write to Redis cache ──────────────────────────────────────────────────
+    set_cached_analysis(project_id, file_hash, result)
 
     # Cache last insights for AI chat
     PROJECT_FILES.setdefault(project_id, {})["last_insights"] = [
