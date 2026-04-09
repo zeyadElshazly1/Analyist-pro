@@ -40,6 +40,7 @@ const TAB_GROUPS = [
     tabs: [
       { id: "compare-cols", label: "Columns" },
       { id: "compare-files", label: "Files" },
+      { id: "diff", label: "Diff Runs" },
     ],
   },
   {

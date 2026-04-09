@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.middleware.auth import get_current_user
+from app.middleware.plans import check_project_limit
 from app.models import AnalysisResult, Project, ProjectFile, User
 from app.schemas.project import ProjectCreate, ProjectResponse
 from app.state import PROJECT_FILES
@@ -33,6 +34,7 @@ def list_projects(
 def create_project(
     payload: ProjectCreate,
     current_user: User = Depends(get_current_user),
+    _plan: None = Depends(check_project_limit),
     db: Session = Depends(get_db),
 ):
     try:

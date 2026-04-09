@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import ALLOWED_EXTENSIONS, MAX_UPLOAD_BYTES, UPLOAD_DIR
 from app.db import get_db
 from app.middleware.auth import get_current_user
+from app.middleware.plans import plan_max_file_bytes
 from app.models import Project, ProjectFile, User
 from app.services.cache import invalidate_project_cache
 from app.services.storage import get_local_path, save_file
@@ -49,9 +50,22 @@ async def upload_file(
     size_bytes = len(content)
     if size_bytes == 0:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
-    if size_bytes > MAX_UPLOAD_BYTES:
+    plan_limit = plan_max_file_bytes(current_user)
+    effective_limit = min(MAX_UPLOAD_BYTES, plan_limit)
+    if size_bytes > effective_limit:
         mb = size_bytes / (1024 * 1024)
-        max_mb = MAX_UPLOAD_BYTES / (1024 * 1024)
+        max_mb = effective_limit / (1024 * 1024)
+        detail: dict | str
+        if size_bytes > plan_limit:
+            detail = {
+                "message": (
+                    f"File too large for your {current_user.plan or 'free'} plan "
+                    f"({mb:.1f} MB). Upgrade for larger file support."
+                ),
+                "feature": "file_size",
+                "current_plan": current_user.plan or "free",
+            }
+            raise HTTPException(status_code=402, detail=detail)
         raise HTTPException(
             status_code=413,
             detail=f"File too large: {mb:.1f} MB. Maximum allowed: {max_mb:.0f} MB.",

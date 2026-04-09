@@ -27,13 +27,27 @@ export class ApiError extends Error {
     this.name = "ApiError";
   }
 
-  get isAuthError() { return this.status === 401; }
-  get isForbidden()  { return this.status === 403; }
-  get isNotFound()   { return this.status === 404; }
-  get isValidation() { return this.status === 422; }
-  get isServer()     { return this.status >= 500; }
-  get isNetwork()    { return this.status === 0; }
-  get isRetryable()  { return this.status === 503 || this.status === 504 || this.status === 429; }
+  get isAuthError()        { return this.status === 401; }
+  get isForbidden()        { return this.status === 403; }
+  get isNotFound()         { return this.status === 404; }
+  get isPaymentRequired()  { return this.status === 402; }
+  get isValidation()       { return this.status === 422; }
+  get isServer()           { return this.status >= 500; }
+  get isNetwork()          { return this.status === 0; }
+  get isRetryable()        { return this.status === 503 || this.status === 504 || this.status === 429; }
+
+  /** For 402 responses the backend sends a structured detail object. */
+  get upgradeInfo(): { message: string; feature: string; current_plan: string } | null {
+    if (this.status !== 402) return null;
+    try {
+      // userMessage may be the raw JSON string of the detail object
+      const parsed = typeof this.userMessage === "string"
+        ? JSON.parse(this.userMessage)
+        : this.userMessage;
+      if (parsed && parsed.feature) return parsed as { message: string; feature: string; current_plan: string };
+    } catch { /* not JSON */ }
+    return null;
+  }
 }
 
 /**
@@ -54,10 +68,14 @@ async function parseError(res: Response, context: string): Promise<ApiError> {
   const code = String(body.code ?? "UNKNOWN_ERROR");
   const fields = body.fields as Record<string, string> | undefined;
 
-  // Map status codes to user-friendly defaults if the backend didn't provide one
-  let userMessage = String(body.error ?? body.detail ?? "");
-  if (!userMessage) {
-    userMessage = statusToMessage(res.status, context);
+  // 402: detail is a structured object — preserve it as the userMessage so
+  // upgradeInfo getter can parse it
+  let userMessage: string;
+  if (res.status === 402 && body.detail && typeof body.detail === "object") {
+    userMessage = JSON.stringify(body.detail);
+  } else {
+    userMessage = String(body.error ?? body.detail ?? "");
+    if (!userMessage) userMessage = statusToMessage(res.status, context);
   }
 
   return new ApiError(userMessage, code, res.status, requestId, fields);
@@ -730,4 +748,41 @@ export function runSegments(projectId: number, segmentCol: string, metricCol: st
     segment_col: segmentCol,
     metric_col: metricCol,
   });
+}
+
+// ── Analysis diff ─────────────────────────────────────────────────────────────
+
+export interface DiffMetric {
+  name: string;
+  a: number | null;
+  b: number | null;
+  delta: number;
+  direction: "up" | "down" | "unchanged";
+}
+
+export interface AnalysisDiff {
+  run_a: { id: number; created_at: string | null; file_hash: string | null };
+  run_b: { id: number; created_at: string | null; file_hash: string | null };
+  same_file: boolean;
+  metrics: DiffMetric[];
+  insights: {
+    new: Record<string, unknown>[];
+    resolved: Record<string, unknown>[];
+    unchanged_count: number;
+  };
+  columns: {
+    added: Record<string, unknown>[];
+    removed: Record<string, unknown>[];
+    changed: { name: string; changes: Record<string, { a: unknown; b: unknown }> }[];
+  };
+}
+
+export function getAnalysisHistory(projectId: number, limit = 10) {
+  return get<{ id: number; project_id: number; created_at: string | null; file_hash: string | null }[]>(
+    `/analysis/history/${projectId}?limit=${limit}`
+  );
+}
+
+export function getAnalysisDiff(runA: number, runB: number) {
+  return get<AnalysisDiff>(`/analysis/diff?run_a=${runA}&run_b=${runB}`);
 }

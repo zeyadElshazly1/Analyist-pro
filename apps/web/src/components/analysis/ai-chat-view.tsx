@@ -5,6 +5,7 @@ import { useState, useRef, useEffect } from "react";
 import { sendChatMessage, ApiError } from "@/lib/api";
 import { Loader2, Send, Bot, User, Code2, Table2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { UpgradeWall } from "@/components/ui/upgrade-wall";
 
 type Message = {
   role: "user" | "assistant";
@@ -26,6 +27,7 @@ export function AiChatView({ projectId }: Props) {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [blocked, setBlocked] = useState<{ feature: string; message: string } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -53,11 +55,18 @@ export function AiChatView({ projectId }: Props) {
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (e) {
-      const userMessage =
-        e instanceof ApiError
-          ? e.userMessage
-          : "Sorry, I couldn't process your request. Please try again.";
-      setMessages((prev) => [...prev, { role: "assistant", content: userMessage }]);
+      if (e instanceof ApiError && e.isPaymentRequired) {
+        const info = e.upgradeInfo;
+        setBlocked({ feature: info?.feature ?? "ai_chat", message: info?.message ?? e.userMessage });
+        // Remove the user message we just added since the request was blocked
+        setMessages((prev) => prev.slice(0, -1));
+      } else {
+        const userMessage =
+          e instanceof ApiError
+            ? e.userMessage
+            : "Sorry, I couldn't process your request. Please try again.";
+        setMessages((prev) => [...prev, { role: "assistant", content: userMessage }]);
+      }
     } finally {
       setLoading(false);
     }
@@ -68,6 +77,10 @@ export function AiChatView({ projectId }: Props) {
       e.preventDefault();
       handleSend();
     }
+  }
+
+  if (blocked) {
+    return <UpgradeWall feature={blocked.feature} message={blocked.message} />;
   }
 
   return (
