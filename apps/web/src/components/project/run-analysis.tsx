@@ -28,6 +28,7 @@ import { AbTestsView } from "@/components/analysis/ab-tests-view";
 import { QueryView } from "@/components/analysis/query-view";
 import { DataStoryView } from "@/components/analysis/data-story-view";
 import { DataTableView } from "@/components/analysis/data-table-view";
+import { DiffView } from "@/components/analysis/diff-view";
 import { ApiError, getFreshToken, shareAnalysis } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 import { SafePanel } from "@/components/ui/error-boundary";
@@ -361,6 +362,13 @@ export function RunAnalysis({ projectId }: Props) {
           {tab === "compare-files" && (
             <SafePanel label="File Comparison">
               <TabPanel><MultifileCompare currentProjectId={projectId} /></TabPanel>
+            </SafePanel>
+          )}
+
+          {/* ── Diff Runs ────────────────────────────────────────────── */}
+          {tab === "diff" && (
+            <SafePanel label="Diff Runs">
+              <TabPanel><DiffView projectId={projectId} /></TabPanel>
             </SafePanel>
           )}
 

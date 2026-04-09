@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.middleware.auth import get_current_user, optional_current_user
+from app.middleware.plans import require_feature
 from app.models import AnalysisResult, Project, ProjectFile, User
 from app.schemas.analysis import AnalysisRequest
 from app.services.analyzer import analyze_dataset, get_dataset_summary
@@ -255,6 +256,7 @@ def get_shared_analysis(token: str, db: Session = Depends(get_db)):
 def generate_story(
     analysis_id: int,
     current_user: User = Depends(get_current_user),
+    _plan: None = Depends(require_feature("ai_story")),
     db: Session = Depends(get_db),
 ):
     """Use Claude to generate a 5-slide data story from a stored analysis result."""
@@ -275,6 +277,143 @@ def generate_story(
     except Exception as e:
         logger.error(f"Story generation failed for analysis {analysis_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Story generation failed: {e}")
+
+
+@router.get("/diff")
+def get_analysis_diff(
+    run_a: int = Query(..., description="ID of the baseline analysis run"),
+    run_b: int = Query(..., description="ID of the comparison analysis run"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Compare two analysis runs for the same project.
+    Returns changed metrics, new/resolved insights, and column-level changes.
+    Both runs must belong to projects owned by the current user.
+    """
+    def _fetch(run_id: int) -> AnalysisResult:
+        r = (
+            db.query(AnalysisResult)
+            .join(Project)
+            .filter(AnalysisResult.id == run_id, Project.user_id == current_user.id)
+            .first()
+        )
+        if not r:
+            raise HTTPException(status_code=404, detail=f"Analysis run {run_id} not found.")
+        return r
+
+    a_row = _fetch(run_a)
+    b_row = _fetch(run_b)
+
+    if a_row.project_id != b_row.project_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Both runs must belong to the same project.",
+        )
+
+    a = json.loads(a_row.result_json)
+    b = json.loads(b_row.result_json)
+
+    # ── Metric deltas ─────────────────────────────────────────────────────────
+    def _num(d: dict, *keys, default=None):
+        val = d
+        for k in keys:
+            if not isinstance(val, dict):
+                return default
+            val = val.get(k, default)
+        try:
+            return float(val) if val is not None else default
+        except (TypeError, ValueError):
+            return default
+
+    metrics = []
+    for label, path in [
+        ("Health Score",    ("health_score", "score")),
+        ("Rows",            ("dataset_summary", "rows")),
+        ("Columns",         ("dataset_summary", "columns")),
+        ("Missing %",       ("dataset_summary", "missing_pct")),
+        ("Numeric Columns", ("dataset_summary", "numeric_cols")),
+        ("Cleaning Steps",  ("cleaning_summary", "steps")),
+    ]:
+        va = _num(a, *path)
+        vb = _num(b, *path)
+        if va is None and vb is None:
+            continue
+        delta = round((vb or 0) - (va or 0), 2)
+        metrics.append({
+            "name": label,
+            "a": va,
+            "b": vb,
+            "delta": delta,
+            "direction": "up" if delta > 0 else ("down" if delta < 0 else "unchanged"),
+        })
+
+    # ── Insight diff ──────────────────────────────────────────────────────────
+    def _insight_keys(result: dict) -> dict[str, dict]:
+        """Map finding text → insight dict for quick lookup."""
+        out = {}
+        for ins in result.get("insights", []):
+            if isinstance(ins, dict):
+                key = str(ins.get("finding", "")).strip().lower()
+                if key:
+                    out[key] = ins
+        return out
+
+    a_insights = _insight_keys(a)
+    b_insights = _insight_keys(b)
+
+    new_insights = [v for k, v in b_insights.items() if k not in a_insights]
+    resolved_insights = [v for k, v in a_insights.items() if k not in b_insights]
+    unchanged_insights = [v for k, v in b_insights.items() if k in a_insights]
+
+    # ── Column profile diff ───────────────────────────────────────────────────
+    def _col_map(result: dict) -> dict[str, dict]:
+        cols = result.get("profile", [])
+        if isinstance(cols, list):
+            return {c.get("name", ""): c for c in cols if isinstance(c, dict)}
+        return {}
+
+    a_cols = _col_map(a)
+    b_cols = _col_map(b)
+
+    added_cols = [b_cols[k] for k in b_cols if k not in a_cols]
+    removed_cols = [a_cols[k] for k in a_cols if k not in b_cols]
+    changed_cols = []
+    for name in set(a_cols) & set(b_cols):
+        ac = a_cols[name]
+        bc = b_cols[name]
+        changes = {}
+        for field in ("dtype", "missing_pct", "unique_count"):
+            av, bv = ac.get(field), bc.get(field)
+            if av != bv:
+                changes[field] = {"a": av, "b": bv}
+        if changes:
+            changed_cols.append({"name": name, "changes": changes})
+
+    return {
+        "run_a": {
+            "id": a_row.id,
+            "created_at": a_row.created_at.isoformat() if a_row.created_at else None,
+            "file_hash": a_row.file_hash,
+        },
+        "run_b": {
+            "id": b_row.id,
+            "created_at": b_row.created_at.isoformat() if b_row.created_at else None,
+            "file_hash": b_row.file_hash,
+        },
+        "same_file": a_row.file_hash == b_row.file_hash and a_row.file_hash is not None,
+        "metrics": metrics,
+        "insights": {
+            "new":      new_insights,
+            "resolved": resolved_insights,
+            "unchanged_count": len(unchanged_insights),
+        },
+        "columns": {
+            "added":   added_cols,
+            "removed": removed_cols,
+            "changed": changed_cols,
+        },
+    }
 
 
 @router.get("/data-table")

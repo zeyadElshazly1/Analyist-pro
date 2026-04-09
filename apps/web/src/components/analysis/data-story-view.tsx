@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { Sparkles, ChevronLeft, ChevronRight, Copy, Check, Loader2 } from "lucide-react";
-import { generateStory } from "@/lib/api";
+import { generateStory, ApiError } from "@/lib/api";
 import type { DataStory, StorySlide } from "@/lib/api";
+import { UpgradeWall } from "@/components/ui/upgrade-wall";
 
 interface Props {
   analysisId: number | null;
@@ -71,6 +72,7 @@ export function DataStoryView({ analysisId }: Props) {
   const [story, setStory] = useState<DataStory | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [blocked, setBlocked] = useState<{ feature: string; message: string } | null>(null);
   const [currentSlide, setCurrentSlide] = useState(0);
 
   async function handleGenerate() {
@@ -85,10 +87,19 @@ export function DataStoryView({ analysisId }: Props) {
       setStory(result);
       setCurrentSlide(0);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Story generation failed");
+      if (e instanceof ApiError && e.isPaymentRequired) {
+        const info = e.upgradeInfo;
+        setBlocked({ feature: info?.feature ?? "ai_story", message: info?.message ?? e.userMessage });
+      } else {
+        setError(e instanceof Error ? e.message : "Story generation failed");
+      }
     } finally {
       setLoading(false);
     }
+  }
+
+  if (blocked) {
+    return <UpgradeWall feature={blocked.feature} message={blocked.message} />;
   }
 
   if (!story) {
