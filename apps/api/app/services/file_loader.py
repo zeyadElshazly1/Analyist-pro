@@ -25,13 +25,43 @@ def _detect_encoding(raw: bytes) -> str:
         return "utf-8-sig"  # Best general-purpose default
 
 
+def _load_csv_polars(path: Path) -> pd.DataFrame | None:
+    """
+    Attempt to load a CSV using Polars (significantly faster + lower memory
+    for large files).  Returns a pandas DataFrame on success, None if Polars
+    is not installed or the read fails (caller falls back to pandas).
+    """
+    try:
+        import polars as pl
+        df_pl = pl.read_csv(
+            path,
+            infer_schema_length=10_000,
+            ignore_errors=True,          # skip malformed rows (like pandas on_bad_lines="skip")
+            truncate_ragged_lines=True,
+            encoding="utf8-lossy",       # graceful handling of non-UTF8 bytes
+        )
+        df = df_pl.to_pandas()
+        logger.info(
+            f"Loaded CSV via Polars {path.name}: {len(df)} rows × {len(df.columns)} cols"
+        )
+        return df
+    except ImportError:
+        return None
+    except Exception as e:
+        logger.debug(f"Polars CSV load failed for {path.name}: {e} — falling back to pandas")
+        return None
+
+
 def load_dataset(file_path: str) -> pd.DataFrame:
     """
     Load a CSV or Excel file into a DataFrame.
 
-    - Auto-detects encoding (chardet if available, otherwise trial fallback)
-    - Reports how many rows were skipped on bad lines
-    - Raises FileNotFoundError, ValueError on invalid inputs
+    For CSVs, Polars is tried first (3–5× faster, lower memory).
+    If Polars is unavailable or fails, pandas is used with auto-detected
+    encoding (chardet if available, otherwise trial fallback).
+
+    - Raises FileNotFoundError for missing files
+    - Raises ValueError on unreadable / unsupported inputs
     """
     path = Path(file_path)
 
@@ -51,10 +81,14 @@ def load_dataset(file_path: str) -> pd.DataFrame:
 
     # ── CSV ───────────────────────────────────────────────────────────────────
     if suffix == ".csv":
+        # Fast path: Polars (no encoding detection needed — handles it internally)
+        df = _load_csv_polars(path)
+        if df is not None:
+            return df
+
+        # Slow path: pandas with chardet encoding detection
         raw = path.read_bytes()
         encoding = _detect_encoding(raw)
-
-        # Try detected encoding first, then fall back through candidates
         encodings_to_try = [encoding] + [e for e in _ENCODING_FALLBACKS if e != encoding]
 
         for enc in encodings_to_try:
@@ -70,8 +104,8 @@ def load_dataset(file_path: str) -> pd.DataFrame:
                     )
                 else:
                     logger.info(
-                        f"Loaded CSV {path.name}: {n_loaded} rows × {len(df.columns)} cols "
-                        f"(encoding={enc})"
+                        f"Loaded CSV via pandas {path.name}: {n_loaded} rows × "
+                        f"{len(df.columns)} cols (encoding={enc})"
                     )
                 return df
             except (UnicodeDecodeError, LookupError):

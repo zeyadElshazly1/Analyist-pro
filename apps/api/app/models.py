@@ -107,6 +107,31 @@ class AnalysisResult(Base):
         self.result_json = json.dumps(value, default=str)
 
 
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    action = Column(String(64), nullable=False, index=True)   # e.g. "upload", "analysis", "login", "delete_account"
+    resource_type = Column(String(64), nullable=True)         # e.g. "project", "analysis"
+    resource_id = Column(String(64), nullable=True)           # e.g. project_id or analysis_id as string
+    detail = Column(Text, nullable=True)                      # optional JSON with extra context
+    ip_address = Column(String(64), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=_utcnow, index=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "action": self.action,
+            "resource_type": self.resource_type,
+            "resource_id": self.resource_id,
+            "detail": self.detail,
+            "ip_address": self.ip_address,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class ProjectFeature(Base):
     __tablename__ = "project_features"
 

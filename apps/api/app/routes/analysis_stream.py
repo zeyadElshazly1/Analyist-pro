@@ -22,6 +22,7 @@ from fastapi.responses import StreamingResponse
 from app.db import SessionLocal
 from app.models import AnalysisResult
 from app.services.analyzer import analyze_dataset, get_dataset_summary
+from app.services.audit import log_event
 from app.services.cache import get_cached_analysis, set_cached_analysis
 from app.services.cleaner import clean_dataset
 from app.services.file_loader import load_dataset
@@ -142,6 +143,18 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
         db.refresh(analysis)
         analysis_id = analysis.id
         logger.info(f"Stream analysis persisted for project {project_id}: {len(insights)} insights, id={analysis_id}")
+
+        # Resolve user_id from project for audit log
+        from app.models import Project as ProjectModel
+        proj = db.query(ProjectModel).filter(ProjectModel.id == project_id).first()
+        log_event(
+            db,
+            action="analysis",
+            user_id=proj.user_id if proj else None,
+            resource_type="analysis",
+            resource_id=str(analysis_id),
+            detail={"project_id": project_id, "insight_count": len(insights)},
+        )
     except Exception as e:
         logger.error(f"Failed to persist stream analysis for project {project_id}: {e}", exc_info=True)
         db.rollback()

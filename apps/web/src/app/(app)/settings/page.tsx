@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { useUser } from "@/lib/user-context";
-import { User, Bell, Shield, Loader2, Check } from "lucide-react";
+import { User, Bell, Shield, Download, Loader2, Check, AlertTriangle } from "lucide-react";
 import { toast } from "@/components/ui/toast";
+import { deleteMyAccount, exportMyData, ApiError } from "@/lib/api";
 
 function Section({
   title,
@@ -68,6 +70,9 @@ function Toggle({
 
 export default function SettingsPage() {
   const { user, loading: loadingUser } = useUser();
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const initial = user?.email?.[0]?.toUpperCase() ?? "U";
   const planLabel =
@@ -78,6 +83,38 @@ export default function SettingsPage() {
   const memberSince = user?.created_at
     ? new Date(user.created_at).toLocaleDateString(undefined, { year: "numeric", month: "long" })
     : null;
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      await exportMyData();
+      toast.success("Your data export has been downloaded.");
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.userMessage : "Export failed. Please try again.";
+      toast.error(msg);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteConfirm) {
+      setDeleteConfirm(true);
+      return;
+    }
+    setDeleting(true);
+    try {
+      await deleteMyAccount();
+      toast.success("Your account has been deleted.");
+      // Redirect to marketing site after deletion
+      window.location.href = "/";
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.userMessage : "Deletion failed. Please try again.";
+      toast.error(msg);
+      setDeleting(false);
+      setDeleteConfirm(false);
+    }
+  }
 
   return (
     <AppShell>
@@ -203,18 +240,78 @@ export default function SettingsPage() {
             </div>
           </Section>
 
+          {/* Data & Privacy */}
+          <Section
+            title="Data & Privacy"
+            description="GDPR rights — export or delete all data we hold about you."
+            icon={Download}
+          >
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+                <div>
+                  <p className="text-sm text-white/80">Export your data</p>
+                  <p className="text-xs text-white/35">
+                    Download a JSON file of all your projects, analyses, and account information.
+                  </p>
+                </div>
+                <button
+                  onClick={handleExport}
+                  disabled={exporting}
+                  className="flex-shrink-0 flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-white/60 hover:text-white hover:border-white/20 transition-colors disabled:opacity-50"
+                >
+                  {exporting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Download className="h-3.5 w-3.5" />
+                  )}
+                  {exporting ? "Exporting…" : "Export"}
+                </button>
+              </div>
+            </div>
+          </Section>
+
           {/* Danger zone */}
           <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-6">
             <h2 className="mb-1 text-sm font-semibold text-red-400">Danger zone</h2>
             <p className="mb-4 text-xs text-white/40">
               Irreversible actions — proceed with caution.
             </p>
-            <button
-              onClick={() => toast.error("Account deletion is not yet available. Please contact support.")}
-              className="rounded-lg border border-red-500/30 px-4 py-2 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
-            >
-              Delete account
-            </button>
+
+            {deleteConfirm ? (
+              <div className="space-y-3">
+                <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+                  <AlertTriangle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-300">
+                    This will permanently delete your account, all projects, uploaded files, and analysis
+                    results. This action <strong>cannot be undone</strong>.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    className="flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-500 transition-colors disabled:opacity-50"
+                  >
+                    {deleting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    {deleting ? "Deleting…" : "Yes, delete my account"}
+                  </button>
+                  <button
+                    onClick={() => setDeleteConfirm(false)}
+                    disabled={deleting}
+                    className="rounded-lg border border-white/10 px-4 py-2 text-xs font-medium text-white/50 hover:text-white transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={handleDelete}
+                className="rounded-lg border border-red-500/30 px-4 py-2 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+              >
+                Delete account
+              </button>
+            )}
           </div>
 
         </div>

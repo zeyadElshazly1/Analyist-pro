@@ -255,6 +255,52 @@ export async function logout() {
   window.location.href = "/login";
 }
 
+/** GDPR: permanently delete the current user's account and all data. */
+export async function deleteMyAccount(): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/auth/me`, {
+      method: "DELETE",
+      headers: await authHeaders(),
+    });
+  } catch {
+    throw new ApiError(
+      "Could not reach the server. Please check your connection.",
+      "NETWORK_ERROR",
+      0,
+    );
+  }
+  if (res.status === 401) clearToken();
+  if (!res.ok) throw await parseError(res, "Account");
+}
+
+/** GDPR: download a full JSON export of the current user's data. */
+export async function exportMyData(): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/auth/me/export`, {
+      headers: await authHeaders(),
+    });
+  } catch {
+    throw new ApiError(
+      "Could not reach the server. Please check your connection.",
+      "NETWORK_ERROR",
+      0,
+    );
+  }
+  if (res.status === 401) clearToken();
+  if (!res.ok) throw await parseError(res, "Export");
+
+  // Trigger browser download
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "analyistpro-data-export.json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ── Projects ──────────────────────────────────────────────────────────────────
 
 export function getProjects() {
@@ -775,12 +821,6 @@ export interface AnalysisDiff {
     removed: Record<string, unknown>[];
     changed: { name: string; changes: Record<string, { a: unknown; b: unknown }> }[];
   };
-}
-
-export function getAnalysisHistory(projectId: number, limit = 10) {
-  return get<{ id: number; project_id: number; created_at: string | null; file_hash: string | null }[]>(
-    `/analysis/history/${projectId}?limit=${limit}`
-  );
 }
 
 export function getAnalysisDiff(runA: number, runB: number) {

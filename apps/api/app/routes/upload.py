@@ -3,7 +3,7 @@ import logging
 import os
 import tempfile
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from app.db import get_db
 from app.middleware.auth import get_current_user
 from app.middleware.plans import plan_max_file_bytes
 from app.models import Project, ProjectFile, User
+from app.services.audit import log_event
 from app.services.cache import invalidate_project_cache
 from app.services.storage import get_local_path, save_file
 from app.state import PROJECT_FILES
@@ -28,6 +29,7 @@ async def upload_file(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    request: Request = None,  # type: ignore[assignment]
 ):
     # ── Validate project exists and belongs to user ───────────────────────────
     project = db.query(Project).filter(
@@ -142,6 +144,16 @@ async def upload_file(
     logger.info(
         f"Upload: project={project_id} user={current_user.id[:8]}… "
         f"file='{filename}' size={size_bytes} hash={file_hash[:8]}…"
+    )
+
+    log_event(
+        db,
+        action="upload",
+        user_id=current_user.id,
+        resource_type="project",
+        resource_id=str(project_id),
+        detail={"filename": filename, "size_bytes": size_bytes, "file_hash": file_hash[:8]},
+        ip_address=request.client.host if request and request.client else None,
     )
 
     return {
