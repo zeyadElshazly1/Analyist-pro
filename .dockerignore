@@ -1,0 +1,47 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# CI/CD
+.github
+
+# Documentation
+*.md
+docs/
+
+# Secrets / local config
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# Node
+apps/web/node_modules
+apps/web/.next
+apps/web/out
+
+# Python
+apps/api/__pycache__
+apps/api/**/__pycache__
+apps/api/**/*.pyc
+apps/api/**/*.pyo
+apps/api/.pytest_cache
+apps/api/.venv
+apps/api/venv
+apps/api/*.egg-info
+
+# Uploads (should be in a volume, not the image)
+uploads/
+apps/api/uploads/
+
+# Tests
+apps/api/tests/
+apps/web/e2e/
+apps/web/__tests__/
+
+# Misc
+*.DS_Store
+*.log
+*.tmp
+.claude/

@@ -1,0 +1,29 @@
+# Python bytecode
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+
+# Secrets / local config
+.env
+.env.*
+!.env.example
+
+# Uploads (runtime data — should be in a volume)
+uploads/
+
+# Development
+*.log
+*.tmp
