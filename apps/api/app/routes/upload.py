@@ -125,8 +125,11 @@ async def upload_file(
         )
 
     # ── Update in-memory cache only after successful DB commit ────────────────
-    # For S3: path=stored_path (S3 key); get_project_file_info() will download
-    # on first access. For local: path is the filesystem path.
+    # Capture previous hash BEFORE overwriting the cache entry so cache
+    # invalidation can compare old vs new hashes correctly.
+    prev_info = PROJECT_FILES.get(project_id)
+    prev_hash = prev_info.get("file_hash") if prev_info else None
+
     local = get_local_path(stored_path)
     PROJECT_FILES[project_id] = {
         "filename": filename,
@@ -136,10 +139,9 @@ async def upload_file(
         "size_bytes": size_bytes,
     }
 
-    # Invalidate any cached analysis for the previous file
-    old_info = PROJECT_FILES.get(project_id)
-    if old_info and old_info.get("file_hash") and old_info["file_hash"] != file_hash:
-        invalidate_project_cache(project_id, old_info["file_hash"])
+    # Invalidate any cached analysis when the file content changes
+    if prev_hash and prev_hash != file_hash:
+        invalidate_project_cache(project_id, prev_hash)
 
     logger.info(
         f"Upload: project={project_id} user={current_user.id[:8]}… "

@@ -7,15 +7,16 @@ from app.services.cleaner import clean_dataset
 from app.services.feature_engineer import create_feature, suggest_features
 from app.services.file_loader import load_dataset
 from app.services.serializers import to_jsonable
-from app.state import PROJECT_FILES
+from app.state import PROJECT_FILES, get_project_file_info
 
 router = APIRouter(prefix="/features", tags=["features"])
 
 
 def _load(project_id: int):
-    if project_id not in PROJECT_FILES:
+    info = get_project_file_info(project_id)
+    if not info:
         raise HTTPException(status_code=404, detail="No uploaded file for this project.")
-    path = PROJECT_FILES[project_id]["path"]
+    path = info["path"]
     try:
         df = load_dataset(path)
         df_clean, _, _ = clean_dataset(df)
@@ -66,9 +67,10 @@ def feature_suggest(project_id: int = Query(...), current_user: User = Depends(g
 
 @router.get("/list")
 def feature_list(project_id: int = Query(...), current_user: User = Depends(get_current_user)):
-    if project_id not in PROJECT_FILES:
+    info = PROJECT_FILES.get(project_id)
+    if info is None:
         raise HTTPException(status_code=404, detail="Project not found.")
-    features = PROJECT_FILES[project_id].get("features", {})
+    features = info.get("features", {})
     return {
         "features": [
             {"name": name, "formula": meta["formula"], "dtype": meta["dtype"]}

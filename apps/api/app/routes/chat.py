@@ -8,15 +8,16 @@ from app.services.ai_chat_service import chat_with_data
 from app.services.cleaner import clean_dataset
 from app.services.file_loader import load_dataset
 from app.services.serializers import to_jsonable
-from app.state import PROJECT_FILES
+from app.state import PROJECT_FILES, get_project_file_info
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 def _load(project_id: int):
-    if project_id not in PROJECT_FILES:
+    info = get_project_file_info(project_id)
+    if not info:
         raise HTTPException(status_code=404, detail="No uploaded file for this project.")
-    path = PROJECT_FILES[project_id]["path"]
+    path = info["path"]
     try:
         df = load_dataset(path)
         df_clean, _, _ = clean_dataset(df)
@@ -50,7 +51,7 @@ def chat_query(
     df = _load(req.project_id)
 
     # get cached insights if available
-    insights = PROJECT_FILES[req.project_id].get("last_insights", [])
+    insights = (PROJECT_FILES.get(req.project_id) or {}).get("last_insights", [])
 
     history = [{"role": m.role, "content": m.content} for m in req.history]
 

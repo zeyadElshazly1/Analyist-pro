@@ -114,6 +114,27 @@ def auth_headers(client):
 
 
 @pytest.fixture
+def pro_auth_headers(client, auth_headers):
+    """
+    Same JWT as auth_headers but the test user is upgraded to 'pro' plan.
+    Ensures the user exists in the DB before upgrading.
+    """
+    # Trigger user creation via any authenticated call
+    client.get("/auth/me", headers=auth_headers)
+    # Upgrade plan directly in the test DB
+    from app.models import User as UserModel
+    db = TestingSessionLocal()
+    try:
+        user = db.query(UserModel).filter(UserModel.id == TEST_USER_ID).first()
+        if user:
+            user.plan = "pro"
+            db.commit()
+    finally:
+        db.close()
+    return auth_headers
+
+
+@pytest.fixture
 def project(client, auth_headers):
     """Create a project and return its JSON."""
     r = client.post("/projects", json={"name": "Test Project"}, headers=auth_headers)

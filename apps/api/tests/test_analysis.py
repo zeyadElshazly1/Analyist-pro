@@ -143,18 +143,18 @@ def test_stats_count_analyses(client, uploaded_project, auth_headers):
     assert stats["total_analyses"] == 1
 
 
-def test_data_story_no_analysis(client, auth_headers):
-    r = client.post("/analysis/story/99999", headers=auth_headers)
+def test_data_story_no_analysis(client, pro_auth_headers):
+    r = client.post("/analysis/story/99999", headers=pro_auth_headers)
     assert r.status_code == 404
 
 
-def test_data_story_returns_slides(client, uploaded_project, auth_headers):
+def test_data_story_returns_slides(client, uploaded_project, pro_auth_headers):
     pid = uploaded_project["id"]
-    client.post("/analysis/run", json={"project_id": pid}, headers=auth_headers)
-    hist = client.get(f"/analysis/history/{pid}", headers=auth_headers).json()
+    client.post("/analysis/run", json={"project_id": pid}, headers=pro_auth_headers)
+    hist = client.get(f"/analysis/history/{pid}", headers=pro_auth_headers).json()
     analysis_id = hist[0]["id"]
 
-    r = client.post(f"/analysis/story/{analysis_id}", headers=auth_headers)
+    r = client.post(f"/analysis/story/{analysis_id}", headers=pro_auth_headers)
     assert r.status_code == 200
     body = r.json()
     assert "title" in body

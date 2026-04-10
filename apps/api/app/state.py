@@ -17,9 +17,6 @@ logger = logging.getLogger(__name__)
 # Fast in-memory cache: { project_id: { filename, path, file_hash, ... } }
 PROJECT_FILES: dict[int, dict[str, Any]] = {}
 
-# Legacy list kept for any code that still reads it directly (will be phased out)
-PROJECTS: list = []
-
 
 def get_project_file_info(project_id: int) -> dict[str, Any] | None:
     """
@@ -31,8 +28,18 @@ def get_project_file_info(project_id: int) -> dict[str, Any] | None:
     """
     # 1. In-memory cache hit
     cached = PROJECT_FILES.get(project_id)
-    if cached and cached.get("path") and Path(cached["path"]).exists():
-        return cached
+    if cached and cached.get("path"):
+        if Path(cached["path"]).exists():
+            return cached
+        # Cached path is gone (e.g. S3 temp file deleted or local file removed).
+        # Try to re-materialise from stored_path before falling back to DB.
+        stored = cached.get("stored_path")
+        if stored:
+            from app.services.storage import get_local_path
+            fresh = get_local_path(stored)
+            if fresh:
+                cached["path"] = fresh
+                return cached
 
     # 2. Database lookup
     try:
