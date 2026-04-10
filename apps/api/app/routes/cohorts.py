@@ -8,15 +8,16 @@ from app.services.cleaner import clean_dataset
 from app.services.cohort_service import retention_matrix, rfm_segmentation
 from app.services.file_loader import load_dataset
 from app.services.serializers import to_jsonable
-from app.state import PROJECT_FILES
+from app.state import get_project_file_info
 
 router = APIRouter(prefix="/cohorts", tags=["cohorts"])
 
 
 def _load(project_id: int):
-    if project_id not in PROJECT_FILES:
+    info = get_project_file_info(project_id)
+    if not info:
         raise HTTPException(status_code=404, detail="No uploaded file for this project.")
-    path = PROJECT_FILES[project_id]["path"]
+    path = info["path"]
     try:
         df = load_dataset(path)
         df_clean, _, _ = clean_dataset(df)
