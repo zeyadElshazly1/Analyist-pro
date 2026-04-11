@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import * as Sentry from "@sentry/nextjs";
 import { getMe } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -42,9 +43,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
     try {
       const data = await getMe();
       setUser(data);
+      Sentry.setUser({ id: data.id, email: data.email });
     } catch {
       // Unauthenticated or network error — leave user as null
       setUser(null);
+      Sentry.setUser(null);
     }
   }, []);
 

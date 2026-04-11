@@ -39,6 +39,11 @@ def _sse(data: dict) -> str:
     return f"data: {json.dumps(data, default=str)}\n\n"
 
 
+def _heartbeat() -> str:
+    """SSE comment line — keeps the connection alive through proxy timeouts."""
+    return ": keep-alive\n\n"
+
+
 async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
     """Generator that yields SSE messages as analysis steps complete,
     then persists the result to the database."""
@@ -62,6 +67,7 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
         yield _sse({"step": "result", "progress": 100, "result": cached, "from_cache": True})
         return
 
+    yield _heartbeat()
     try:
         df = load_dataset(info["path"])
     except Exception as e:
@@ -76,6 +82,7 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
     yield emit("Dataset loaded", 10, f"{len(df):,} rows × {len(df.columns)} columns")
 
     # Step 1: Clean
+    yield _heartbeat()
     yield emit("Cleaning data", 20, "Detecting types, imputing missing values...")
     try:
         df_clean, cleaning_report, cleaning_summary = clean_dataset(df)
@@ -91,6 +98,7 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
     yield emit("Data cleaned", 35, f"{cleaning_summary.get('steps', 0)} cleaning operations applied")
 
     # Step 2: Profile
+    yield _heartbeat()
     yield emit("Profiling columns", 45, f"Analyzing {len(df_clean.columns)} columns...")
     try:
         profile = profile_dataset(df_clean)
@@ -104,6 +112,7 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
     yield emit("Profile complete", 60, f"Data health grade: {grade}")
 
     # Step 3: Insights
+    yield _heartbeat()
     yield emit("Detecting insights", 70, "Running correlation, anomaly, and segment analysis...")
     try:
         insights, narrative = analyze_dataset(df_clean)
