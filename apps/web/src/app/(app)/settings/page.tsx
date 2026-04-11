@@ -184,6 +184,9 @@ export default function SettingsPage() {
             description="Control when and how you receive alerts."
             icon={Bell}
           >
+            <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-400">
+              Coming soon — preferences are not yet persisted
+            </div>
             <div>
               <Toggle
                 label="Analysis complete"
@@ -204,9 +207,6 @@ export default function SettingsPage() {
                 description="Tips, case studies, and promotional offers."
               />
             </div>
-            <p className="mt-3 text-[11px] text-white/20">
-              Notification preferences are saved locally and will be wired to your account in a future release.
-            </p>
           </Section>
 
           {/* Security */}

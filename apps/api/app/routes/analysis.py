@@ -13,6 +13,7 @@ from app.middleware.plans import require_feature
 from app.models import AnalysisResult, Project, ProjectFile, User
 from app.schemas.analysis import AnalysisRequest
 from app.services.analyzer import analyze_dataset, get_dataset_summary
+from app.services.cache import get_cached_analysis, set_cached_analysis
 from app.services.cleaner import clean_dataset
 from app.services.file_loader import load_dataset
 from app.services.profiler import calculate_health_score, profile_dataset
@@ -42,6 +43,14 @@ def run_analysis(
 ):
     project_id = payload.project_id
     file_path = _get_file_path(project_id)
+
+    # ── Cache check ───────────────────────────────────────────────────────────
+    _file_info = PROJECT_FILES.get(project_id) or {}
+    _file_hash = _file_info.get("file_hash")
+    cached = get_cached_analysis(project_id, _file_hash)
+    if cached:
+        logger.info(f"Cache hit for project {project_id} — returning cached result")
+        return cached
 
     try:
         df = load_dataset(file_path)
@@ -78,10 +87,12 @@ def run_analysis(
             "narrative": narrative,
         }
 
+        # ── Write to Redis cache (before DB commit so cache is warm on retry) ──
+        set_cached_analysis(project_id, _file_hash, result)
+
         # ── Persist analysis result to DB ─────────────────────────────────────
         from sqlalchemy.exc import SQLAlchemyError
-        file_info = PROJECT_FILES.get(project_id) or {}
-        file_hash = file_info.get("file_hash")
+        file_hash = _file_hash
         analysis = AnalysisResult(
             project_id=project_id,
             file_hash=file_hash,
