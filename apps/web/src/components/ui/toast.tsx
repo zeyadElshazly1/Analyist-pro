@@ -59,7 +59,7 @@ const STYLE = {
 
 function Toast({ item, onRemove }: { item: ToastItem; onRemove: (id: string) => void }) {
   const [visible, setVisible] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     // Animate in
