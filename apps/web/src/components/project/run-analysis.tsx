@@ -36,6 +36,81 @@ import { SafePanel } from "@/components/ui/error-boundary";
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 
+type Insight = {
+  type?: string;
+  severity?: string;
+  confidence?: number;
+  title?: string;
+  finding?: string;
+  evidence?: string;
+  action?: string;
+  description?: string;
+};
+
+type ColProfile = {
+  column: string;
+  type: string;
+  dtype: string;
+  missing: number;
+  missing_pct: number;
+  unique: number;
+  unique_pct: number;
+  flags: string[];
+  mean?: number;
+  median?: number;
+  std?: number;
+  min?: number;
+  max?: number;
+  q25?: number;
+  q75?: number;
+  skewness?: number;
+  kurtosis?: number;
+  is_normal?: boolean;
+  outliers_iqr?: number;
+  top_values?: Record<string, number>;
+  most_common?: string;
+  most_common_pct?: number;
+  recommended_chart?: string;
+};
+
+type CleaningItem = {
+  step: string;
+  detail: string;
+  impact: "high" | "medium" | "low";
+};
+
+type AnalysisResult = {
+  analysis_id?: number;
+  dataset_summary: {
+    rows: number;
+    columns: number;
+    numeric_cols: number;
+    categorical_cols: number;
+    missing_pct: number;
+  };
+  health_score: {
+    total?: number;
+    score?: number;
+    grade?: string;
+    label?: string;
+    color?: string;
+    breakdown?: {
+      completeness: number;
+      uniqueness: number;
+      consistency: number;
+      validity: number;
+      structure: number;
+    };
+    deductions?: string[];
+  };
+  cleaning_summary?: Record<string, unknown> | null;
+  insights: Insight[];
+  profile: ColProfile[];
+  cleaning_report: CleaningItem[];
+  narrative?: string;
+  [key: string]: unknown;
+};
+
 type Props = {
   projectId: number;
 };
@@ -74,7 +149,7 @@ function ProgressBar({ progress, step, detail }: ProgressState) {
 
 export function RunAnalysis({ projectId }: Props) {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [result, setResult] = useState<AnalysisResult | null>(null);
   const [analysisId, setAnalysisId] = useState<number | null>(null);
   const [tab, setTab] = useState("overview");
   const [error, setError] = useState("");
@@ -118,7 +193,7 @@ export function RunAnalysis({ projectId }: Props) {
         }
 
         if (data.result) {
-          setResult(data.result);
+          setResult(data.result as AnalysisResult);
           if (data.result.analysis_id) setAnalysisId(data.result.analysis_id as number);
           setTab("overview");
           setLoading(false);

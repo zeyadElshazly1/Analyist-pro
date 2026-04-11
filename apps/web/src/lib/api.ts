@@ -304,7 +304,7 @@ export async function exportMyData(): Promise<void> {
 // ── Projects ──────────────────────────────────────────────────────────────────
 
 export function getProjects() {
-  return get<{ id: number; name: string; status?: string; created_at?: string }[]>("/projects");
+  return get<{ id: number; name: string; status: string; created_at?: string }[]>("/projects");
 }
 
 export function getProject(projectId: number) {
@@ -624,7 +624,7 @@ export function sendChatMessage(
 export async function exportReport(projectId: number, format: "html" | "pdf" | "xlsx" = "html") {
   const token = await getFreshToken();
   const url = `${API_BASE_URL}/reports/export/${projectId}?format=${format}`;
-  const hdrs = token ? { Authorization: `Bearer ${token}` } : {};
+  const hdrs: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
   let res: Response;
   try {
