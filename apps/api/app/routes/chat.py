@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+from app.limiter import limiter
 from app.middleware.auth import get_current_user
 from app.middleware.plans import require_feature
 from app.models import User
@@ -40,7 +41,9 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/query")
+@limiter.limit("30/minute")
 def chat_query(
+    request: Request,
     req: ChatRequest,
     current_user: User = Depends(get_current_user),
     _plan: None = Depends(require_feature("ai_chat")),

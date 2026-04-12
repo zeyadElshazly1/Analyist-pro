@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+import pandas as pd
 
 from app.middleware.auth import get_current_user
 from app.models import User
@@ -169,6 +170,79 @@ def multifile_compare(payload: MultifileRequest, current_user: User = Depends(ge
         return to_jsonable(result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Multi-file comparison failed: {e}")
+
+
+# ── Join ─────────────────────────────────────────────────────────────────────
+
+_VALID_HOW = {"inner", "left", "right", "outer"}
+
+
+@router.get("/join/columns")
+def join_columns(
+    project_id_left: int = Query(...),
+    project_id_right: int = Query(...),
+    current_user: User = Depends(get_current_user),
+):
+    """Return column lists for both projects + suggested join keys (common names)."""
+    df_left = _load(project_id_left)
+    df_right = _load(project_id_right)
+    left_cols = df_left.columns.tolist()
+    right_cols = df_right.columns.tolist()
+    suggested = sorted(set(left_cols) & set(right_cols))
+    return {
+        "left_columns": left_cols,
+        "right_columns": right_cols,
+        "suggested_join_keys": suggested,
+    }
+
+
+class JoinRequest(BaseModel):
+    project_id_left: int
+    project_id_right: int
+    left_on: str
+    right_on: str
+    how: str = "inner"  # inner | left | right | outer
+
+
+@router.post("/join/run")
+def join_run(payload: JoinRequest, current_user: User = Depends(get_current_user)):
+    """Join two project datasets on specified keys and return a preview + stats."""
+    if payload.how not in _VALID_HOW:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'how' must be one of: {', '.join(sorted(_VALID_HOW))}",
+        )
+    df_left = _load(payload.project_id_left)
+    df_right = _load(payload.project_id_right)
+
+    if payload.left_on not in df_left.columns:
+        raise HTTPException(status_code=400, detail=f"Column '{payload.left_on}' not in left dataset.")
+    if payload.right_on not in df_right.columns:
+        raise HTTPException(status_code=400, detail=f"Column '{payload.right_on}' not in right dataset.")
+
+    try:
+        merged = pd.merge(
+            df_left,
+            df_right,
+            left_on=payload.left_on,
+            right_on=payload.right_on,
+            how=payload.how,
+            suffixes=("_left", "_right"),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Join failed: {e}")
+
+    preview = merged.head(200).fillna("").astype(str).to_dict(orient="records")
+    return to_jsonable({
+        "rows": len(merged),
+        "left_rows": len(df_left),
+        "right_rows": len(df_right),
+        "columns": merged.columns.tolist(),
+        "how": payload.how,
+        "left_on": payload.left_on,
+        "right_on": payload.right_on,
+        "preview": preview,
+    })
 
 
 # ── Segments ──────────────────────────────────────────────────────────────────

@@ -19,6 +19,7 @@ from sqlalchemy.pool import StaticPool
 # Point to an in-memory DB and set a deterministic JWT secret before importing app
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("SENTRY_DSN", "")  # disable Sentry in tests
+os.environ["TESTING"] = "1"             # disable rate limiting in tests
 TEST_JWT_SECRET = "test-jwt-secret-for-pytest-only"
 os.environ["SUPABASE_JWT_SECRET"] = TEST_JWT_SECRET
 
@@ -77,6 +78,13 @@ def setup_db(tmp_path, monkeypatch):
     os.makedirs(test_upload_dir, exist_ok=True)
     monkeypatch.setattr(cfg, "UPLOAD_DIR", test_upload_dir)
     monkeypatch.setattr(upload_mod, "UPLOAD_DIR", test_upload_dir)
+
+    # Isolate model persistence to a per-test temp directory so trained models
+    # from one test don't bleed into another.
+    import app.services.automl_service as automl_mod
+    test_models_dir = str(tmp_path / "models")
+    os.makedirs(test_models_dir, exist_ok=True)
+    monkeypatch.setattr(automl_mod, "_MODELS_DIR", test_models_dir)
 
     import app.db as db_mod
     monkeypatch.setattr(db_mod, "SessionLocal", TestingSessionLocal)

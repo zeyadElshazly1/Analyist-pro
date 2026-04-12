@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
-import { getProjectStats } from "@/lib/api";
+import { getProjectStats, createCheckoutSession } from "@/lib/api";
 import { useUser } from "@/lib/user-context";
-import { CheckCircle, Sparkles, Zap, Users, ArrowRight } from "lucide-react";
+import { CheckCircle, Sparkles, Zap, Users, ArrowRight, Loader2 } from "lucide-react";
 
 type Stats = { total_projects: number; total_analyses: number };
 
@@ -69,11 +69,27 @@ const PLAN_ICONS = { free: Sparkles, pro: Zap, team: Users } as const;
 
 export default function BillingPage() {
   const [stats, setStats] = useState<Stats | null>(null);
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const { user } = useUser();
 
   useEffect(() => {
     getProjectStats().then(setStats).catch(() => {});
   }, []);
+
+  async function handleUpgrade(planId: string) {
+    if (planId !== "pro" && planId !== "team") return;
+    setCheckoutError(null);
+    setLoadingPlan(planId);
+    try {
+      const { checkout_url } = await createCheckoutSession(planId);
+      window.location.href = checkout_url;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Could not start checkout. Please try again.";
+      setCheckoutError(msg);
+      setLoadingPlan(null);
+    }
+  }
 
   const currentPlan = user?.plan ?? "free";
 
@@ -231,13 +247,17 @@ export default function BillingPage() {
                       </a>
                     ) : (
                       <button
-                        onClick={() => alert("Payment integration coming soon. Thank you for your interest!")}
-                        className={`w-full rounded-xl py-2 text-sm font-semibold transition-all ${
+                        onClick={() => handleUpgrade(plan.id)}
+                        disabled={loadingPlan !== null}
+                        className={`flex w-full items-center justify-center gap-2 rounded-xl py-2 text-sm font-semibold transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
                           plan.highlighted
                             ? "bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20"
                             : "bg-white/[0.07] text-white hover:bg-white/10"
                         }`}
                       >
+                        {loadingPlan === plan.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : null}
                         {plan.cta}
                       </button>
                     )}
@@ -246,6 +266,12 @@ export default function BillingPage() {
               })}
             </div>
           </div>
+
+          {checkoutError && (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-400">
+              {checkoutError}
+            </div>
+          )}
 
           {/* Billing history placeholder */}
           <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">

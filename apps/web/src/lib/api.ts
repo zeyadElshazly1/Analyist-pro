@@ -592,6 +592,41 @@ export function runMultifileCompare(projectIdA: number, projectIdB: number) {
   });
 }
 
+// ── Explore: Join ─────────────────────────────────────────────────────────────
+
+export function getJoinColumns(projectIdLeft: number, projectIdRight: number) {
+  return get<{
+    left_columns: string[];
+    right_columns: string[];
+    suggested_join_keys: string[];
+  }>(`/explore/join/columns?project_id_left=${projectIdLeft}&project_id_right=${projectIdRight}`);
+}
+
+export function runJoin(
+  projectIdLeft: number,
+  projectIdRight: number,
+  leftOn: string,
+  rightOn: string,
+  how: "inner" | "left" | "right" | "outer",
+) {
+  return post<{
+    rows: number;
+    left_rows: number;
+    right_rows: number;
+    columns: string[];
+    how: string;
+    left_on: string;
+    right_on: string;
+    preview: Record<string, string>[];
+  }>("/explore/join/run", {
+    project_id_left: projectIdLeft,
+    project_id_right: projectIdRight,
+    left_on: leftOn,
+    right_on: rightOn,
+    how,
+  });
+}
+
 // ── AutoML ────────────────────────────────────────────────────────────────────
 
 export function getMlColumns(projectId: number) {
@@ -825,4 +860,31 @@ export interface AnalysisDiff {
 
 export function getAnalysisDiff(runA: number, runB: number) {
   return get<AnalysisDiff>(`/analysis/diff?run_a=${runA}&run_b=${runB}`);
+}
+
+export function createCheckoutSession(plan: "pro" | "team"): Promise<{ checkout_url: string }> {
+  return post<{ checkout_url: string }>("/billing/create-checkout-session", { plan });
+}
+
+export function getModelInfo(projectId: number) {
+  return get<{
+    project_id: number;
+    problem_type: string;
+    target_col: string;
+    best_model_name: string;
+    feature_names: string[];
+    class_labels: string[] | null;
+  }>(`/ml/model-info/${projectId}`);
+}
+
+export function predictRows(
+  projectId: number,
+  rows: Record<string, unknown>[],
+): Promise<{
+  problem_type: string;
+  target_col: string;
+  best_model_name: string;
+  predictions: { prediction: unknown; confidence?: number }[];
+}> {
+  return post(`/ml/predict/${projectId}`, { rows });
 }

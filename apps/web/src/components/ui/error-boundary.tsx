@@ -15,6 +15,7 @@
  */
 
 import { Component, ReactNode } from "react";
+import * as Sentry from "@sentry/nextjs";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 
 interface Props {
@@ -44,8 +45,10 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: { componentStack: string }) {
-    // In production you'd send this to Sentry / DataDog / LogRocket
     console.error("[ErrorBoundary]", error, info.componentStack);
+    Sentry.captureException(error, {
+      extra: { componentStack: info.componentStack, label: this.props.label },
+    });
   }
 
   reset = () => {

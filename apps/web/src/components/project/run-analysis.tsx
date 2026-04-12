@@ -20,6 +20,7 @@ import { OutlierView } from "@/components/analysis/outlier-view";
 import { CorrelationMatrix } from "@/components/analysis/correlation-matrix";
 import { ColumnCompare } from "@/components/analysis/column-compare";
 import { MultifileCompare } from "@/components/analysis/multifile-compare";
+import { JoinView } from "@/components/analysis/join-view";
 import { PredictionsView } from "@/components/analysis/predictions-view";
 import { AiChatView } from "@/components/analysis/ai-chat-view";
 import { PivotView } from "@/components/analysis/pivot-view";
@@ -437,6 +438,13 @@ export function RunAnalysis({ projectId }: Props) {
           {tab === "compare-files" && (
             <SafePanel label="File Comparison">
               <TabPanel><MultifileCompare currentProjectId={projectId} /></TabPanel>
+            </SafePanel>
+          )}
+
+          {/* ── Join Datasets ─────────────────────────────────────────── */}
+          {tab === "join" && (
+            <SafePanel label="Join Datasets">
+              <TabPanel><JoinView currentProjectId={projectId} /></TabPanel>
             </SafePanel>
           )}
 
