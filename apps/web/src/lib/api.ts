@@ -592,6 +592,41 @@ export function runMultifileCompare(projectIdA: number, projectIdB: number) {
   });
 }
 
+// ── Explore: Join ─────────────────────────────────────────────────────────────
+
+export function getJoinColumns(projectIdLeft: number, projectIdRight: number) {
+  return get<{
+    left_columns: string[];
+    right_columns: string[];
+    suggested_join_keys: string[];
+  }>(`/explore/join/columns?project_id_left=${projectIdLeft}&project_id_right=${projectIdRight}`);
+}
+
+export function runJoin(
+  projectIdLeft: number,
+  projectIdRight: number,
+  leftOn: string,
+  rightOn: string,
+  how: "inner" | "left" | "right" | "outer",
+) {
+  return post<{
+    rows: number;
+    left_rows: number;
+    right_rows: number;
+    columns: string[];
+    how: string;
+    left_on: string;
+    right_on: string;
+    preview: Record<string, string>[];
+  }>("/explore/join/run", {
+    project_id_left: projectIdLeft,
+    project_id_right: projectIdRight,
+    left_on: leftOn,
+    right_on: rightOn,
+    how,
+  });
+}
+
 // ── AutoML ────────────────────────────────────────────────────────────────────
 
 export function getMlColumns(projectId: number) {
