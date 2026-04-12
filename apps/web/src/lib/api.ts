@@ -225,6 +225,32 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
   }
 }
 
+async function put<T>(path: string, body?: unknown): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    throw new ApiError(
+      "Could not reach the server. Please check your connection.",
+      "NETWORK_ERROR",
+      0,
+    );
+  }
+  if (res.status === 401) clearToken();
+  if (!res.ok) {
+    throw await parseError(res, path.split("/").filter(Boolean).pop() ?? "Resource");
+  }
+  try {
+    return await res.json();
+  } catch {
+    throw new ApiError("The server returned an unexpected response format.", "PARSE_ERROR", res.status);
+  }
+}
+
 // ── Auth (Supabase) ───────────────────────────────────────────────────────────
 
 export async function login(email: string, password: string) {
@@ -309,6 +335,17 @@ export function getProjects() {
 
 export function getProject(projectId: number) {
   return get<{ id: number; name: string; status: string; created_at: string }>(`/projects/${projectId}`);
+}
+
+export function getAnnotations(projectId: number) {
+  return get<{ annotations: Record<string, string> }>(`/projects/${projectId}/annotations`);
+}
+
+export function setAnnotation(projectId: number, column: string, note: string) {
+  return put<{ annotations: Record<string, string> }>(
+    `/projects/${projectId}/annotations/${encodeURIComponent(column)}`,
+    { note },
+  );
 }
 
 export function createProject(name: string) {

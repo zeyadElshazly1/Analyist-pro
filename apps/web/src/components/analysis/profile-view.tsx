@@ -2,8 +2,9 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 "use client";
 
-import { useState } from "react";
-import { ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ChevronDown, ChevronRight, AlertTriangle, Pencil, Check, X } from "lucide-react";
+import { getAnnotations, setAnnotation } from "@/lib/api";
 import {
   BarChart,
   Bar,
@@ -42,6 +43,7 @@ type ColProfile = {
 
 type Props = {
   profile: ColProfile[];
+  projectId?: number;
 };
 
 function TypeBadge({ type }: { type: string }) {
@@ -132,9 +134,31 @@ function CategoricalMiniViz({ col }: { col: ColProfile }) {
   );
 }
 
-function ColRow({ col }: { col: ColProfile }) {
+function ColRow({
+  col,
+  annotation,
+  onSaveAnnotation,
+}: {
+  col: ColProfile;
+  annotation?: string;
+  onSaveAnnotation?: (column: string, note: string) => Promise<void>;
+}) {
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(annotation ?? "");
+  const [saving, setSaving] = useState(false);
   const hasFlags = col.flags && col.flags.length > 0;
+
+  async function saveAnnotation() {
+    if (!onSaveAnnotation) return;
+    setSaving(true);
+    try {
+      await onSaveAnnotation(col.column, draft);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="border-b border-white/[0.05] last:border-0">
@@ -242,13 +266,77 @@ function ColRow({ col }: { col: ColProfile }) {
             </div>
             <span>{(100 - col.missing_pct).toFixed(1)}%</span>
           </div>
+
+          {/* Annotation */}
+          {onSaveAnnotation && (
+            <div className="mt-1 border-t border-white/[0.05] pt-3">
+              {editing ? (
+                <div className="flex items-start gap-2">
+                  <textarea
+                    className="flex-1 rounded-lg bg-white/[0.04] border border-indigo-500/30 px-3 py-2 text-xs text-white/80 placeholder-white/25 focus:outline-none focus:border-indigo-500/60 resize-none"
+                    rows={2}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    placeholder="Add a business note for this column…"
+                    autoFocus
+                  />
+                  <div className="flex flex-col gap-1">
+                    <button
+                      onClick={saveAnnotation}
+                      disabled={saving}
+                      className="rounded p-1.5 text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                      title="Save"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => { setEditing(false); setDraft(annotation ?? ""); }}
+                      className="rounded p-1.5 text-white/30 hover:text-white/60 transition-colors"
+                      title="Cancel"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className="group flex items-start gap-2 cursor-pointer"
+                  onClick={() => { setDraft(annotation ?? ""); setEditing(true); }}
+                >
+                  <Pencil className="mt-0.5 h-3 w-3 flex-shrink-0 text-white/20 group-hover:text-indigo-400 transition-colors" />
+                  {annotation ? (
+                    <p className="text-xs text-white/50 leading-relaxed">{annotation}</p>
+                  ) : (
+                    <p className="text-xs text-white/20 italic group-hover:text-white/40 transition-colors">
+                      Add a note…
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-export function ProfileView({ profile }: Props) {
+export function ProfileView({ profile, projectId }: Props) {
+  const [annotations, setAnnotations] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!projectId) return;
+    getAnnotations(projectId)
+      .then((data) => setAnnotations(data.annotations ?? {}))
+      .catch(() => {});
+  }, [projectId]);
+
+  async function handleSaveAnnotation(column: string, note: string) {
+    if (!projectId) return;
+    const data = await setAnnotation(projectId, column, note);
+    setAnnotations(data.annotations);
+  }
+
   if (!profile || profile.length === 0) {
     return <p className="text-sm text-white/40">No column profiles available.</p>;
   }
@@ -279,7 +367,12 @@ export function ProfileView({ profile }: Props) {
 
       <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
         {profile.map((col) => (
-          <ColRow key={col.column} col={col} />
+          <ColRow
+            key={col.column}
+            col={col}
+            annotation={annotations[col.column]}
+            onSaveAnnotation={projectId ? handleSaveAnnotation : undefined}
+          />
         ))}
       </div>
     </div>
