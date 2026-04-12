@@ -830,3 +830,26 @@ export function getAnalysisDiff(runA: number, runB: number) {
 export function createCheckoutSession(plan: "pro" | "team"): Promise<{ checkout_url: string }> {
   return post<{ checkout_url: string }>("/billing/create-checkout-session", { plan });
 }
+
+export function getModelInfo(projectId: number) {
+  return get<{
+    project_id: number;
+    problem_type: string;
+    target_col: string;
+    best_model_name: string;
+    feature_names: string[];
+    class_labels: string[] | null;
+  }>(`/ml/model-info/${projectId}`);
+}
+
+export function predictRows(
+  projectId: number,
+  rows: Record<string, unknown>[],
+): Promise<{
+  problem_type: string;
+  target_col: string;
+  best_model_name: string;
+  predictions: { prediction: unknown; confidence?: number }[];
+}> {
+  return post(`/ml/predict/${projectId}`, { rows });
+}

@@ -85,6 +85,72 @@ class TestML:
         )
         assert r.status_code == 401
 
+    def test_model_info_no_model(self, client, uploaded_project, auth_headers):
+        """model-info returns 404 before any training."""
+        pid = uploaded_project["id"]
+        r = client.get(f"/ml/model-info/{pid}", headers=auth_headers)
+        assert r.status_code == 404
+
+    def test_predict_after_train(self, client, project, auth_headers):
+        """Train then predict — should return a prediction for each input row.
+
+        Uses a custom CSV with a binary 'high_earner' column so CV is stable.
+        """
+        pid = project["id"]
+        # Binary classification target: deterministic enough to train with CV
+        big_csv = (
+            b"age,salary,high_earner\n"
+            + b"".join(
+                f"{20 + i},{40000 + i * 1000},{1 if i >= 20 else 0}\n".encode()
+                for i in range(40)
+            )
+        )
+        import io as _io
+        r = client.post(
+            "/upload",
+            files={"file": ("d.csv", _io.BytesIO(big_csv), "text/csv")},
+            data={"project_id": str(pid)},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+
+        train_r = client.post(
+            "/ml/train",
+            json={"project_id": pid, "target_col": "high_earner"},
+            headers=auth_headers,
+        )
+        assert train_r.status_code == 200
+
+        # model-info should now exist with the correct target
+        info_r = client.get(f"/ml/model-info/{pid}", headers=auth_headers)
+        assert info_r.status_code == 200
+        info = info_r.json()
+        assert info["target_col"] == "high_earner"
+        assert isinstance(info["feature_names"], list)
+
+        # Predict with a single row using feature columns
+        row = {col: 30 for col in info["feature_names"]}
+        pred_r = client.post(
+            f"/ml/predict/{pid}",
+            json={"rows": [row]},
+            headers=auth_headers,
+        )
+        assert pred_r.status_code == 200
+        body = pred_r.json()
+        assert "predictions" in body
+        assert len(body["predictions"]) == 1
+        assert "prediction" in body["predictions"][0]
+
+    def test_predict_no_model(self, client, project, auth_headers):
+        """predict 404s when no model has been trained."""
+        pid = project["id"]
+        r = client.post(
+            f"/ml/predict/{pid}",
+            json={"rows": [{"x": 1}]},
+            headers=auth_headers,
+        )
+        assert r.status_code == 404
+
 
 # ── Cohorts ───────────────────────────────────────────────────────────────────
 

@@ -1,8 +1,89 @@
 from __future__ import annotations
 
+import logging
+import os
+
+import joblib
 import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
+
+logger = logging.getLogger(__name__)
+
+_MODELS_DIR = os.getenv("MODELS_DIR", "models")
+os.makedirs(_MODELS_DIR, exist_ok=True)
+
+
+def _model_path(project_id: int) -> str:
+    return os.path.join(_MODELS_DIR, f"project_{project_id}.joblib")
+
+
+def save_model_artifacts(project_id: int, artifacts: dict) -> None:
+    joblib.dump(artifacts, _model_path(project_id))
+
+
+def load_model_artifacts(project_id: int) -> dict | None:
+    path = _model_path(project_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        return joblib.load(path)
+    except Exception as exc:
+        logger.warning("Failed to load model for project %s: %s", project_id, exc)
+        return None
+
+
+def score_rows(artifacts: dict, rows: list[dict]) -> list[dict]:
+    """Apply the saved preprocessing pipeline and score new rows."""
+    feature_names: list[str] = artifacts["feature_names"]
+    encoders: dict = artifacts["encoders"]
+    imputer: SimpleImputer = artifacts["imputer"]
+    scaler = artifacts["scaler"]
+    le_target = artifacts["le_target"]
+    best_model = artifacts["best_model"]
+    problem_type: str = artifacts["problem_type"]
+    dt_cols: list[str] = artifacts.get("dt_cols", [])
+
+    df = pd.DataFrame(rows)
+
+    # Drop datetime columns the model never saw
+    for col in dt_cols:
+        if col in df.columns:
+            df = df.drop(columns=[col])
+
+    # Encode categoricals with the training encoders
+    for col, le in encoders.items():
+        if col in df.columns:
+            known = set(le.classes_)
+            df[col] = df[col].apply(
+                lambda v: le.transform([str(v)])[0] if str(v) in known else -1
+            )
+
+    # Reorder + fill missing feature columns
+    df = df.reindex(columns=feature_names, fill_value=np.nan)
+
+    X = imputer.transform(df.values.astype(float))
+    X = scaler.transform(X)
+
+    raw_preds = best_model.predict(X)
+
+    results = []
+    for i in range(len(rows)):
+        pred = raw_preds[i]
+        if le_target is not None:
+            pred = le_target.inverse_transform([int(pred)])[0]
+        entry: dict = {"prediction": pred}
+
+        if problem_type == "classification" and hasattr(best_model, "predict_proba"):
+            try:
+                proba = best_model.predict_proba(X[i : i + 1])[0]
+                entry["confidence"] = round(float(max(proba)), 4)
+            except Exception:
+                pass
+
+        results.append(entry)
+
+    return results
 from sklearn.ensemble import (
     GradientBoostingClassifier,
     GradientBoostingRegressor,
@@ -265,6 +346,23 @@ def train_models(df: pd.DataFrame, target_col: str) -> dict:  # noqa: C901
         except Exception:
             pass
 
+    # Build artifact dict for persistence (returned separately so the
+    # route handler can save it keyed by project_id without mixing
+    # sklearn objects into the JSON-serialisable result).
+    _artifacts = {
+        "best_model": best_model,
+        "feature_names": feature_names,
+        "encoders": encoders,
+        "imputer": imputer,
+        "scaler": scaler,
+        "le_target": le_target,
+        "class_labels": class_labels,
+        "problem_type": problem_type,
+        "target_col": target_col,
+        "best_model_name": best_name,
+        "dt_cols": dt_cols,
+    }
+
     return {
         "problem_type": problem_type,
         "target_col": target_col,
@@ -277,4 +375,5 @@ def train_models(df: pd.DataFrame, target_col: str) -> dict:  # noqa: C901
         "preprocessing_notes": notes,
         "confusion_matrix": confusion_matrix_data,
         "class_labels": class_labels,
+        "_artifacts": _artifacts,
     }

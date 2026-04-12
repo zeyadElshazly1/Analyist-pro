@@ -2,9 +2,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { trainModel, getMlColumns } from "@/lib/api";
+import { trainModel, getMlColumns, getModelInfo, predictRows } from "@/lib/api";
 import { ColumnSelect } from "@/components/ui/column-select";
-import { Loader2, Brain, TrendingUp } from "lucide-react";
+import { Loader2, Brain, TrendingUp, FlaskConical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   BarChart,
@@ -34,6 +34,13 @@ export function PredictionsView({ projectId }: Props) {
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState("");
 
+  // Predict panel
+  const [modelInfo, setModelInfo] = useState<any>(null);
+  const [predictJson, setPredictJson] = useState("");
+  const [predictLoading, setPredictLoading] = useState(false);
+  const [predictError, setPredictError] = useState("");
+  const [predictResult, setPredictResult] = useState<any>(null);
+
   useEffect(() => {
     getMlColumns(projectId)
       .then((data: any) => {
@@ -42,6 +49,16 @@ export function PredictionsView({ projectId }: Props) {
         if (cols.length > 0) setTargetCol(cols[cols.length - 1]);
       })
       .catch(() => setError("Failed to load columns."));
+    // Try loading saved model info
+    getModelInfo(projectId)
+      .then((info) => {
+        setModelInfo(info);
+        // Pre-fill predict JSON with a blank row using feature columns
+        const blank: Record<string, string> = {};
+        info.feature_names.forEach((f: string) => { blank[f] = ""; });
+        setPredictJson(JSON.stringify([blank], null, 2));
+      })
+      .catch(() => { /* no model yet — that's fine */ });
   }, [projectId]);
 
   async function handleTrain() {
@@ -51,11 +68,41 @@ export function PredictionsView({ projectId }: Props) {
     try {
       const data = await trainModel(projectId, targetCol);
       setResult(data);
+      // Refresh model info + pre-fill predict JSON
+      getModelInfo(projectId).then((info) => {
+        setModelInfo(info);
+        const blank: Record<string, string> = {};
+        info.feature_names.forEach((f: string) => { blank[f] = ""; });
+        setPredictJson(JSON.stringify([blank], null, 2));
+        setPredictResult(null);
+      }).catch(() => {});
     } catch (e: any) {
       try { const p = JSON.parse(e.message); setError(p.detail || e.message); }
       catch { setError(e.message || "Training failed."); }
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handlePredict() {
+    setPredictError("");
+    setPredictResult(null);
+    let rows: Record<string, unknown>[];
+    try {
+      rows = JSON.parse(predictJson);
+      if (!Array.isArray(rows)) rows = [rows];
+    } catch {
+      setPredictError("Invalid JSON. Paste a JSON array of row objects.");
+      return;
+    }
+    setPredictLoading(true);
+    try {
+      const res = await predictRows(projectId, rows);
+      setPredictResult(res);
+    } catch (e: any) {
+      setPredictError(e.message || "Prediction failed.");
+    } finally {
+      setPredictLoading(false);
     }
   }
 
@@ -183,6 +230,78 @@ export function PredictionsView({ projectId }: Props) {
                   <li key={i}>· {note}</li>
                 ))}
               </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Score New Data */}
+      {modelInfo && (
+        <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <FlaskConical className="h-4 w-4 text-indigo-400" />
+            <h3 className="text-sm font-semibold text-white">
+              Score New Data
+              <span className="ml-2 text-xs text-white/40 font-normal">
+                using {modelInfo.best_model_name} · predicts {modelInfo.target_col}
+              </span>
+            </h3>
+          </div>
+
+          <p className="text-xs text-white/50">
+            Paste a JSON array of row objects. Feature columns:{" "}
+            <span className="text-white/70">{modelInfo.feature_names.join(", ")}</span>
+          </p>
+
+          <textarea
+            className="w-full rounded-lg bg-[#0c0c14] border border-white/[0.08] p-3 font-mono text-xs text-white/80 placeholder-white/20 focus:outline-none focus:border-indigo-500/50 resize-y"
+            rows={6}
+            value={predictJson}
+            onChange={(e) => setPredictJson(e.target.value)}
+            spellCheck={false}
+          />
+
+          {predictError && (
+            <p className="text-xs text-red-400">{predictError}</p>
+          )}
+
+          <Button
+            onClick={handlePredict}
+            disabled={predictLoading}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white gap-2"
+          >
+            {predictLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}
+            Run Prediction
+          </Button>
+
+          {predictResult && (
+            <div className="overflow-x-auto rounded-lg border border-white/[0.07]">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-white/[0.07] bg-white/[0.02]">
+                    <th className="text-left p-3 text-white/50 font-medium">#</th>
+                    <th className="text-left p-3 text-white/50 font-medium">
+                      Predicted {predictResult.target_col}
+                    </th>
+                    {predictResult.predictions[0]?.confidence != null && (
+                      <th className="text-left p-3 text-white/50 font-medium">Confidence</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {predictResult.predictions.map((p: any, i: number) => (
+                    <tr key={i} className="border-b border-white/[0.04]">
+                      <td className="p-3 text-white/30">{i + 1}</td>
+                      <td className="p-3 text-indigo-300 font-medium">{String(p.prediction)}</td>
+                      {p.confidence != null && (
+                        <td className="p-3 text-white/60">
+                          {(p.confidence * 100).toFixed(1)}%
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
