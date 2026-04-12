@@ -826,3 +826,7 @@ export interface AnalysisDiff {
 export function getAnalysisDiff(runA: number, runB: number) {
   return get<AnalysisDiff>(`/analysis/diff?run_a=${runA}&run_b=${runB}`);
 }
+
+export function createCheckoutSession(plan: "pro" | "team"): Promise<{ checkout_url: string }> {
+  return post<{ checkout_url: string }>("/billing/create-checkout-session", { plan });
+}

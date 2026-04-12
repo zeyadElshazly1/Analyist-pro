@@ -1,12 +1,16 @@
 """
-Billing webhook — receives Stripe events to update user plan in the database.
+Billing routes — Stripe Checkout session creation and webhook handling.
 
-To wire up Stripe:
-1. Set STRIPE_WEBHOOK_SECRET in your environment (from the Stripe dashboard).
-2. Point your Stripe webhook to POST /billing/webhook.
-3. Subscribe to at minimum: checkout.session.completed, customer.subscription.deleted.
+Environment variables required for Stripe integration:
+  STRIPE_SECRET_KEY        — your Stripe secret key (sk_live_... or sk_test_...)
+  STRIPE_WEBHOOK_SECRET    — from the Stripe dashboard after registering the webhook
+  STRIPE_PRO_PRICE_ID      — Stripe Price ID for the Pro plan
+  STRIPE_TEAM_PRICE_ID     — Stripe Price ID for the Team plan
+  STRIPE_SUCCESS_URL       — URL to redirect to after successful checkout
+  STRIPE_CANCEL_URL        — URL to redirect to when checkout is abandoned
 
-Without STRIPE_WEBHOOK_SECRET set, the endpoint accepts any payload (dev mode).
+Without STRIPE_SECRET_KEY the checkout endpoint returns a 503 with a clear message
+so the rest of the app continues to work during development.
 """
 import hashlib
 import hmac
@@ -15,9 +19,11 @@ import logging
 import os
 import time
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
 
 import app.db as _db_module
+from app.middleware.auth import get_current_user
 from app.models import User
 
 logger = logging.getLogger(__name__)
@@ -123,3 +129,74 @@ async def stripe_webhook(request: Request):
         logger.debug(f"Billing webhook: unhandled event type '{event_type}'")
 
     return {"received": True}
+
+
+# ── Checkout session creation ─────────────────────────────────────────────────
+
+_PLAN_PRICE_MAP = {
+    "pro":  os.getenv("STRIPE_PRO_PRICE_ID", ""),
+    "team": os.getenv("STRIPE_TEAM_PRICE_ID", ""),
+}
+
+_DEFAULT_SUCCESS_URL = os.getenv(
+    "STRIPE_SUCCESS_URL",
+    "http://localhost:3000/billing?checkout=success",
+)
+_DEFAULT_CANCEL_URL = os.getenv(
+    "STRIPE_CANCEL_URL",
+    "http://localhost:3000/billing?checkout=cancelled",
+)
+
+
+class CheckoutRequest(BaseModel):
+    plan: str  # "pro" | "team"
+
+
+@router.post("/create-checkout-session")
+def create_checkout_session(
+    body: CheckoutRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Create a Stripe Checkout session for the requested plan and return the URL.
+    The frontend redirects the user to this URL to complete payment.
+
+    Requires STRIPE_SECRET_KEY and the relevant STRIPE_*_PRICE_ID env vars.
+    """
+    secret_key = os.getenv("STRIPE_SECRET_KEY", "")
+    if not secret_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Payment integration is not yet configured. Please contact support.",
+        )
+
+    price_id = _PLAN_PRICE_MAP.get(body.plan, "")
+    if not price_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown plan '{body.plan}'. Valid values: pro, team.",
+        )
+
+    try:
+        import stripe  # type: ignore[import]
+        stripe.api_key = secret_key
+
+        session = stripe.checkout.Session.create(
+            mode="subscription",
+            line_items=[{"price": price_id, "quantity": 1}],
+            customer_email=current_user.email,
+            client_reference_id=current_user.id,
+            metadata={"price_id": price_id, "plan": body.plan},
+            success_url=_DEFAULT_SUCCESS_URL + "&session_id={CHECKOUT_SESSION_ID}",
+            cancel_url=_DEFAULT_CANCEL_URL,
+        )
+        return {"checkout_url": session.url}
+
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="stripe library is not installed. Add stripe to requirements.txt.",
+        )
+    except Exception as e:
+        logger.error(f"Stripe checkout session creation failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to create checkout session.")
