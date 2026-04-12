@@ -3,9 +3,29 @@
 
 import { useState, useRef, useEffect } from "react";
 import { sendChatMessage, ApiError } from "@/lib/api";
-import { Loader2, Send, Bot, User, Code2, Table2 } from "lucide-react";
+import { Loader2, Send, Bot, User, Code2, Table2, BarChart2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UpgradeWall } from "@/components/ui/upgrade-wall";
+import {
+  BarChart, Bar, ScatterChart, Scatter,
+  XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+} from "recharts";
+
+const DARK_TOOLTIP = {
+  contentStyle: {
+    background: "#111118",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 8,
+    color: "#fff",
+    fontSize: 11,
+  },
+};
+
+type ChartHint = {
+  type: "bar" | "scatter" | "kpi";
+  x_col?: string;
+  y_col?: string;
+};
 
 type Message = {
   role: "user" | "assistant";
@@ -14,6 +34,7 @@ type Message = {
   resultType?: string;
   tableData?: Record<string, unknown>[] | null;
   numberResult?: number | null;
+  chartHint?: ChartHint | null;
 };
 
 type Props = { projectId: number };
@@ -52,6 +73,7 @@ export function AiChatView({ projectId }: Props) {
         resultType: res.result_type,
         tableData: res.table_data,
         numberResult: res.number_result,
+        chartHint: res.chart_hint ?? null,
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (e) {
@@ -149,6 +171,43 @@ export function AiChatView({ projectId }: Props) {
                       </tbody>
                     </table>
                   </div>
+                </div>
+              )}
+
+              {/* Auto chart */}
+              {msg.chartHint && msg.chartHint.type !== "kpi" && msg.tableData && msg.tableData.length >= 2 && msg.chartHint.x_col && msg.chartHint.y_col && (
+                <div className="w-full rounded-lg border border-white/[0.07] bg-white/[0.02] p-3">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <BarChart2 className="h-3 w-3 text-indigo-400" />
+                    <span className="text-[10px] text-white/40 uppercase tracking-wider">Auto chart</span>
+                  </div>
+                  <ResponsiveContainer width="100%" height={160}>
+                    {msg.chartHint.type === "scatter" ? (
+                      <ScatterChart>
+                        <XAxis dataKey={msg.chartHint.x_col} tick={{ fill: "#94a3b8", fontSize: 10 }} name={msg.chartHint.x_col} />
+                        <YAxis dataKey={msg.chartHint.y_col} tick={{ fill: "#94a3b8", fontSize: 10 }} name={msg.chartHint.y_col} />
+                        <Tooltip {...DARK_TOOLTIP} cursor={{ strokeDasharray: "3 3" }} />
+                        <Scatter
+                          data={msg.tableData.slice(0, 100).map((r) => ({
+                            [msg.chartHint!.x_col!]: Number(r[msg.chartHint!.x_col!]) || 0,
+                            [msg.chartHint!.y_col!]: Number(r[msg.chartHint!.y_col!]) || 0,
+                          }))}
+                          fill="#6366f1"
+                        />
+                      </ScatterChart>
+                    ) : (
+                      <BarChart data={msg.tableData.slice(0, 20)} margin={{ left: -10, right: 8 }}>
+                        <XAxis dataKey={msg.chartHint.x_col} tick={{ fill: "#94a3b8", fontSize: 10 }} />
+                        <YAxis tick={{ fill: "#94a3b8", fontSize: 10 }} />
+                        <Tooltip {...DARK_TOOLTIP} />
+                        <Bar dataKey={msg.chartHint.y_col} radius={3}>
+                          {msg.tableData.slice(0, 20).map((_, ci) => (
+                            <Cell key={ci} fill="#6366f1" fillOpacity={1 - ci * 0.03} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    )}
+                  </ResponsiveContainer>
                 </div>
               )}
             </div>

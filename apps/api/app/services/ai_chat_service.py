@@ -73,6 +73,51 @@ def _execute_code(df: pd.DataFrame, code: str) -> tuple[object, str | None]:
         return None, str(e)
 
 
+def _suggest_chart(
+    result_type: str,
+    table_data: list | None,
+) -> dict | None:
+    """
+    Heuristically suggest a chart type from the query result shape.
+    Returns a hint dict or None if no chart makes sense.
+    """
+    if result_type == "number":
+        return {"type": "kpi"}
+
+    if result_type != "table" or not table_data or len(table_data) < 2:
+        return None
+
+    cols = list(table_data[0].keys())
+    if len(cols) < 2:
+        return None
+
+    def _is_numeric(col: str) -> bool:
+        for row in table_data[:10]:
+            v = row.get(col)
+            if v is None or v == "":
+                continue
+            try:
+                float(v)
+            except (TypeError, ValueError):
+                return False
+        return True
+
+    numeric_cols = [c for c in cols if _is_numeric(c)]
+    cat_cols = [c for c in cols if c not in numeric_cols]
+
+    # categorical + numeric → bar
+    if len(cat_cols) >= 1 and len(numeric_cols) >= 1:
+        return {"type": "bar", "x_col": cat_cols[0], "y_col": numeric_cols[0]}
+
+    # 2+ numeric — scatter for large result sets, bar for small
+    if len(numeric_cols) >= 2:
+        if len(table_data) > 20:
+            return {"type": "scatter", "x_col": numeric_cols[0], "y_col": numeric_cols[1]}
+        return {"type": "bar", "x_col": numeric_cols[0], "y_col": numeric_cols[1]}
+
+    return None
+
+
 def _result_to_serializable(result: object) -> tuple[str, list | None, float | str | None]:
     """Returns (result_type, table_data, number_result)."""
     if result is None:
@@ -199,6 +244,8 @@ Instructions:
         elif exec_error:
             answer_text += f"\n\n_(Code execution note: {exec_error})_"
 
+    chart_hint = _suggest_chart(result_type, table_data)
+
     return {
         "answer": answer_text,
         "code_used": code,
@@ -207,6 +254,7 @@ Instructions:
         "number_result": number_result,
         "model_used": model_used,
         "exec_error": exec_error,
+        "chart_hint": chart_hint,
     }
 
 
