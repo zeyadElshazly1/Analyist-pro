@@ -251,6 +251,26 @@ async function put<T>(path: string, body?: unknown): Promise<T> {
   }
 }
 
+async function del(path: string): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      method: "DELETE",
+      headers: { ...(await authHeaders()) },
+    });
+  } catch (e) {
+    throw new ApiError(
+      "Could not reach the server. Please check your connection.",
+      "NETWORK_ERROR",
+      0,
+    );
+  }
+  if (res.status === 401) clearToken();
+  if (!res.ok && res.status !== 204) {
+    throw await parseError(res, path.split("/").filter(Boolean).pop() ?? "Resource");
+  }
+}
+
 // ── Auth (Supabase) ───────────────────────────────────────────────────────────
 
 export async function login(email: string, password: string) {
@@ -924,4 +944,48 @@ export function predictRows(
   predictions: { prediction: unknown; confidence?: number }[];
 }> {
   return post(`/ml/predict/${projectId}`, { rows });
+}
+
+// ── Team management ───────────────────────────────────────────────────────────
+
+export type TeamMember = {
+  id: number;
+  owner_id: string;
+  member_id: string | null;
+  member_email: string | null;
+  email: string | null;
+  token: string;
+  status: "pending" | "active" | "revoked";
+  created_at: string | null;
+  accepted_at: string | null;
+};
+
+export type TeamData = {
+  members: TeamMember[];
+  seats_used: number;
+  seat_limit: number;
+};
+
+export function getTeamMembers(): Promise<TeamData> {
+  return get<TeamData>("/team/members");
+}
+
+export function createTeamInvite(email?: string): Promise<{ invite_id: number; token: string }> {
+  return post("/team/invite", { email: email ?? null });
+}
+
+export function removeTeamMember(inviteId: number): Promise<void> {
+  return del(`/team/members/${inviteId}`);
+}
+
+export function getTeamInviteInfo(token: string): Promise<{
+  token: string;
+  status: string;
+  owner_email: string;
+}> {
+  return get(`/team/invite/${token}`);
+}
+
+export function acceptTeamInvite(token: string): Promise<{ message: string; owner_email: string }> {
+  return post(`/team/invite/${token}/accept`, {});
 }

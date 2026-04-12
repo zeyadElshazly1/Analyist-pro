@@ -10,17 +10,20 @@ import {
   Settings,
   Sparkles,
   LogOut,
+  Users,
 } from "lucide-react";
 import { logout } from "@/lib/api";
 import { useUser } from "@/lib/user-context";
 
-const links = [
+const BASE_LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/projects", label: "Projects", icon: FolderOpen },
   { href: "/reports", label: "Reports", icon: BarChart2 },
   { href: "/billing", label: "Billing", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
+
+const TEAM_LINK = { href: "/team", label: "Team", icon: Users };
 
 export function AppSidebar() {
   const pathname = usePathname();
@@ -46,7 +49,7 @@ export function AppSidebar() {
 
       {/* Nav */}
       <nav className="flex-1 space-y-0.5 px-3 py-4">
-        {links.map(({ href, label, icon: Icon }) => {
+        {[...BASE_LINKS, ...(user?.plan === "team" ? [TEAM_LINK] : [])].map(({ href, label, icon: Icon }) => {
           const active =
             pathname === href ||
             (href !== "/dashboard" && pathname.startsWith(href));

@@ -146,6 +146,37 @@ class AuditLog(Base):
         }
 
 
+class TeamInvite(Base):
+    """Tracks team membership for Team-plan users.
+
+    A pending record means an invite link was generated but not yet accepted.
+    An active record means the member has joined the team.
+    The owner_id is always the Team-plan subscriber; member_id is set on accept.
+    """
+    __tablename__ = "team_invites"
+
+    id = Column(Integer, primary_key=True, index=True)
+    owner_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    member_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    email = Column(String(255), nullable=True)          # optional hint: who was invited
+    token = Column(String(64), unique=True, index=True, nullable=False)
+    status = Column(String(20), default="pending")       # pending | active | revoked
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    accepted_at = Column(DateTime(timezone=True), nullable=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "owner_id": self.owner_id,
+            "member_id": self.member_id,
+            "email": self.email,
+            "token": self.token,
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "accepted_at": self.accepted_at.isoformat() if self.accepted_at else None,
+        }
+
+
 class ProjectFeature(Base):
     __tablename__ = "project_features"
 
