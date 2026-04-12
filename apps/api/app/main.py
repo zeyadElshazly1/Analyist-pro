@@ -31,6 +31,7 @@ from app.limiter import limiter
 from app.routes.analysis_stream import router as analysis_stream_router
 from app.routes.auth import router as auth_router
 from app.routes.billing import router as billing_router
+from app.routes.team import router as team_router
 
 # ── Structured logging setup ──────────────────────────────────────────────────
 logging.basicConfig(
@@ -129,6 +130,7 @@ app.include_router(features_router)
 app.include_router(analysis_stream_router)
 app.include_router(auth_router)
 app.include_router(billing_router)
+app.include_router(team_router)
 
 # ── Exception handlers ────────────────────────────────────────────────────────
 
