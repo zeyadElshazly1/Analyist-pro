@@ -5,9 +5,11 @@ This module exposes /auth/me (get user metadata), /auth/me/export (GDPR data
 export), and DELETE /auth/me (GDPR account deletion).
 """
 import json
+from typing import Optional
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -19,9 +21,31 @@ from app.services.storage import delete_file as storage_delete_file
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+class NotificationPrefsUpdate(BaseModel):
+    analysis_complete: Optional[bool] = None
+    weekly_digest: Optional[bool] = None
+    product_updates: Optional[bool] = None
+    marketing_emails: Optional[bool] = None
+
+
 @router.get("/me")
 def get_me(current_user: User = Depends(get_current_user)):
     return current_user.to_dict()
+
+
+@router.patch("/me/notifications")
+def update_notification_prefs(
+    payload: NotificationPrefsUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Persist notification preference flags for the current user."""
+    prefs = current_user.notification_prefs
+    updates = payload.model_dump(exclude_none=True)
+    prefs.update(updates)
+    current_user.notification_prefs_json = json.dumps(prefs)
+    db.commit()
+    return {"notification_prefs": prefs}
 
 
 @router.get("/me/export")

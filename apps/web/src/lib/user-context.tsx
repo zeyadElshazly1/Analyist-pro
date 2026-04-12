@@ -13,10 +13,18 @@ import { getMe } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export type NotificationPrefs = {
+  analysis_complete: boolean;
+  weekly_digest: boolean;
+  product_updates: boolean;
+  marketing_emails: boolean;
+};
+
 export type UserData = {
   id: string;
   email: string;
   plan: string;
+  notification_prefs: NotificationPrefs;
   created_at: string;
 };
 

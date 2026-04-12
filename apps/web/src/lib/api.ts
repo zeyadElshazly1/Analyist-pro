@@ -271,6 +271,28 @@ async function del(path: string): Promise<void> {
   }
 }
 
+async function patch<T>(path: string, body?: unknown): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    throw new ApiError(
+      "Could not reach the server. Please check your connection.",
+      "NETWORK_ERROR",
+      0,
+    );
+  }
+  if (res.status === 401) clearToken();
+  if (!res.ok) {
+    throw await parseError(res, path.split("/").filter(Boolean).pop() ?? "Resource");
+  }
+  return res.json() as Promise<T>;
+}
+
 // ── Auth (Supabase) ───────────────────────────────────────────────────────────
 
 export async function login(email: string, password: string) {
@@ -292,7 +314,7 @@ export async function register(email: string, password: string) {
 }
 
 export function getMe() {
-  return get<{ id: string; email: string; plan: string; created_at: string }>("/auth/me");
+  return get<{ id: string; email: string; plan: string; notification_prefs: NotificationPrefs; created_at: string }>("/auth/me");
 }
 
 export async function logout() {
@@ -988,4 +1010,19 @@ export function getTeamInviteInfo(token: string): Promise<{
 
 export function acceptTeamInvite(token: string): Promise<{ message: string; owner_email: string }> {
   return post(`/team/invite/${token}/accept`, {});
+}
+
+// ── Notification preferences ──────────────────────────────────────────────────
+
+export type NotificationPrefs = {
+  analysis_complete: boolean;
+  weekly_digest: boolean;
+  product_updates: boolean;
+  marketing_emails: boolean;
+};
+
+export function updateNotificationPrefs(
+  prefs: Partial<NotificationPrefs>,
+): Promise<{ notification_prefs: NotificationPrefs }> {
+  return patch("/auth/me/notifications", prefs);
 }

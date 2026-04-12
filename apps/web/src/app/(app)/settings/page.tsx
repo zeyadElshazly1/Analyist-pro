@@ -5,7 +5,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { useUser } from "@/lib/user-context";
 import { User, Bell, Shield, Download, Loader2, Check, AlertTriangle } from "lucide-react";
 import { toast } from "@/components/ui/toast";
-import { deleteMyAccount, exportMyData, ApiError } from "@/lib/api";
+import { deleteMyAccount, exportMyData, updateNotificationPrefs, NotificationPrefs, ApiError } from "@/lib/api";
 
 function Section({
   title,
@@ -37,13 +37,16 @@ function Section({
 function Toggle({
   label,
   description,
-  defaultOn = false,
+  checked,
+  onChange,
+  saving,
 }: {
   label: string;
   description: string;
-  defaultOn?: boolean;
+  checked: boolean;
+  onChange: (val: boolean) => void;
+  saving?: boolean;
 }) {
-  const [on, setOn] = useState(defaultOn);
   return (
     <div className="flex items-start justify-between gap-4 py-3 border-b border-white/[0.05] last:border-0">
       <div>
@@ -51,16 +54,17 @@ function Toggle({
         <p className="text-xs text-white/35">{description}</p>
       </div>
       <button
-        onClick={() => setOn((o) => !o)}
-        className={`relative mt-0.5 h-5 w-9 flex-shrink-0 rounded-full transition-colors ${
-          on ? "bg-indigo-600" : "bg-white/15"
+        onClick={() => onChange(!checked)}
+        disabled={saving}
+        className={`relative mt-0.5 h-5 w-9 flex-shrink-0 rounded-full transition-colors disabled:opacity-60 ${
+          checked ? "bg-indigo-600" : "bg-white/15"
         }`}
-        aria-checked={on}
+        aria-checked={checked}
         role="switch"
       >
         <span
           className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${
-            on ? "translate-x-4" : "translate-x-0.5"
+            checked ? "translate-x-4" : "translate-x-0.5"
           }`}
         />
       </button>
@@ -68,11 +72,39 @@ function Toggle({
   );
 }
 
+const DEFAULT_PREFS: NotificationPrefs = {
+  analysis_complete: true,
+  weekly_digest: true,
+  product_updates: false,
+  marketing_emails: false,
+};
+
 export default function SettingsPage() {
   const { user, loading: loadingUser } = useUser();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs | null>(null);
+  const [savingNotif, setSavingNotif] = useState(false);
+
+  // Initialise notification prefs once the user is loaded (only if not set yet)
+  const resolvedPrefs: NotificationPrefs = notifPrefs ?? user?.notification_prefs ?? DEFAULT_PREFS;
+
+  async function handleToggleNotif(key: keyof NotificationPrefs, value: boolean) {
+    const updated = { ...resolvedPrefs, [key]: value };
+    setNotifPrefs(updated);
+    setSavingNotif(true);
+    try {
+      const res = await updateNotificationPrefs({ [key]: value });
+      setNotifPrefs(res.notification_prefs);
+    } catch {
+      // Revert on failure
+      setNotifPrefs(resolvedPrefs);
+      toast.error("Failed to save notification preference.");
+    } finally {
+      setSavingNotif(false);
+    }
+  }
 
   const initial = user?.email?.[0]?.toUpperCase() ?? "U";
   const planLabel =
@@ -184,27 +216,34 @@ export default function SettingsPage() {
             description="Control when and how you receive alerts."
             icon={Bell}
           >
-            <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-400">
-              Coming soon — preferences are not yet persisted
-            </div>
             <div>
               <Toggle
                 label="Analysis complete"
                 description="Get notified when a project analysis finishes."
-                defaultOn
+                checked={resolvedPrefs.analysis_complete}
+                onChange={(v) => handleToggleNotif("analysis_complete", v)}
+                saving={savingNotif}
               />
               <Toggle
                 label="Weekly digest"
                 description="A summary of your project activity every Monday."
-                defaultOn
+                checked={resolvedPrefs.weekly_digest}
+                onChange={(v) => handleToggleNotif("weekly_digest", v)}
+                saving={savingNotif}
               />
               <Toggle
                 label="Product updates"
                 description="New features, improvements, and changelogs."
+                checked={resolvedPrefs.product_updates}
+                onChange={(v) => handleToggleNotif("product_updates", v)}
+                saving={savingNotif}
               />
               <Toggle
                 label="Marketing emails"
                 description="Tips, case studies, and promotional offers."
+                checked={resolvedPrefs.marketing_emails}
+                onChange={(v) => handleToggleNotif("marketing_emails", v)}
+                saving={savingNotif}
               />
             </div>
           </Section>
