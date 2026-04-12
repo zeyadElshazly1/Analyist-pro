@@ -2,6 +2,7 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -172,6 +173,53 @@ def delete_project(
             status_code=503,
             detail="Could not delete the project due to a database error. Please try again.",
         )
+
+
+@router.get("/{project_id}/annotations")
+def get_annotations(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return column annotations for a project (dict of column→note)."""
+    project = (
+        db.query(Project)
+        .filter(Project.id == project_id, Project.user_id == current_user.id)
+        .first()
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    return {"annotations": project.column_annotations}
+
+
+class AnnotationBody(BaseModel):
+    note: str  # empty string → remove annotation
+
+
+@router.put("/{project_id}/annotations/{column}")
+def set_annotation(
+    project_id: int,
+    column: str,
+    body: AnnotationBody,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Set or clear an annotation for a single column."""
+    project = (
+        db.query(Project)
+        .filter(Project.id == project_id, Project.user_id == current_user.id)
+        .first()
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    annotations = dict(project.column_annotations)
+    if body.note.strip():
+        annotations[column] = body.note.strip()
+    else:
+        annotations.pop(column, None)
+    project.column_annotations = annotations
+    db.commit()
+    return {"annotations": annotations}
 
 
 @router.get("/{project_id}/latest-insights")

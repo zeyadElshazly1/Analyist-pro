@@ -43,6 +43,7 @@ class Project(Base):
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     status = Column(String(50), default="created")  # created | uploading | ready | error
+    column_annotations_json = Column(Text, nullable=True)   # JSON: {col: annotation_string}
     created_at = Column(DateTime(timezone=True), default=_utcnow)
     updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
@@ -52,6 +53,19 @@ class Project(Base):
     files = relationship("ProjectFile", back_populates="project", cascade="all, delete-orphan")
     analyses = relationship("AnalysisResult", back_populates="project", cascade="all, delete-orphan")
     features = relationship("ProjectFeature", back_populates="project", cascade="all, delete-orphan")
+
+    @property
+    def column_annotations(self) -> dict:
+        if not self.column_annotations_json:
+            return {}
+        try:
+            return json.loads(self.column_annotations_json)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+
+    @column_annotations.setter
+    def column_annotations(self, value: dict):
+        self.column_annotations_json = json.dumps(value)
 
     def to_dict(self):
         return {

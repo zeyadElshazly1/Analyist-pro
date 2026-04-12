@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Copy, Check } from "lucide-react";
 
 type Insight = {
   type?: string;
@@ -32,6 +33,34 @@ const SEVERITY_META: Record<string, string> = {
 };
 
 const ALL_TYPES = ["all", "correlation", "anomaly", "segment", "distribution", "data_quality"];
+
+function CopyInsightButton({ insight }: { insight: Insight }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation();
+    const lines: string[] = [];
+    const title = insight.title ?? insight.type ?? "Insight";
+    lines.push(title);
+    if (insight.finding ?? insight.description) lines.push(insight.finding ?? insight.description ?? "");
+    if (insight.evidence) lines.push(`Evidence: ${insight.evidence}`);
+    if (insight.action) lines.push(`Action: ${insight.action}`);
+    navigator.clipboard.writeText(lines.join("\n")).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    });
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="flex-shrink-0 rounded p-1 text-white/20 hover:text-white/60 transition-colors"
+      title="Copy insight"
+    >
+      {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
 
 export function InsightsList({ insights }: Props) {
   const [filter, setFilter] = useState("all");
@@ -80,36 +109,39 @@ export function InsightsList({ insights }: Props) {
               className={`rounded-xl border p-4 transition-all ${severityClass}`}
             >
               {/* Header */}
-              <button
-                className="flex w-full items-start gap-3 text-left"
-                onClick={() => setExpandedIdx(isExpanded ? null : idx)}
-              >
-                <span className={`mt-1.5 h-2 w-2 rounded-full flex-shrink-0 ${meta.dot}`} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-semibold text-white">
-                      {insight.title ?? insight.type ?? "Insight"}
-                    </p>
-                    <span className={`rounded-full px-2 py-0.5 text-xs ${meta.badge}`}>
-                      {meta.label || insight.type}
-                    </span>
-                    {insight.severity === "high" && (
-                      <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-xs text-red-300">high severity</span>
-                    )}
-                    {insight.confidence !== undefined && (
-                      <span className="rounded-full bg-white/[0.08] px-2 py-0.5 text-xs text-white/50">
-                        {insight.confidence}% confidence
+              <div className="flex items-start gap-2">
+                <button
+                  className="flex flex-1 items-start gap-3 text-left"
+                  onClick={() => setExpandedIdx(isExpanded ? null : idx)}
+                >
+                  <span className={`mt-1.5 h-2 w-2 rounded-full flex-shrink-0 ${meta.dot}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold text-white">
+                        {insight.title ?? insight.type ?? "Insight"}
+                      </p>
+                      <span className={`rounded-full px-2 py-0.5 text-xs ${meta.badge}`}>
+                        {meta.label || insight.type}
                       </span>
-                    )}
-                  </div>
+                      {insight.severity === "high" && (
+                        <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-xs text-red-300">high severity</span>
+                      )}
+                      {insight.confidence !== undefined && (
+                        <span className="rounded-full bg-white/[0.08] px-2 py-0.5 text-xs text-white/50">
+                          {insight.confidence}% confidence
+                        </span>
+                      )}
+                    </div>
 
-                  {insight.finding || insight.description ? (
-                    <p className="mt-1.5 text-sm text-white/60 leading-relaxed">
-                      {insight.finding ?? insight.description}
-                    </p>
-                  ) : null}
-                </div>
-              </button>
+                    {insight.finding || insight.description ? (
+                      <p className="mt-1.5 text-sm text-white/60 leading-relaxed">
+                        {insight.finding ?? insight.description}
+                      </p>
+                    ) : null}
+                  </div>
+                </button>
+                <CopyInsightButton insight={insight} />
+              </div>
 
               {/* Expanded: evidence + action */}
               {isExpanded && (

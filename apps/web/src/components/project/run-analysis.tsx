@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Loader2, Play, CheckCircle2, Share2, Copy, Check } from "lucide-react";
 
@@ -153,6 +153,17 @@ export function RunAnalysis({ projectId }: Props) {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [analysisId, setAnalysisId] = useState<number | null>(null);
   const [tab, setTab] = useState("overview");
+
+  // Sync tab ↔ URL hash for shareable deep-links
+  useEffect(() => {
+    const hash = window.location.hash.slice(1);
+    if (hash) setTab(hash);
+  }, []);
+
+  const handleTabChange = useCallback((newTab: string) => {
+    setTab(newTab);
+    window.history.replaceState(null, "", `#${newTab}`);
+  }, []);
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<ProgressState | null>(null);
   const [shareToken, setShareToken] = useState<string | null>(null);
@@ -326,7 +337,7 @@ export function RunAnalysis({ projectId }: Props) {
 
       {result ? (
         <div className="space-y-4">
-          <ProjectTabs value={tab} onChange={setTab} />
+          <ProjectTabs value={tab} onChange={handleTabChange} />
 
           {/* ── Data Table ───────────────────────────────────────────── */}
           {tab === "data-table" && (
@@ -364,7 +375,7 @@ export function RunAnalysis({ projectId }: Props) {
             <SafePanel label="Column Profiles">
               <TabPanel>
                 <h2 className="mb-4 font-semibold text-white">Column Profiles</h2>
-                <ProfileView profile={result.profile} />
+                <ProfileView profile={result.profile} projectId={projectId} />
               </TabPanel>
             </SafePanel>
           )}
