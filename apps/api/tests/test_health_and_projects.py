@@ -17,8 +17,40 @@ def test_get_me(client, auth_headers):
     """First call lazy-creates the user from the JWT, /me returns their data."""
     r = client.get("/auth/me", headers=auth_headers)
     assert r.status_code == 200
-    assert r.json()["email"] == "test@example.com"
-    assert r.json()["plan"] == "free"
+    body = r.json()
+    assert body["email"] == "test@example.com"
+    assert body["plan"] == "free"
+    # Notification prefs should be present with defaults
+    prefs = body["notification_prefs"]
+    assert prefs["analysis_complete"] is True
+    assert prefs["weekly_digest"] is True
+    assert prefs["product_updates"] is False
+    assert prefs["marketing_emails"] is False
+
+
+def test_update_notification_prefs(client, auth_headers):
+    """PATCH /auth/me/notifications persists individual preference flags."""
+    # Turn off weekly digest
+    r = client.patch("/auth/me/notifications", json={"weekly_digest": False}, headers=auth_headers)
+    assert r.status_code == 200
+    prefs = r.json()["notification_prefs"]
+    assert prefs["weekly_digest"] is False
+    assert prefs["analysis_complete"] is True  # others unchanged
+
+    # Verify persisted on subsequent GET /auth/me
+    r2 = client.get("/auth/me", headers=auth_headers)
+    assert r2.json()["notification_prefs"]["weekly_digest"] is False
+
+
+def test_update_notification_prefs_partial(client, auth_headers):
+    """Only the keys provided in the payload are updated."""
+    client.patch("/auth/me/notifications", json={"product_updates": True}, headers=auth_headers)
+    client.patch("/auth/me/notifications", json={"marketing_emails": True}, headers=auth_headers)
+    r = client.get("/auth/me", headers=auth_headers)
+    prefs = r.json()["notification_prefs"]
+    assert prefs["product_updates"] is True
+    assert prefs["marketing_emails"] is True
+    assert prefs["analysis_complete"] is True   # untouched default
 
 
 def test_protected_requires_auth(client):

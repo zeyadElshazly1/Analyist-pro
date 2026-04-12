@@ -16,6 +16,14 @@ def _utcnow():
     return datetime.now(timezone.utc)
 
 
+_DEFAULT_NOTIFICATION_PREFS = {
+    "analysis_complete": True,
+    "weekly_digest": True,
+    "product_updates": False,
+    "marketing_emails": False,
+}
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -23,15 +31,26 @@ class User(Base):
     id = Column(String(36), primary_key=True)
     email = Column(String(255), unique=True, index=True, nullable=False)
     plan = Column(String(50), default="free")  # free | pro | team
+    notification_prefs_json = Column(Text, nullable=True)  # JSON: notification preference flags
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     projects = relationship("Project", back_populates="owner", cascade="all, delete-orphan")
+
+    @property
+    def notification_prefs(self) -> dict:
+        if not self.notification_prefs_json:
+            return dict(_DEFAULT_NOTIFICATION_PREFS)
+        try:
+            return json.loads(self.notification_prefs_json)
+        except Exception:
+            return dict(_DEFAULT_NOTIFICATION_PREFS)
 
     def to_dict(self):
         return {
             "id": self.id,
             "email": self.email,
             "plan": self.plan,
+            "notification_prefs": self.notification_prefs,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
