@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
+from app.limiter import limiter
 from app.middleware.auth import get_current_user
 from app.models import User
 from app.services.automl_service import detect_problem_type, train_models
@@ -33,7 +34,8 @@ class TrainRequest(BaseModel):
 
 
 @router.post("/train")
-def train(req: TrainRequest, current_user: User = Depends(get_current_user)):
+@limiter.limit("4/minute")
+def train(request: Request, req: TrainRequest, current_user: User = Depends(get_current_user)):
     df = _load(req.project_id)
     if req.target_col not in df.columns:
         raise HTTPException(status_code=400, detail=f"Column '{req.target_col}' not found.")

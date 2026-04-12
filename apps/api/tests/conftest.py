@@ -19,6 +19,7 @@ from sqlalchemy.pool import StaticPool
 # Point to an in-memory DB and set a deterministic JWT secret before importing app
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("SENTRY_DSN", "")  # disable Sentry in tests
+os.environ["TESTING"] = "1"             # disable rate limiting in tests
 TEST_JWT_SECRET = "test-jwt-secret-for-pytest-only"
 os.environ["SUPABASE_JWT_SECRET"] = TEST_JWT_SECRET
 

@@ -8,6 +8,8 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.exceptions import AppError
@@ -25,8 +27,10 @@ from app.routes.cohorts import router as cohorts_router
 from app.routes.stats import router as stats_router
 from app.routes.query import router as query_router
 from app.routes.features import router as features_router
+from app.limiter import limiter
 from app.routes.analysis_stream import router as analysis_stream_router
 from app.routes.auth import router as auth_router
+from app.routes.billing import router as billing_router
 
 # ── Structured logging setup ──────────────────────────────────────────────────
 logging.basicConfig(
@@ -77,6 +81,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Wire rate limiter into the app
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # ── CORS ──────────────────────────────────────────────────────────────────────
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 app.add_middleware(
@@ -120,6 +128,7 @@ app.include_router(query_router)
 app.include_router(features_router)
 app.include_router(analysis_stream_router)
 app.include_router(auth_router)
+app.include_router(billing_router)
 
 # ── Exception handlers ────────────────────────────────────────────────────────
 

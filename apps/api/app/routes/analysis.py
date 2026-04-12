@@ -4,10 +4,11 @@ import math
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.limiter import limiter
 from app.middleware.auth import get_current_user, optional_current_user
 from app.middleware.plans import require_feature
 from app.models import AnalysisResult, Project, ProjectFile, User
@@ -36,7 +37,9 @@ def _get_file_path(project_id: int) -> str:
 
 
 @router.post("/run")
+@limiter.limit("6/minute")
 def run_analysis(
+    request: Request,
     payload: AnalysisRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -264,7 +267,9 @@ def get_shared_analysis(token: str, db: Session = Depends(get_db)):
 
 
 @router.post("/story/{analysis_id}")
+@limiter.limit("10/hour")
 def generate_story(
+    request: Request,
     analysis_id: int,
     current_user: User = Depends(get_current_user),
     _plan: None = Depends(require_feature("ai_story")),
