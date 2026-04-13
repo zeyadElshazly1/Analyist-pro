@@ -52,6 +52,12 @@ def _classify_missingness(df: pd.DataFrame, col: str) -> tuple[str, float]:
     return "mcar", float(abs(max_corr))
 
 
+def _safe_knn_k(df: pd.DataFrame, col: str, default_k: int = 5) -> int:
+    """Return a safe n_neighbors value that won't exceed the number of complete rows."""
+    complete_rows = int(df[col].notna().sum())
+    return max(1, min(default_k, complete_rows - 1))
+
+
 def _knn_impute_column(df: pd.DataFrame, col: str, n_neighbors: int = 5) -> pd.Series:
     try:
         from sklearn.impute import KNNImputer
@@ -60,8 +66,9 @@ def _knn_impute_column(df: pd.DataFrame, col: str, n_neighbors: int = 5) -> pd.S
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     if col not in numeric_cols:
         return df[col].fillna(df[col].median())
+    safe_k = _safe_knn_k(df, col, n_neighbors)
     sub = df[numeric_cols].copy()
-    imputer = KNNImputer(n_neighbors=n_neighbors, weights="distance")
+    imputer = KNNImputer(n_neighbors=safe_k, weights="distance")
     imputed = imputer.fit_transform(sub)
     return pd.Series(imputed[:, numeric_cols.index(col)], index=df.index)
 
@@ -95,10 +102,17 @@ def _simple_impute_value(series: pd.Series) -> tuple[float, str]:
 
 def _try_parse_currency(series: pd.Series) -> tuple[pd.Series | None, int]:
     """Try to parse currency strings like '$1,234.56' → 1234.56.
-    Returns (parsed_series, n_converted) or (None, 0) if not applicable."""
+    Returns (parsed_series, n_converted) or (None, 0) if not applicable.
+
+    Requires 95% match rate to avoid converting postal codes, phone numbers,
+    or other numeric-looking strings that aren't actually currency.
+    """
+    # Skip columns that are already numeric
+    if pd.api.types.is_numeric_dtype(series):
+        return None, 0
     sample = series.dropna().head(100).astype(str)
     matches = sample.str.match(_CURRENCY_RE).sum()
-    if matches / max(len(sample), 1) < 0.7:
+    if matches / max(len(sample), 1) < 0.95:
         return None, 0
     cleaned = (
         series.astype(str)
@@ -111,10 +125,16 @@ def _try_parse_currency(series: pd.Series) -> tuple[pd.Series | None, int]:
 
 
 def _try_parse_percentage(series: pd.Series) -> tuple[pd.Series | None, int]:
-    """Try to parse percentage strings like '45%' → 45.0 (keeps raw number)."""
+    """Try to parse percentage strings like '45%' → 45.0 (keeps raw number).
+
+    Requires 90% match rate to avoid false conversions.
+    """
+    # Skip columns that are already numeric
+    if pd.api.types.is_numeric_dtype(series):
+        return None, 0
     sample = series.dropna().head(100).astype(str)
     matches = sample.str.match(_PERCENT_RE).sum()
-    if matches / max(len(sample), 1) < 0.7:
+    if matches / max(len(sample), 1) < 0.90:
         return None, 0
     cleaned = series.astype(str).str.replace(r"\s*%", "", regex=True)
     numeric = pd.to_numeric(cleaned, errors="coerce")
@@ -216,8 +236,9 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
         })
 
     # 4. Smart string type parsing (currency, percentage, datetime, numeric)
+    # Use is_string_dtype to handle both legacy 'object' and pandas 3.x 'str' dtypes
     for col in list(df_clean.columns):
-        if df_clean[col].dtype != object:
+        if not pd.api.types.is_string_dtype(df_clean[col]):
             continue
         non_null_original = df_clean[col].notna().sum()
         if non_null_original == 0:
@@ -225,7 +246,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
 
         # 4a. Try currency
         parsed, n_conv = _try_parse_currency(df_clean[col])
-        if parsed is not None and n_conv / non_null_original > 0.8:
+        if parsed is not None and n_conv / non_null_original > 0.95:
             df_clean[col] = parsed
             report.append({
                 "step": f"Parse currency: {col}",
@@ -236,7 +257,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
 
         # 4b. Try percentage
         parsed, n_conv = _try_parse_percentage(df_clean[col])
-        if parsed is not None and n_conv / non_null_original > 0.8:
+        if parsed is not None and n_conv / non_null_original > 0.90:
             df_clean[col] = parsed
             report.append({
                 "step": f"Parse percentage: {col}",
