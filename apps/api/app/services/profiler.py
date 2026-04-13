@@ -76,7 +76,7 @@ def _detect_pattern(series: pd.Series) -> dict | None:
                 "pattern": pattern_name,
                 "pattern_strength": pattern_strength,
                 "compliance_pct": compliance,
-                "malformed_count": int(len(sample) * (1 - matches / len(sample))),
+                "malformed_count": len(sample) - int(matches),
                 "note": (
                     f"{compliance:.0f}% of values match {pattern_name} format"
                     + (f" ({100 - compliance:.0f}% are malformed)" if compliance < 100 else "")

@@ -194,6 +194,13 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
     df_clean = df.copy()
     original_shape = df_clean.shape
 
+    # Early return for empty DataFrames (no columns → column name ops would crash)
+    if df_clean.empty and len(df_clean.columns) == 0:
+        return df_clean, report, {
+            "original_rows": 0, "original_cols": 0, "final_rows": 0, "final_cols": 0,
+            "rows_removed": 0, "cols_removed": 0, "steps": 0, "time_saved_estimate": "~1 minutes",
+        }
+
     # 1. Remove fully empty rows and columns
     empty_rows = int(df_clean.isnull().all(axis=1).sum())
     empty_cols = int(df_clean.isnull().all(axis=0).sum())
@@ -294,7 +301,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
 
         # 4e. Try datetime
         try:
-            converted_dt = pd.to_datetime(df_clean[col], errors="coerce", infer_datetime_format=True)
+            converted_dt = pd.to_datetime(df_clean[col], errors="coerce")
             if non_null_original > 0 and converted_dt.notna().sum() / non_null_original > 0.9:
                 df_clean[col] = converted_dt
                 report.append({
@@ -308,7 +315,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
 
     # 5. Categorical standardization (yes/YES/y/1/True → yes/no)
     for col in list(df_clean.columns):
-        if df_clean[col].dtype != object:
+        if not pd.api.types.is_string_dtype(df_clean[col]):
             continue
         standardized, canonical, n_changed = _standardize_booleans(df_clean[col])
         if standardized is not None and n_changed > 0:
