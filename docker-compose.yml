@@ -59,6 +59,31 @@ services:
       redis:
         condition: service_healthy
 
+  # ── Celery worker ───────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A app.worker.celery_app worker --loglevel=info --concurrency=2 -Q celery
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://analyistpro:analyistpro@db:5432/analyistpro
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: production
+      # SENTRY_DSN: ""
+      # ANTHROPIC_API_KEY: ""
+      # S3_BUCKET: ""
+      # AWS_REGION: us-east-1
+      # AWS_ACCESS_KEY_ID: ""
+      # AWS_SECRET_ACCESS_KEY: ""
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   # ── Next.js frontend ────────────────────────────────────────────────────────
   web:
     build:

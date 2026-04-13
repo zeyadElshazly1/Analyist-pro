@@ -1,19 +1,26 @@
 """
 Server-Sent Events (SSE) endpoint for streaming analysis progress.
 
-Frontend connects to GET /analysis/stream/{project_id} and receives
-real-time progress updates as each analysis step completes.
-Results are persisted to the database after each successful run.
+When Redis is available the analysis runs in a Celery worker process so
+the FastAPI event loop is never blocked.  The SSE generator dispatches the
+Celery task and then polls a Redis progress list that the task writes to.
 
-Usage (frontend):
-  const evtSource = new EventSource(`/analysis/stream/${projectId}`);
-  evtSource.onmessage = (e) => {
-    const { step, progress, result } = JSON.parse(e.data);
-    if (result) { evtSource.close(); setAnalysisResult(result); }
+If Redis / Celery is unavailable (e.g. local dev without Redis) the
+endpoint automatically falls back to the original inline execution path
+so the platform keeps working without any external services.
+
+Frontend usage (unchanged):
+  const es = new EventSource(`/analysis/stream/${projectId}?token=${token}`);
+  es.onmessage = (e) => {
+    const { step, progress, result, error } = JSON.parse(e.data);
+    if (result) { es.close(); setResult(result); }
+    if (error)  { es.close(); setError(error);   }
   };
 """
+import asyncio
 import json
 import logging
+import uuid
 from typing import AsyncIterator, Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -34,31 +41,151 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/analysis", tags=["analysis-stream"])
 
 
+# ── SSE helpers ───────────────────────────────────────────────────────────────
+
 def _sse(data: dict) -> str:
-    """Format a dict as an SSE message."""
     return f"data: {json.dumps(data, default=str)}\n\n"
 
 
 def _heartbeat() -> str:
-    """SSE comment line — keeps the connection alive through proxy timeouts."""
     return ": keep-alive\n\n"
 
 
+# ── Route ─────────────────────────────────────────────────────────────────────
+
+@router.get("/stream/{project_id}")
+async def stream_analysis(
+    project_id: int,
+    token: Optional[str] = Query(None, description="JWT token (EventSource can't send headers)"),
+):
+    """
+    SSE endpoint — streams analysis progress in real time.
+
+    With Redis: dispatches a Celery task and polls the Redis progress list.
+    Without Redis: runs the analysis pipeline inline (fallback mode).
+    """
+    # ── Auth ──────────────────────────────────────────────────────────────────
+    if token:
+        from app.middleware.auth import _decode_token
+        from app.models import Project
+
+        payload = _decode_token(token)
+        if payload is None:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        user_id: str = payload.get("sub", "")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Token missing subject claim")
+        db = SessionLocal()
+        try:
+            project = db.query(Project).filter(
+                Project.id == project_id,
+                Project.user_id == user_id,
+            ).first()
+            if not project:
+                raise HTTPException(status_code=404, detail="Project not found.")
+        finally:
+            db.close()
+    else:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    # ── Dispatch to Celery or fall back to inline ─────────────────────────────
+    from app.config import REDIS_URL
+
+    if REDIS_URL:
+        run_key = f"analysis:run:{project_id}:{uuid.uuid4().hex}"
+        try:
+            from app.tasks import run_analysis_task
+            run_analysis_task.delay(project_id, run_key)
+            generator = _poll_celery_stream(project_id, run_key)
+        except Exception as e:
+            logger.warning(
+                f"Celery dispatch failed ({e}), falling back to inline analysis"
+            )
+            generator = _run_analysis_stream(project_id)
+    else:
+        generator = _run_analysis_stream(project_id)
+
+    return StreamingResponse(
+        generator,
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ── Celery-backed stream: poll Redis progress list ────────────────────────────
+
+async def _poll_celery_stream(project_id: int, run_key: str) -> AsyncIterator[str]:
+    """
+    Polls the Redis list written by ``run_analysis_task`` and forwards
+    every progress event to the browser via SSE.
+
+    Polling interval: 500 ms.  Max wait: 3 minutes (360 polls).
+    """
+    import redis as _redis
+    from app.config import REDIS_URL
+
+    offset = 0
+    max_polls = 360  # 360 × 0.5 s = 3 minutes
+
+    for _ in range(max_polls):
+        # Read any new events since last poll
+        try:
+            r = _redis.from_url(
+                REDIS_URL, decode_responses=True, socket_timeout=1
+            )
+            new_events = r.lrange(run_key, offset, -1)
+            r.close()
+        except Exception:
+            new_events = []
+
+        for event_json in new_events:
+            offset += 1
+            try:
+                event = json.loads(event_json)
+            except Exception:
+                continue
+
+            if "__done__" in event:
+                yield _sse({
+                    "step": "result",
+                    "progress": 100,
+                    "result": event["result"],
+                })
+                return
+
+            if "__error__" in event:
+                yield _sse({"error": event["__error__"]})
+                return
+
+            # Normal progress event
+            yield _sse(event)
+
+        yield _heartbeat()
+        await asyncio.sleep(0.5)
+
+    yield _sse({"error": "Analysis timed out after 3 minutes. Please try again."})
+
+
+# ── Inline fallback: run analysis synchronously in the async generator ────────
+
 async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
-    """Generator that yields SSE messages as analysis steps complete,
-    then persists the result to the database."""
+    """
+    Original inline SSE generator — used when Redis/Celery is unavailable.
+    Runs the entire analysis pipeline within the request.
+    """
 
     def emit(step: str, progress: int, detail: str = "") -> str:
         return _sse({"step": step, "progress": progress, "detail": detail})
 
-    # Step 0: resolve file
     yield emit("Loading dataset", 5, "Resolving uploaded file...")
     info = get_project_file_info(project_id)
     if not info:
         yield _sse({"error": "No uploaded file found for this project."})
         return
 
-    # ── Cache check ───────────────────────────────────────────────────────────
     file_hash = info.get("file_hash")
     cached = get_cached_analysis(project_id, file_hash)
     if cached:
@@ -81,7 +208,6 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
 
     yield emit("Dataset loaded", 10, f"{len(df):,} rows × {len(df.columns)} columns")
 
-    # Step 1: Clean
     yield _heartbeat()
     yield emit("Cleaning data", 20, "Detecting types, imputing missing values...")
     try:
@@ -92,12 +218,11 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
         return
 
     if df_clean.empty:
-        yield _sse({"error": "Dataset became empty after cleaning. Your file may contain only headers or invalid rows."})
+        yield _sse({"error": "Dataset became empty after cleaning."})
         return
 
     yield emit("Data cleaned", 35, f"{cleaning_summary.get('steps', 0)} cleaning operations applied")
 
-    # Step 2: Profile
     yield _heartbeat()
     yield emit("Profiling columns", 45, f"Analyzing {len(df_clean.columns)} columns...")
     try:
@@ -105,13 +230,12 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
         health_score = calculate_health_score(df_clean)
     except Exception as e:
         logger.error(f"Column profiling failed for project {project_id}: {e}", exc_info=True)
-        yield _sse({"error": "Column profiling failed. The dataset may contain unsupported data types."})
+        yield _sse({"error": "Column profiling failed."})
         return
 
     grade = health_score.get("grade", "?")
     yield emit("Profile complete", 60, f"Data health grade: {grade}")
 
-    # Step 3: Insights
     yield _heartbeat()
     yield emit("Detecting insights", 70, "Running correlation, anomaly, and segment analysis...")
     try:
@@ -124,7 +248,6 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
 
     yield emit("Insights ready", 90, f"{len(insights)} insights found")
 
-    # Step 4: Build final result
     result = {
         "project_id": project_id,
         "dataset_summary": to_jsonable(dataset_summary),
@@ -136,9 +259,6 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
         "narrative": narrative,
     }
 
-    # ── Persist to database ───────────────────────────────────────────────────
-    file_info = PROJECT_FILES.get(project_id) or {}
-    # file_hash already resolved above (used for cache check); re-use it here
     analysis_id = None
     db = SessionLocal()
     try:
@@ -151,9 +271,6 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
         db.commit()
         db.refresh(analysis)
         analysis_id = analysis.id
-        logger.info(f"Stream analysis persisted for project {project_id}: {len(insights)} insights, id={analysis_id}")
-
-        # Resolve user_id from project for audit log
         from app.models import Project as ProjectModel
         proj = db.query(ProjectModel).filter(ProjectModel.id == project_id).first()
         log_event(
@@ -165,66 +282,19 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
             detail={"project_id": project_id, "insight_count": len(insights)},
         )
     except Exception as e:
-        logger.error(f"Failed to persist stream analysis for project {project_id}: {e}", exc_info=True)
+        logger.error(f"Failed to persist stream analysis: {e}", exc_info=True)
         db.rollback()
     finally:
         db.close()
 
-    # ── Write to Redis cache ──────────────────────────────────────────────────
     set_cached_analysis(project_id, file_hash, result)
 
-    # Cache last insights for AI chat
     PROJECT_FILES.setdefault(project_id, {})["last_insights"] = [
         i.get("finding", "") for i in insights[:5]
     ]
 
-    # Include analysis_id in result so frontend can use it for story generation
     if analysis_id:
         result["analysis_id"] = analysis_id
 
     yield emit("Complete", 100, "Analysis finished")
     yield _sse({"step": "result", "progress": 100, "result": result})
-
-
-@router.get("/stream/{project_id}")
-async def stream_analysis(
-    project_id: int,
-    token: Optional[str] = Query(None, description="JWT token (EventSource can't send headers)"),
-):
-    """
-    SSE endpoint — streams analysis progress in real time.
-    Auth token passed as ?token= query param (EventSource doesn't support Authorization headers).
-    Returns `data: {...}` messages, ending with a `result` message containing
-    the full analysis payload. Results are persisted to the database.
-    """
-    # Validate token and verify project belongs to user
-    if token:
-        from app.middleware.auth import _decode_token
-        from app.models import Project
-        payload = _decode_token(token)
-        if payload is None:
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
-        user_id: str = payload.get("sub", "")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Token missing subject claim")
-        db = SessionLocal()
-        try:
-            project = db.query(Project).filter(
-                Project.id == project_id,
-                Project.user_id == user_id,
-            ).first()
-            if not project:
-                raise HTTPException(status_code=404, detail="Project not found.")
-        finally:
-            db.close()
-    else:
-        raise HTTPException(status_code=401, detail="Authentication required")
-
-    return StreamingResponse(
-        _run_analysis_stream(project_id),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",  # Disable nginx buffering
-        },
-    )
