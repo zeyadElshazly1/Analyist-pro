@@ -113,6 +113,10 @@ def build_correlation_matrix(df: pd.DataFrame) -> dict:
 
     for i, c1 in enumerate(num_cols):
         for j, c2 in enumerate(num_cols):
+            if c1 == c2:
+                pearson_matrix[c1][c2] = 1.0
+                spearman_matrix[c1][c2] = 1.0
+                continue
             pair_data = df[[c1, c2]].dropna()
             if len(pair_data) < 5:
                 pearson_matrix[c1][c2] = None
