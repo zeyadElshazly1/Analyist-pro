@@ -290,6 +290,149 @@ def _missing_data_patterns(df: pd.DataFrame, numeric_cols: list) -> list[dict]:
     return insights[:3]
 
 
+def _trend_analysis(df: pd.DataFrame, numeric_cols: list) -> list[dict]:
+    """
+    Detect statistically significant monotonic trends in numeric columns.
+
+    Uses linear regression over:
+    - The datetime column (if one exists) — converted to ordinal days so the
+      slope is expressed in units-per-day.
+    - Otherwise the integer row index (trend relative to current data order).
+
+    Reports only when p < 0.05 AND R² > 0.15 to filter out noise.
+    """
+    if not numeric_cols or len(df) < 10:
+        return []
+
+    datetime_cols = df.select_dtypes(include=["datetime64"]).columns.tolist()
+    if datetime_cols:
+        time_col = datetime_cols[0]
+        x = (df[time_col] - df[time_col].min()).dt.days.values.astype(float)
+        time_label = f"over time (by '{time_col}')"
+        unit_label = "per day"
+    else:
+        x = np.arange(len(df), dtype=float)
+        time_label = "across row order"
+        unit_label = "per row"
+
+    insights = []
+    for col in numeric_cols[:15]:
+        col_data = df[col]
+        valid = col_data.notna()
+        y = col_data[valid].values.astype(float)
+        x_clean = x[valid.values] if len(x) == len(df) else x[:len(y)]
+        if len(y) < 10:
+            continue
+        try:
+            slope, intercept, r, p, _ = stats.linregress(x_clean, y)
+        except Exception:
+            continue
+        r2 = r ** 2
+        if p >= 0.05 or r2 < 0.15:
+            continue
+
+        direction = "upward" if slope > 0 else "downward"
+        pct_change = abs(slope) * (x_clean[-1] - x_clean[0]) / max(abs(float(np.mean(y))), 1e-10) * 100
+
+        insights.append({
+            "type": "trend",
+            "severity": "high" if r2 > 0.5 else "medium",
+            "confidence": round(min(97, r2 * 100), 1),
+            "title": f"Trend detected: {col} ({direction})",
+            "finding": (
+                f"'{col}' shows a significant {direction} trend {time_label} "
+                f"(slope={slope:+.4g} {unit_label}, R²={r2:.2f}). "
+                f"Total change across the dataset: ~{pct_change:.1f}%."
+            ),
+            "evidence": (
+                f"OLS slope={slope:+.4g} {unit_label}, R²={r2:.3f}, p={p:.4f}, n={len(y)}"
+            ),
+            "action": (
+                f"Investigate the driver of the {direction} trend in '{col}'. "
+                + ("Consider detrending before correlation analysis to avoid spurious relationships."
+                   if r2 > 0.3 else "Monitor whether this trend continues.")
+            ),
+        })
+
+    # Return at most 3 trend insights sorted by R²
+    insights.sort(key=lambda x: x["confidence"], reverse=True)
+    return insights[:3]
+
+
+def _multicollinearity(df: pd.DataFrame, numeric_cols: list) -> list[dict]:
+    """
+    Detect multicollinearity using Variance Inflation Factor (VIF).
+
+    VIF > 5 → moderate concern; VIF > 10 → severe.
+    Only runs when there are ≥ 3 complete numeric columns with sufficient
+    non-missing data, since VIF requires a full design matrix.
+    """
+    if len(numeric_cols) < 3:
+        return []
+
+    # Keep columns with < 30% missing
+    usable = [c for c in numeric_cols if df[c].isnull().mean() < 0.3]
+    if len(usable) < 3:
+        return []
+
+    sub = df[usable].dropna()
+    if len(sub) < max(20, len(usable) * 2):
+        return []
+
+    # Remove constant columns — VIF is undefined for them
+    usable = [c for c in usable if sub[c].std() > 1e-10]
+    if len(usable) < 3:
+        return []
+
+    sub = sub[usable]
+
+    try:
+        from statsmodels.stats.outliers_influence import variance_inflation_factor
+        X = sub.values
+        vif_scores = {
+            usable[i]: float(variance_inflation_factor(X, i))
+            for i in range(len(usable))
+        }
+    except Exception:
+        return []
+
+    high_vif = {col: v for col, v in vif_scores.items() if v > 5}
+    if not high_vif:
+        return []
+
+    severe = {col: v for col, v in high_vif.items() if v > 10}
+    moderate = {col: v for col, v in high_vif.items() if 5 < v <= 10}
+
+    severity = "high" if severe else "medium"
+    affected = sorted(high_vif.items(), key=lambda x: x[1], reverse=True)
+    top_cols = ", ".join(f"{c} (VIF={v:.1f})" for c, v in affected[:4])
+
+    finding_parts = []
+    if severe:
+        s_cols = ", ".join(f"'{c}'" for c in severe)
+        finding_parts.append(f"{len(severe)} column(s) have severe multicollinearity (VIF > 10): {s_cols}.")
+    if moderate:
+        m_cols = ", ".join(f"'{c}'" for c in moderate)
+        finding_parts.append(f"{len(moderate)} column(s) have moderate multicollinearity (VIF 5–10): {m_cols}.")
+
+    return [{
+        "type": "multicollinearity",
+        "severity": severity,
+        "confidence": round(min(95, 70 + len(high_vif) * 5), 1),
+        "title": f"Multicollinearity detected ({len(high_vif)} columns)",
+        "finding": " ".join(finding_parts) + (
+            " Including all of these as features in a model will produce unstable, "
+            "hard-to-interpret coefficients."
+        ),
+        "evidence": f"VIF scores: {top_cols}",
+        "action": (
+            "Remove or combine redundant columns before modeling. "
+            "Consider PCA to reduce correlated features into orthogonal components, "
+            "or drop the column with the highest VIF and re-check."
+        ),
+    }]
+
+
 def _leading_indicators(df: pd.DataFrame, numeric_cols: list) -> list[dict]:
     """
     Detect leading indicators: X at time t predicts Y at time t+k.
@@ -702,6 +845,8 @@ def analyze_dataset(df: pd.DataFrame) -> list[dict]:
     insights += _simpsons_paradox_hints(df, numeric_cols, categorical_cols)
     insights += _missing_data_patterns(df, numeric_cols)
     insights += _leading_indicators(df, numeric_cols)
+    insights += _trend_analysis(df, numeric_cols)
+    insights += _multicollinearity(df, numeric_cols)
 
     # Sort and deduplicate
     severity_order = {"high": 0, "medium": 1, "low": 2}
