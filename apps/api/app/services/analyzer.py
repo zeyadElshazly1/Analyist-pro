@@ -3,6 +3,8 @@ import numpy as np
 from scipy import stats
 from itertools import combinations
 
+from app.config import MAX_INSIGHTS
+
 
 def _bh_correct(p_values: list[float]) -> list[float]:
     n = len(p_values)
@@ -504,55 +506,114 @@ def _leading_indicators(df: pd.DataFrame, numeric_cols: list) -> list[dict]:
     return insights[:2]
 
 
-def _generate_narrative(insights: list[dict], df: pd.DataFrame) -> str:
+def _generate_narrative(insights: list[dict], df: pd.DataFrame, total_found: int = 0) -> str:
     """
     Generate a 3-paragraph executive summary connecting the insights.
+
+    ``total_found`` is the full count before the MAX_INSIGHTS cap so the
+    summary can tell users how many findings are available.
     """
     n_rows, n_cols = len(df), len(df.columns)
     missing_pct = round(df.isnull().sum().sum() / max(n_rows * n_cols, 1) * 100, 1)
 
-    high_sev = [i for i in insights if i.get("severity") == "high"]
-    correlations = [i for i in insights if i["type"] == "correlation"]
-    anomalies = [i for i in insights if i["type"] == "anomaly"]
-    segments = [i for i in insights if i["type"] == "segment"]
+    # Bucket by type for structured summary
+    correlations  = [i for i in insights if i["type"] == "correlation"]
+    anomalies     = [i for i in insights if i["type"] == "anomaly"]
+    segments      = [i for i in insights if i["type"] == "segment"]
     concentration = [i for i in insights if i["type"] == "concentration"]
-    interactions = [i for i in insights if i["type"] == "interaction"]
-    leading = [i for i in insights if i["type"] == "leading_indicator"]
+    interactions  = [i for i in insights if i["type"] == "interaction"]
+    leading       = [i for i in insights if i["type"] == "leading_indicator"]
+    trends        = [i for i in insights if i["type"] == "trend"]
+    multicollin   = [i for i in insights if i["type"] == "multicollinearity"]
+    high_sev      = [i for i in insights if i.get("severity") == "high"]
 
-    # Paragraph 1: Data quality overview
-    if missing_pct > 5:
-        quality_text = f"The dataset ({n_rows:,} rows × {n_cols} columns) has {missing_pct}% missing values, which may limit the reliability of some findings."
-    else:
-        quality_text = f"The dataset ({n_rows:,} rows × {n_cols} columns) is largely complete ({missing_pct}% missing values), supporting confident analysis."
+    shown_str = (
+        f" (showing top {len(insights)} of {total_found})"
+        if total_found > len(insights) else ""
+    )
 
-    para1 = quality_text
-    if anomalies:
-        para1 += f" {len(anomalies)} column(s) contain statistical outliers that warrant review before modeling."
-
-    # Paragraph 2: Key patterns and relationships
-    parts = []
+    # ── Paragraph 1: Data quality + scope ────────────────────────────────────
+    n_insights = len(insights)
+    quality = (
+        f"has {missing_pct}% missing values, which may limit the reliability of some findings"
+        if missing_pct > 5
+        else f"is largely complete ({missing_pct}% missing values), supporting confident analysis"
+    )
+    type_counts = []
     if correlations:
-        top_corr = correlations[0]
-        parts.append(f"The strongest relationship is {top_corr['title'].replace('Relationship detected: ', '')}: {top_corr['finding'].split('.')[0]}.")
+        type_counts.append(f"{len(correlations)} correlation{'s' if len(correlations) > 1 else ''}")
+    if anomalies:
+        type_counts.append(f"{len(anomalies)} anomaly finding{'s' if len(anomalies) > 1 else ''}")
     if segments:
-        top_seg = segments[0]
-        parts.append(f"Segment analysis reveals: {top_seg['finding'].split('.')[0]}.")
-    if concentration:
-        top_conc = concentration[0]
-        parts.append(top_conc["finding"].split(".")[0] + ".")
+        type_counts.append(f"{len(segments)} segment gap{'s' if len(segments) > 1 else ''}")
+    if trends:
+        type_counts.append(f"{len(trends)} trend{'s' if len(trends) > 1 else ''}")
     if interactions:
-        parts.append(f"Interaction effects detected in {len(interactions)} variable pair(s) — relationships vary by subgroup.")
+        type_counts.append(f"{len(interactions)} interaction effect{'s' if len(interactions) > 1 else ''}")
+
+    counts_str = (
+        ": " + ", ".join(type_counts) if type_counts else ""
+    )
+    para1 = (
+        f"The dataset ({n_rows:,} rows × {n_cols} columns) {quality}. "
+        f"Analysis surfaced {n_insights} insight{'s' if n_insights != 1 else ''}{shown_str}{counts_str}."
+    )
+
+    # ── Paragraph 2: Highlight the strongest finding per category ────────────
+    parts = []
+    def _first_sentence(text: str) -> str:
+        """Return the first sentence, splitting on '. ' to avoid cutting decimal numbers."""
+        idx = text.find(". ")
+        return text[:idx] if idx != -1 else text
+
+    if correlations:
+        tc = correlations[0]
+        col_a = tc.get("col_a") or tc["title"].split(": ")[-1].split(" & ")[0]
+        col_b = tc.get("col_b") or tc["title"].split(" & ")[-1]
+        parts.append(
+            f"The strongest relationship is between '{col_a}' and '{col_b}': "
+            f"{_first_sentence(tc['finding'])}."
+        )
+    if trends:
+        tt = trends[0]
+        parts.append(f"A notable trend was found: {_first_sentence(tt['finding'])}.")
+    if segments:
+        ts = segments[0]
+        parts.append(f"Segment analysis reveals: {_first_sentence(ts['finding'])}.")
+    if concentration:
+        parts.append(_first_sentence(concentration[0]["finding"]) + ".")
+    if interactions:
+        parts.append(
+            f"Interaction effects were detected in {len(interactions)} variable pair(s) — "
+            "the same relationship behaves differently across subgroups."
+        )
+    if multicollin:
+        parts.append(_first_sentence(multicollin[0]["finding"]) + ".")
 
     para2 = " ".join(parts) if parts else "No strong relationships or segment gaps were detected in this dataset."
 
-    # Paragraph 3: Recommended actions
+    # ── Paragraph 3: Prioritised actions ─────────────────────────────────────
     actions = []
     if high_sev:
-        actions.append(f"Address the {len(high_sev)} high-severity finding(s) first, particularly: {high_sev[0]['title']}.")
+        actions.append(
+            f"Address the {len(high_sev)} high-severity finding(s) first — "
+            f"starting with: {high_sev[0]['title']}."
+        )
+    if multicollin:
+        actions.append(
+            "Resolve multicollinearity before building any predictive model "
+            "(drop or combine the flagged columns)."
+        )
+    if trends:
+        tt = trends[0]
+        actions.append(
+            f"Investigate the driver of the trend in '{tt.get('title', '').split(': ')[-1].split(' (')[0]}'. "
+            "Detrend the data if you plan to use correlations between trended series."
+        )
     if leading:
-        actions.append(f"Explore leading indicators: {leading[0]['title']}.")
+        actions.append(f"Explore the leading-indicator relationship: {leading[0]['title']}.")
     if interactions:
-        actions.append("Segment analyses by moderating variables to avoid misleading aggregate conclusions.")
+        actions.append("Segment all analyses by the moderating variable(s) to avoid misleading aggregate conclusions.")
     if not actions:
         actions.append("No urgent actions required. Continue monitoring for data drift over time.")
 
@@ -611,6 +672,8 @@ def analyze_dataset(df: pd.DataFrame) -> list[dict]:
                     "type": "correlation",
                     "severity": severity,
                     "confidence": round(abs(corr) * 100, 1),
+                    "col_a": col1,
+                    "col_b": col2,
                     "title": f"Relationship detected: {col1} & {col2}",
                     "finding": (
                         f"{col1} and {col2} are {strength} {direction} correlated "
@@ -776,6 +839,17 @@ def analyze_dataset(df: pd.DataFrame) -> list[dict]:
                 continue
             ratio = rates[max_group] / rates[min_group]
             if ratio > 1.8:
+                # Chi-square test for independence between cat_col and target_col
+                try:
+                    from scipy.stats import chi2_contingency
+                    ct = pd.crosstab(
+                        df.loc[df[cat_col].isin(large_groups), cat_col],
+                        df.loc[df[cat_col].isin(large_groups), target_col],
+                    )
+                    chi2_val, chi2_p, _, _ = chi2_contingency(ct)
+                    evidence_p = f", χ²={chi2_val:.2f}, p={chi2_p:.4f}"
+                except Exception:
+                    evidence_p = ""
                 insights.append({
                     "type": "segment",
                     "severity": "high" if ratio > 4 else "medium",
@@ -785,7 +859,10 @@ def analyze_dataset(df: pd.DataFrame) -> list[dict]:
                         f"'{max_group}' has {ratio:.1f}x higher '{vals[0]}' rate than '{min_group}' "
                         f"({rates[max_group]:.1%} vs {rates[min_group]:.1%})."
                     ),
-                    "evidence": f"Rate ratio={ratio:.2f}x across {len(rates)} segments (min 20 rows per group)",
+                    "evidence": (
+                        f"Rate ratio={ratio:.2f}x across {len(rates)} segments "
+                        f"(min 20 rows per group{evidence_p})"
+                    ),
                     "action": (
                         f"'{max_group}' in '{cat_col}' shows dramatically different '{target_col}' behavior "
                         f"— consider targeting it separately."
@@ -848,23 +925,30 @@ def analyze_dataset(df: pd.DataFrame) -> list[dict]:
     insights += _trend_analysis(df, numeric_cols)
     insights += _multicollinearity(df, numeric_cols)
 
-    # Sort and deduplicate
-    severity_order = {"high": 0, "medium": 1, "low": 2}
-    insights.sort(key=lambda x: (severity_order.get(x.get("severity", "low"), 2), -x["confidence"]))
+    # Sort by composite score: severity dominates (65%) but high confidence
+    # can lift medium-severity insights above weak high-severity ones (35%).
+    _sev_weight = {"high": 1.0, "medium": 0.6, "low": 0.2}
+    insights.sort(
+        key=lambda x: -(
+            _sev_weight.get(x.get("severity", "low"), 0.2) * 0.65
+            + (x.get("confidence", 50) / 100.0) * 0.35
+        )
+    )
 
     # Deduplicate: skip insights with very similar titles
-    seen_titles = set()
-    deduped = []
+    seen_titles: set[str] = set()
+    deduped: list[dict] = []
     for insight in insights:
         title_key = insight["title"][:40].lower()
         if title_key not in seen_titles:
             seen_titles.add(title_key)
             deduped.append(insight)
 
-    top_insights = deduped[:15]
+    total_found = len(deduped)
+    top_insights = deduped[:MAX_INSIGHTS]
 
     # ── 11. Narrative executive summary ──────────────────────────────────────
-    narrative = _generate_narrative(top_insights, df)
+    narrative = _generate_narrative(top_insights, df, total_found=total_found)
 
     return top_insights, narrative
 
