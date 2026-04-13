@@ -58,7 +58,12 @@ def _recommended_chart(col_type: str, n_unique: int, n_rows: int) -> str:
 
 
 def _detect_pattern(series: pd.Series) -> dict | None:
-    """Detect if a string column matches a known pattern (email, phone, URL, etc.)."""
+    """Detect if a string column matches a known pattern (email, phone, URL, etc.).
+
+    Returns a result with ``pattern_strength`` of "strong" (≥85% compliance)
+    or "weak" (50–84%) so consumers can differentiate reliable detections from
+    ambiguous ones.  Returns None if compliance < 50%.
+    """
     sample = series.dropna().astype(str).head(300)
     if len(sample) == 0:
         return None
@@ -66,8 +71,10 @@ def _detect_pattern(series: pd.Series) -> dict | None:
         matches = sample.str.match(pattern_re).sum()
         compliance = round(float(matches) / len(sample) * 100, 1)
         if compliance >= 50:
+            pattern_strength = "strong" if compliance >= 85 else "weak"
             return {
                 "pattern": pattern_name,
+                "pattern_strength": pattern_strength,
                 "compliance_pct": compliance,
                 "malformed_count": int(len(sample) * (1 - matches / len(sample))),
                 "note": (

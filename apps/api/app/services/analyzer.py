@@ -294,9 +294,23 @@ def _leading_indicators(df: pd.DataFrame, numeric_cols: list) -> list[dict]:
     """
     Detect leading indicators: X at time t predicts Y at time t+k.
     Uses cross-correlation (lag analysis) between numeric columns.
+
+    Only runs when a datetime column is present — otherwise row order is
+    arbitrary and lag correlations are meaningless.  The DataFrame is sorted
+    by the datetime column before analysis.
     """
     if len(numeric_cols) < 2 or len(df) < 20:
         return []
+
+    # Require a datetime column so that row order is meaningful
+    datetime_cols = df.select_dtypes(include=["datetime64"]).columns.tolist()
+    if not datetime_cols:
+        return []
+
+    # Sort by the first datetime column so lag analysis is time-ordered
+    time_col = datetime_cols[0]
+    df = df.sort_values(time_col).reset_index(drop=True)
+
     insights = []
     max_lag = min(5, len(df) // 4)
 
@@ -329,15 +343,19 @@ def _leading_indicators(df: pd.DataFrame, numeric_cols: list) -> list[dict]:
                 "confidence": round(abs(best_r) * 100, 1),
                 "title": f"Leading indicator: {c1} → {c2} (lag {best_lag})",
                 "finding": (
-                    f"'{c1}' at row N correlates with '{c2}' at row N+{best_lag} "
+                    f"'{c1}' at time T correlates with '{c2}' at time T+{best_lag} "
                     f"(r={best_r:.2f} at lag {best_lag}, vs r={base_r:.2f} at lag 0). "
                     f"'{c1}' may be a leading indicator of '{c2}'."
                 ),
-                "evidence": f"Cross-correlation at lag={best_lag}: r={best_r:.3f} (baseline: r={base_r:.3f})",
+                "evidence": (
+                    f"Cross-correlation at lag={best_lag}: r={best_r:.3f} (baseline: r={base_r:.3f}). "
+                    f"Data sorted by '{time_col}'."
+                ),
                 "action": (
-                    f"If this dataset is time-ordered, monitor '{c1}' as an early warning signal for '{c2}'. "
+                    f"Monitor '{c1}' as an early warning signal for '{c2}'. "
                     f"Changes in '{c1}' may precede changes in '{c2}' by {best_lag} periods."
                 ),
+                "note": f"Rows sorted by '{time_col}' for this analysis.",
             })
 
     return insights[:2]
