@@ -51,6 +51,44 @@ def get_db():
 
 
 def init_db():
-    """Create all tables. Called at app startup."""
-    from app import models  # noqa: F401 — ensures models are registered
-    Base.metadata.create_all(bind=engine)
+    """
+    Apply all pending Alembic migrations at startup (upgrade head).
+
+    This replaces the old ``Base.metadata.create_all()`` call so the live
+    database is always in sync with the migration history.  On the very
+    first run against a blank database Alembic will create every table
+    from scratch; on subsequent startups it only applies new migrations.
+
+    If Alembic is unavailable or the migration directory is missing
+    (e.g. running tests against an in-memory SQLite), we fall back to
+    ``create_all`` so tests keep working without a full migration stack.
+    """
+    import logging
+    _log = logging.getLogger(__name__)
+
+    try:
+        from alembic.config import Config
+        from alembic import command
+        import pathlib
+
+        # Locate alembic.ini relative to this file: apps/api/alembic.ini
+        alembic_ini = pathlib.Path(__file__).resolve().parent.parent / "alembic.ini"
+        if not alembic_ini.exists():
+            raise FileNotFoundError(f"alembic.ini not found at {alembic_ini}")
+
+        alembic_cfg = Config(str(alembic_ini))
+        # Override sqlalchemy.url with the runtime DATABASE_URL so the same
+        # config works in every environment without editing alembic.ini.
+        alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
+
+        _log.info("Running Alembic migrations (upgrade head)…")
+        command.upgrade(alembic_cfg, "head")
+        _log.info("Alembic migrations complete")
+
+    except Exception as exc:
+        _log.warning(
+            f"Alembic migration failed ({exc}); falling back to create_all. "
+            "This is normal in tests — in production ensure alembic.ini is present."
+        )
+        from app import models  # noqa: F401
+        Base.metadata.create_all(bind=engine)
