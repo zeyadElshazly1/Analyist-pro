@@ -22,8 +22,25 @@ import {
   Cell,
 } from "recharts";
 
+type BoxplotEntry = {
+  name: string;
+  min: number;
+  q1: number;
+  median: number;
+  q3: number;
+  max: number;
+  outliers?: number[];
+  n?: number;
+};
+
+type HeatmapEntry = {
+  x: string;
+  y: string;
+  value: number;
+};
+
 type ChartDef = {
-  type: "bar" | "line" | "pie" | "scatter";
+  type: "bar" | "line" | "pie" | "scatter" | "boxplot" | "heatmap";
   title: string;
   description?: string;
   insight?: string;
@@ -33,6 +50,7 @@ type ChartDef = {
   y_label?: string;
   data: Array<Record<string, unknown>>;
   regression?: Array<{ x: number; y_hat: number }>;
+  columns?: string[];
   recommended?: boolean;
 };
 
@@ -117,9 +135,137 @@ function exportChart(containerEl: HTMLDivElement, chart: ChartDef, format: "svg"
   img.src = url;
 }
 
+function BoxplotChart({ chart }: { chart: ChartDef }) {
+  const entries = chart.data as unknown as BoxplotEntry[];
+  if (!entries || entries.length === 0) {
+    return <p className="text-sm text-white/40">No boxplot data available.</p>;
+  }
+
+  // Find global min/max for scaling
+  const allVals = entries.flatMap((e) => [e.min, e.max]);
+  const gMin = Math.min(...allVals);
+  const gMax = Math.max(...allVals);
+  const range = gMax - gMin || 1;
+
+  const pct = (v: number) => `${Math.max(0, Math.min(100, ((v - gMin) / range) * 100)).toFixed(2)}%`;
+  const pctW = (a: number, b: number) => `${Math.max(0, ((b - a) / range) * 100).toFixed(2)}%`;
+
+  return (
+    <div className="space-y-3 mt-2">
+      {entries.map((entry, i) => (
+        <div key={i} className="flex items-center gap-3">
+          <span className="w-24 flex-shrink-0 text-right text-xs text-white/50 truncate" title={entry.name}>
+            {entry.name}
+          </span>
+          <div className="relative flex-1 h-6">
+            {/* whisker left */}
+            <div className="absolute top-1/2 -translate-y-px h-px bg-white/25"
+              style={{ left: pct(entry.min), width: pctW(entry.min, entry.q1) }} />
+            {/* IQR box */}
+            <div className="absolute top-1 h-4 rounded bg-indigo-500/40 border border-indigo-500/60"
+              style={{ left: pct(entry.q1), width: pctW(entry.q1, entry.q3) }} />
+            {/* median line */}
+            <div className="absolute top-1 h-4 w-0.5 bg-indigo-200"
+              style={{ left: pct(entry.median) }} />
+            {/* whisker right */}
+            <div className="absolute top-1/2 -translate-y-px h-px bg-white/25"
+              style={{ left: pct(entry.q3), width: pctW(entry.q3, entry.max) }} />
+            {/* outlier dots */}
+            {(entry.outliers ?? []).slice(0, 10).map((v, oi) => (
+              <div key={oi} className="absolute top-1.5 h-3 w-0.5 rounded-full bg-red-400/70"
+                style={{ left: pct(v) }} />
+            ))}
+          </div>
+          {entry.n !== undefined && (
+            <span className="w-10 flex-shrink-0 text-right text-[10px] text-white/30">n={entry.n}</span>
+          )}
+        </div>
+      ))}
+      <div className="flex justify-between text-[10px] text-white/25 px-28">
+        <span>{gMin.toFixed(2)}</span>
+        <span>{((gMin + gMax) / 2).toFixed(2)}</span>
+        <span>{gMax.toFixed(2)}</span>
+      </div>
+    </div>
+  );
+}
+
+function HeatmapChart({ chart }: { chart: ChartDef }) {
+  const entries = chart.data as unknown as HeatmapEntry[];
+  const cols = chart.columns ?? [];
+
+  if (!entries || entries.length === 0 || cols.length === 0) {
+    return <p className="text-sm text-white/40">No heatmap data available.</p>;
+  }
+
+  // Build lookup
+  const lookup: Record<string, number> = {};
+  for (const e of entries) lookup[`${e.x}__${e.y}`] = e.value;
+
+  function cellColor(v: number): string {
+    if (v >= 0.7) return "bg-indigo-500 text-white";
+    if (v >= 0.4) return "bg-indigo-500/50 text-white/90";
+    if (v >= 0.2) return "bg-indigo-500/25 text-white/70";
+    if (v <= -0.7) return "bg-rose-500 text-white";
+    if (v <= -0.4) return "bg-rose-500/50 text-white/90";
+    if (v <= -0.2) return "bg-rose-500/25 text-white/70";
+    return "bg-white/[0.04] text-white/40";
+  }
+
+  const cellSize = cols.length > 5 ? "text-[9px]" : "text-xs";
+
+  return (
+    <div className="overflow-x-auto mt-2">
+      <table className="w-full border-collapse text-center" style={{ minWidth: cols.length * 52 }}>
+        <thead>
+          <tr>
+            <th className="w-10" />
+            {cols.map((c) => (
+              <th key={c} className={`pb-1 font-normal text-white/40 ${cellSize} max-w-[52px] truncate px-0.5`} title={c}>
+                {c.length > 8 ? c.slice(0, 7) + "…" : c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {cols.map((rowCol) => (
+            <tr key={rowCol}>
+              <td className={`text-right pr-1 font-normal text-white/40 ${cellSize} max-w-[40px] truncate`} title={rowCol}>
+                {rowCol.length > 8 ? rowCol.slice(0, 7) + "…" : rowCol}
+              </td>
+              {cols.map((colCol) => {
+                const v = lookup[`${rowCol}__${colCol}`] ?? 0;
+                const isdiag = rowCol === colCol;
+                return (
+                  <td key={colCol}
+                    className={`p-0.5`}
+                    title={`${rowCol} vs ${colCol}: ${v.toFixed(3)}`}>
+                    <div className={`rounded text-center py-1 ${cellSize} font-medium ${isdiag ? "bg-white/[0.08] text-white/50" : cellColor(v)}`}
+                      style={{ minWidth: 40 }}>
+                      {isdiag ? "—" : v.toFixed(2)}
+                    </div>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function SingleChart({ chart }: { chart: ChartDef }) {
   if (!chart.data || chart.data.length === 0) {
     return <p className="text-sm text-white/40">No data available for this chart.</p>;
+  }
+
+  if (chart.type === "boxplot") {
+    return <BoxplotChart chart={chart} />;
+  }
+
+  if (chart.type === "heatmap") {
+    return <HeatmapChart chart={chart} />;
   }
 
   if (chart.type === "line") {

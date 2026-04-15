@@ -13,6 +13,7 @@ import { InsightsList } from "@/components/analysis/insights-list";
 import { CleaningReport } from "@/components/analysis/cleaning-report";
 import { CleaningSummaryCards } from "@/components/analysis/cleaning-summary-cards";
 import { ProfileView } from "@/components/analysis/profile-view";
+import { ExecutivePanel } from "@/components/analysis/executive-panel";
 import {
   ArrowLeft,
   Loader2,
@@ -221,6 +222,14 @@ export default function ReportDetailPage() {
             <div className="space-y-6">
               {/* Stats */}
               <StatsCards summary={result.dataset_summary as any} />
+
+              {/* Executive Panel — above insights */}
+              {!!result.executive_panel && (
+                <div className="space-y-3">
+                  <h2 className="font-semibold text-white">Executive Summary</h2>
+                  <ExecutivePanel panel={result.executive_panel as any} />
+                </div>
+              )}
 
               {/* Health + Cleaning */}
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
