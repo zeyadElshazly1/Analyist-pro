@@ -947,10 +947,116 @@ def analyze_dataset(df: pd.DataFrame) -> list[dict]:
     total_found = len(deduped)
     top_insights = deduped[:MAX_INSIGHTS]
 
+    # Enrich each insight with why_it_matters and likely_drivers
+    top_insights = [_enrich_insight(ins) for ins in top_insights]
+
     # ── 11. Narrative executive summary ──────────────────────────────────────
     narrative = _generate_narrative(top_insights, df, total_found=total_found)
 
     return top_insights, narrative
+
+
+def _detect_domain(column_names: list) -> str:
+    cols = " ".join(column_names).lower()
+    if any(k in cols for k in ["revenue", "sales", "price", "cost", "margin", "profit", "cltv", "arpu", "ltv"]):
+        return "Finance / Sales"
+    if any(k in cols for k in ["patient", "diagnosis", "treatment", "hospital", "medical", "health", "dose", "symptom"]):
+        return "Healthcare"
+    if any(k in cols for k in ["order", "product", "sku", "inventory", "shipment", "cart", "purchase"]):
+        return "E-commerce"
+    if any(k in cols for k in ["user", "session", "click", "conversion", "funnel", "page", "bounce", "impression"]):
+        return "Marketing / Analytics"
+    if any(k in cols for k in ["sensor", "temperature", "pressure", "machine", "fault", "vibration", "rpm", "voltage"]):
+        return "IoT / Manufacturing"
+    if any(k in cols for k in ["age", "gender", "income", "education", "employment", "population", "survey"]):
+        return "Demographics"
+    return "General"
+
+
+_WHY_IT_MATTERS: dict[str, str] = {
+    "correlation": "Strong correlations reveal which variables move together — enabling better predictions and exposing hidden leverage points.",
+    "anomaly": "Anomalies can indicate data quality problems, fraud signals, equipment failures, or genuinely extreme business events.",
+    "segment": "Segment gaps show where performance diverges — identifying high-value groups and underperformers to prioritise.",
+    "distribution": "Skewed distributions break parametric tests and inflate means. Knowing the shape prevents faulty downstream analysis.",
+    "data_quality": "Data quality issues silently corrupt every metric built on top of them. Fixing them is the highest-ROI action before any analysis.",
+    "concentration": "Pareto concentration means a small group drives most of the outcome — a key risk and opportunity signal.",
+    "interaction": "Interaction effects mean the 'one size fits all' strategy is wrong. The same action yields very different results in different segments.",
+    "simpsons_paradox": "Simpson's Paradox means aggregate trends can be reversed or misleading — decisions made on aggregate data may be exactly wrong.",
+    "missing_pattern": "Structured missingness (MAR/MNAR) biases any model trained on this data. Simple imputation will not fix it.",
+    "multicollinearity": "Collinear features make model coefficients unstable and uninterpretable — a common root cause of unexplainable model behaviour.",
+    "leading_indicator": "A leading indicator gives advance warning of what's about to change — enabling proactive rather than reactive decisions.",
+    "trend": "A statistically confirmed trend will persist into future periods unless a causal driver changes, affecting any forecast built on this data.",
+}
+
+_LIKELY_DRIVERS: dict[str, str] = {
+    "correlation": "One variable may be causally driving the other, or both may share a common upstream cause (confounding).",
+    "anomaly": "Likely causes: data entry errors, instrument/sensor failures, fraud, one-off extreme events, or valid edge cases.",
+    "segment": "Demographic, behavioural, operational, or geographic differences between groups are the most common drivers.",
+    "distribution": "Long tails often arise from multiplicative processes, power laws, censoring, or a mix of distinct sub-populations.",
+    "data_quality": "Common root causes: ETL errors, schema drift, manual entry mistakes, or missing upstream data feeds.",
+    "concentration": "Power-law concentration often reflects winner-take-most dynamics, geographic clustering, or a dominant product/customer.",
+    "interaction": "Context-dependent effects arise from subgroup-specific behaviours, policies, or market conditions.",
+    "simpsons_paradox": "Driven by group composition effects — the mix of large/small groups distorts the aggregate relationship.",
+    "missing_pattern": "Structured missingness is typically caused by a selection process: certain types of records are more likely to be incomplete.",
+    "multicollinearity": "Features derived from the same underlying construct, highly correlated raw inputs, or redundant engineered features.",
+    "leading_indicator": "Could reflect a causal mechanism, a shared upstream signal, or a lagged demand/supply effect.",
+    "trend": "Seasonality, macro-economic shifts, product lifecycle changes, or ongoing operational drift are common drivers.",
+}
+
+
+def _enrich_insight(insight: dict) -> dict:
+    """Add why_it_matters and likely_drivers to an insight based on its type."""
+    itype = insight.get("type", "")
+    enriched = dict(insight)
+    enriched.setdefault("why_it_matters", _WHY_IT_MATTERS.get(itype, "Understanding this pattern can improve decision quality."))
+    enriched.setdefault("likely_drivers", _LIKELY_DRIVERS.get(itype, "Requires domain investigation to confirm the root cause."))
+    return enriched
+
+
+def generate_executive_panel(insights: list[dict]) -> dict:
+    """
+    Derive Opportunities, Risks, and an Action Plan from the top insights.
+    Returns a dict with three lists suitable for rendering on the frontend.
+    """
+    OPPORTUNITY_TYPES = {"correlation", "segment", "leading_indicator", "concentration", "trend", "interaction"}
+    RISK_TYPES = {"anomaly", "data_quality", "multicollinearity", "simpsons_paradox", "missing_pattern"}
+
+    opportunities: list[dict] = []
+    risks: list[dict] = []
+    action_plan: list[dict] = []
+
+    for ins in insights:
+        itype = ins.get("type", "")
+        sev = ins.get("severity", "low")
+        title = ins.get("title", "")
+        action = ins.get("action", "")
+        finding = ins.get("finding", "")
+
+        if itype in OPPORTUNITY_TYPES and sev in ("high", "medium") and len(opportunities) < 4:
+            opportunities.append({
+                "title": title,
+                "summary": finding[:140] + ("…" if len(finding) > 140 else ""),
+                "severity": sev,
+            })
+        elif itype in RISK_TYPES and sev in ("high", "medium") and len(risks) < 4:
+            risks.append({
+                "title": title,
+                "summary": finding[:140] + ("…" if len(finding) > 140 else ""),
+                "severity": sev,
+            })
+
+        if action and len(action_plan) < 5:
+            action_plan.append({
+                "action": action[:180] + ("…" if len(action) > 180 else ""),
+                "type": itype,
+                "severity": sev,
+            })
+
+    return {
+        "opportunities": opportunities,
+        "risks": risks,
+        "action_plan": action_plan,
+    }
 
 
 def get_dataset_summary(df: pd.DataFrame) -> dict:
@@ -961,4 +1067,5 @@ def get_dataset_summary(df: pd.DataFrame) -> dict:
         "categorical_cols": len(df.select_dtypes(include=["object"]).columns),
         "datetime_cols": len(df.select_dtypes(include=["datetime64"]).columns),
         "missing_pct": round(df.isnull().sum().sum() / max(len(df) * len(df.columns), 1) * 100, 1),
+        "domain": _detect_domain(df.columns.tolist()),
     }

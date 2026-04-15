@@ -13,7 +13,7 @@ from app.middleware.auth import get_current_user, optional_current_user
 from app.middleware.plans import require_feature
 from app.models import AnalysisResult, Project, ProjectFile, User
 from app.schemas.analysis import AnalysisRequest
-from app.services.analyzer import analyze_dataset, get_dataset_summary
+from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
 from app.services.cache import get_cached_analysis, set_cached_analysis
 from app.services.cleaner import clean_dataset
 from app.services.file_loader import load_dataset
@@ -79,6 +79,8 @@ def run_analysis(
         insights, narrative = analyze_dataset(df_clean)
         dataset_summary = get_dataset_summary(df_clean)
 
+        executive_panel = generate_executive_panel(insights)
+
         result = {
             "project_id": project_id,
             "dataset_summary": to_jsonable(dataset_summary),
@@ -88,6 +90,7 @@ def run_analysis(
             "profile": to_jsonable(profile),
             "insights": to_jsonable(insights),
             "narrative": narrative,
+            "executive_panel": to_jsonable(executive_panel),
         }
 
         # ── Write to Redis cache (before DB commit so cache is warm on retry) ──

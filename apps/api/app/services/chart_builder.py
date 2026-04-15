@@ -319,6 +319,86 @@ def build_chart_data(df: pd.DataFrame) -> list[dict]:
                 "score": round(abs(corr) * 9, 1),
             })
 
-    # Sort by score descending, cap at 8 charts
+    # ── 6. Boxplot — distribution comparison across a category ───────────────
+    if categorical_cols and numeric_cols:
+        cat_col = categorical_cols[0]
+        n_unique = df[cat_col].nunique()
+        for num_col in numeric_cols[:2]:
+            if n_unique < 2 or n_unique > 12:
+                continue
+            box_data = []
+            for cat_val, grp in df.groupby(cat_col)[num_col]:
+                clean_grp = grp.dropna()
+                if len(clean_grp) < 4:
+                    continue
+                q1 = float(clean_grp.quantile(0.25))
+                q3 = float(clean_grp.quantile(0.75))
+                iqr = q3 - q1
+                fence_lo = q1 - 1.5 * iqr
+                fence_hi = q3 + 1.5 * iqr
+                outliers = [round(float(v), 4) for v in clean_grp[(clean_grp < fence_lo) | (clean_grp > fence_hi)].tolist()[:20]]
+                box_data.append({
+                    "name": str(cat_val),
+                    "min": round(float(clean_grp[clean_grp >= fence_lo].min()), 4),
+                    "q1": round(q1, 4),
+                    "median": round(float(clean_grp.median()), 4),
+                    "q3": round(q3, 4),
+                    "max": round(float(clean_grp[clean_grp <= fence_hi].max()), 4),
+                    "outliers": outliers,
+                    "n": len(clean_grp),
+                })
+            if len(box_data) >= 2:
+                charts.append({
+                    "type": "boxplot",
+                    "title": f"{num_col} by {cat_col}",
+                    "description": f"Distribution of {num_col} split by {cat_col} (IQR box-whisker)",
+                    "insight": (
+                        f"Each box shows the interquartile range of '{num_col}' for each '{cat_col}' group. "
+                        f"Dots beyond the whiskers are outliers."
+                    ),
+                    "x_key": "name",
+                    "y_key": "median",
+                    "x_label": cat_col,
+                    "y_label": num_col,
+                    "data": box_data,
+                    "recommended": False,
+                    "score": 7,
+                })
+            break  # one boxplot is enough
+
+    # ── 7. Correlation heatmap ────────────────────────────────────────────────
+    if len(numeric_cols) >= 3:
+        heatmap_cols = numeric_cols[:8]
+        sub = df[heatmap_cols].dropna()
+        if len(sub) >= 10:
+            corr_matrix = sub.corr(method="pearson")
+            heatmap_data = []
+            for col_x in heatmap_cols:
+                for col_y in heatmap_cols:
+                    val = corr_matrix.loc[col_x, col_y]
+                    heatmap_data.append({
+                        "x": col_x,
+                        "y": col_y,
+                        "value": round(float(val), 3) if not np.isnan(val) else 0.0,
+                    })
+            charts.append({
+                "type": "heatmap",
+                "title": "Correlation heatmap",
+                "description": f"Pearson correlations between {len(heatmap_cols)} numeric columns",
+                "insight": (
+                    "Values close to +1 or −1 indicate strong linear relationships. "
+                    "Focus on off-diagonal cells — diagonal is always 1."
+                ),
+                "x_key": "x",
+                "y_key": "y",
+                "x_label": "Column",
+                "y_label": "Column",
+                "data": heatmap_data,
+                "columns": heatmap_cols,
+                "recommended": False,
+                "score": 8,
+            })
+
+    # Sort by score descending, cap at 10 charts
     charts.sort(key=lambda c: c.get("score", 0), reverse=True)
-    return charts[:8]
+    return charts[:10]

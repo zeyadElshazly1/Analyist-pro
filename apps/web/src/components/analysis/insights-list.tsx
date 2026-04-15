@@ -12,6 +12,8 @@ type Insight = {
   evidence?: string;
   action?: string;
   description?: string;
+  why_it_matters?: string;
+  likely_drivers?: string;
 };
 
 type Props = {
@@ -19,20 +21,32 @@ type Props = {
 };
 
 const TYPE_META: Record<string, { dot: string; badge: string; label: string }> = {
-  correlation: { dot: "bg-indigo-400", badge: "bg-indigo-500/20 text-indigo-300", label: "Correlation" },
-  anomaly: { dot: "bg-red-400", badge: "bg-red-500/20 text-red-300", label: "Anomaly" },
-  segment: { dot: "bg-purple-400", badge: "bg-purple-500/20 text-purple-300", label: "Segment" },
-  distribution: { dot: "bg-amber-400", badge: "bg-amber-500/20 text-amber-300", label: "Distribution" },
-  data_quality: { dot: "bg-orange-400", badge: "bg-orange-500/20 text-orange-300", label: "Data Quality" },
+  correlation:       { dot: "bg-indigo-400",  badge: "bg-indigo-500/20 text-indigo-300",   label: "Correlation" },
+  anomaly:           { dot: "bg-red-400",      badge: "bg-red-500/20 text-red-300",         label: "Anomaly" },
+  segment:           { dot: "bg-purple-400",   badge: "bg-purple-500/20 text-purple-300",   label: "Segment" },
+  distribution:      { dot: "bg-amber-400",    badge: "bg-amber-500/20 text-amber-300",     label: "Distribution" },
+  data_quality:      { dot: "bg-orange-400",   badge: "bg-orange-500/20 text-orange-300",   label: "Data Quality" },
+  trend:             { dot: "bg-teal-400",     badge: "bg-teal-500/20 text-teal-300",       label: "Trend" },
+  concentration:     { dot: "bg-yellow-400",   badge: "bg-yellow-500/20 text-yellow-300",   label: "Concentration" },
+  interaction:       { dot: "bg-pink-400",     badge: "bg-pink-500/20 text-pink-300",       label: "Interaction" },
+  simpsons_paradox:  { dot: "bg-rose-400",     badge: "bg-rose-500/20 text-rose-300",       label: "Simpson's" },
+  missing_pattern:   { dot: "bg-slate-400",    badge: "bg-slate-500/20 text-slate-300",     label: "Missing Pattern" },
+  multicollinearity: { dot: "bg-cyan-400",     badge: "bg-cyan-500/20 text-cyan-300",       label: "Multicollinearity" },
+  leading_indicator: { dot: "bg-emerald-400",  badge: "bg-emerald-500/20 text-emerald-300", label: "Leading Indicator" },
 };
 
 const SEVERITY_META: Record<string, string> = {
-  high: "border-red-500/20 bg-red-500/5",
+  high:   "border-red-500/20 bg-red-500/5",
   medium: "border-white/[0.07] bg-white/[0.03]",
-  low: "border-white/[0.04] bg-white/[0.02]",
+  low:    "border-white/[0.04] bg-white/[0.02]",
 };
 
-const ALL_TYPES = ["all", "correlation", "anomaly", "segment", "distribution", "data_quality"];
+const ALL_TYPES = [
+  "all",
+  "correlation", "anomaly", "segment", "distribution", "data_quality",
+  "trend", "concentration", "interaction", "simpsons_paradox",
+  "missing_pattern", "multicollinearity", "leading_indicator",
+];
 
 function CopyInsightButton({ insight }: { insight: Insight }) {
   const [copied, setCopied] = useState(false);
@@ -143,7 +157,7 @@ export function InsightsList({ insights }: Props) {
                 <CopyInsightButton insight={insight} />
               </div>
 
-              {/* Expanded: evidence + action */}
+              {/* Expanded: evidence + why_it_matters + likely_drivers + action */}
               {isExpanded && (
                 <div className="mt-3 ml-5 space-y-2 border-t border-white/[0.07] pt-3">
                   {insight.evidence && (
@@ -152,6 +166,21 @@ export function InsightsList({ insights }: Props) {
                       <p className="text-xs font-mono text-white/60">{insight.evidence}</p>
                     </div>
                   )}
+
+                  {insight.why_it_matters && (
+                    <div className="rounded-lg bg-indigo-500/[0.07] border border-indigo-500/10 px-3 py-2">
+                      <p className="text-xs font-medium text-indigo-400/80 mb-0.5">Why it matters</p>
+                      <p className="text-xs text-white/60 leading-relaxed">{insight.why_it_matters}</p>
+                    </div>
+                  )}
+
+                  {insight.likely_drivers && (
+                    <div className="rounded-lg bg-purple-500/[0.07] border border-purple-500/10 px-3 py-2">
+                      <p className="text-xs font-medium text-purple-400/80 mb-0.5">Likely drivers</p>
+                      <p className="text-xs text-white/60 leading-relaxed">{insight.likely_drivers}</p>
+                    </div>
+                  )}
+
                   {insight.action && (
                     <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-3 py-2">
                       <p className="text-xs font-medium text-indigo-400 mb-0.5">Recommended Action</p>
