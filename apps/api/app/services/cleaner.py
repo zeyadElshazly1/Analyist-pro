@@ -17,6 +17,14 @@ _DATE_FORMATS = [
     "%b %d, %Y", "%d %b %Y", "%Y%m%d",
 ]
 
+# ── Placeholder strings treated as missing ────────────────────────────────────
+_PLACEHOLDER_STRINGS: set[str] = {
+    "n/a", "na", "n.a.", "n.a", "none", "null", "nil", "nan", "nat",
+    "-", "--", "---", "?", "??", "unknown", "undefined", "missing",
+    "not available", "not applicable", "not provided", "not specified",
+    "#n/a", "#null!", "empty", "blank", ".", "..", "...",
+}
+
 
 def _classify_missingness(df: pd.DataFrame, col: str) -> tuple[str, float]:
     """Classify missing data mechanism: MCAR / MAR / MNAR."""
@@ -101,13 +109,7 @@ def _simple_impute_value(series: pd.Series) -> tuple[float, str]:
 
 
 def _try_parse_currency(series: pd.Series) -> tuple[pd.Series | None, int]:
-    """Try to parse currency strings like '$1,234.56' → 1234.56.
-    Returns (parsed_series, n_converted) or (None, 0) if not applicable.
-
-    Requires 95% match rate to avoid converting postal codes, phone numbers,
-    or other numeric-looking strings that aren't actually currency.
-    """
-    # Skip columns that are already numeric
+    """Try to parse currency strings like '$1,234.56' → 1234.56."""
     if pd.api.types.is_numeric_dtype(series):
         return None, 0
     sample = series.dropna().head(100).astype(str)
@@ -125,11 +127,7 @@ def _try_parse_currency(series: pd.Series) -> tuple[pd.Series | None, int]:
 
 
 def _try_parse_percentage(series: pd.Series) -> tuple[pd.Series | None, int]:
-    """Try to parse percentage strings like '45%' → 45.0 (keeps raw number).
-
-    Requires 90% match rate to avoid false conversions.
-    """
-    # Skip columns that are already numeric
+    """Try to parse percentage strings like '45%' → 45.0."""
     if pd.api.types.is_numeric_dtype(series):
         return None, 0
     sample = series.dropna().head(100).astype(str)
@@ -143,21 +141,14 @@ def _try_parse_percentage(series: pd.Series) -> tuple[pd.Series | None, int]:
 
 
 def _standardize_booleans(series: pd.Series) -> tuple[pd.Series | None, str | None, int]:
-    """
-    Detect columns where values are synonyms for True/False
-    (e.g. yes/YES/y/1/True/on) and unify them.
-    Returns (standardized_series, canonical_pair, n_changed) or (None, None, 0).
-    """
+    """Detect and unify boolean-synonym columns (yes/YES/y/1/True/on → yes/no)."""
     clean = series.dropna().astype(str).str.strip().str.lower()
     unique_vals = set(clean.unique())
     is_true = unique_vals.issubset(_BOOL_TRUE | _BOOL_FALSE)
     if not is_true or len(unique_vals) < 2:
         return None, None, 0
-
-    # Already standardized?
     if unique_vals == {"yes", "no"} or unique_vals == {"true", "false"} or unique_vals == {"1", "0"}:
         return None, None, 0
-
     mapping = {v: "yes" if v in _BOOL_TRUE else "no" for v in unique_vals}
     standardized = series.astype(str).str.strip().str.lower().map(mapping).where(series.notna(), other=None)
     n_changed = int((standardized.fillna("") != series.astype(str).str.strip().str.lower().fillna("")).sum())
@@ -165,10 +156,7 @@ def _standardize_booleans(series: pd.Series) -> tuple[pd.Series | None, str | No
 
 
 def _harmonize_date_formats(series: pd.Series) -> tuple[pd.Series | None, int, list[str]]:
-    """
-    Detect columns with mixed date format strings and standardize to ISO.
-    Returns (parsed_series, n_converted, formats_detected).
-    """
+    """Detect mixed date format strings and standardize to ISO."""
     clean_str = series.dropna().astype(str).head(200)
     detected_formats = []
     for fmt in _DATE_FORMATS:
@@ -179,29 +167,204 @@ def _harmonize_date_formats(series: pd.Series) -> tuple[pd.Series | None, int, l
                 detected_formats.append(fmt)
         except Exception:
             pass
-
     if len(detected_formats) <= 1:
         return None, 0, []
-
-    # Multiple formats detected — harmonize with mixed format inference
     result = pd.to_datetime(series, infer_datetime_format=True, errors="coerce")
     n_converted = int(result.notna().sum())
     return result, n_converted, detected_formats
 
 
+def _replace_placeholders(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """
+    Replace known placeholder strings (N/A, None, null, -, ?, unknown, …)
+    with NaN across all object/string columns.
+    Returns the modified DataFrame and the total count of replacements.
+    """
+    total_replaced = 0
+    for col in df.select_dtypes(include=["object"]).columns:
+        # Normalise to lowercase for matching, preserve original NaN positions
+        lower = df[col].astype(str).str.strip().str.lower()
+        mask = lower.isin(_PLACEHOLDER_STRINGS) & df[col].notna()
+        n = int(mask.sum())
+        if n > 0:
+            df[col] = df[col].where(~mask, other=np.nan)
+            total_replaced += n
+    return df, total_replaced
+
+
+def _remove_duplicate_columns(df: pd.DataFrame) -> tuple[pd.DataFrame, int, list[str]]:
+    """
+    Remove columns whose values are identical to a preceding column.
+    Returns the cleaned DataFrame, count removed, and list of removed column names.
+    """
+    seen: dict[str, str] = {}   # hash → first column name
+    to_drop: list[str] = []
+    for col in df.columns:
+        col_hash = pd.util.hash_pandas_object(df[col].fillna("__NA__"), index=False).sum()
+        key = str(col_hash)
+        if key in seen:
+            to_drop.append(col)
+        else:
+            seen[key] = col
+    if to_drop:
+        df = df.drop(columns=to_drop)
+    return df, len(to_drop), to_drop
+
+
+def _flag_suspicious_zeros(
+    df: pd.DataFrame,
+    threshold: float = 0.10,
+) -> list[dict]:
+    """
+    Flag numeric columns where a suspiciously high fraction of non-missing values
+    are exactly zero — which often signals that 0 was used to encode missingness
+    rather than a true measurement.
+
+    No mutation — only returns a list of warning dicts.
+    threshold: minimum zero-fraction to trigger a warning (default 10%).
+    """
+    warnings: list[dict] = []
+    for col in df.select_dtypes(include=[np.number]).columns:
+        non_null = df[col].dropna()
+        if len(non_null) < 20:
+            continue
+        zero_count = int((non_null == 0).sum())
+        zero_pct = zero_count / len(non_null)
+        if zero_pct < threshold:
+            continue
+        # Additional heuristic: zero_pct spike is suspicious when the column has
+        # a non-trivial range (i.e. it's not a binary or count-of-zero column).
+        col_range = float(non_null.max() - non_null.min())
+        if col_range == 0:
+            continue  # constant column — zeros expected
+        if non_null.nunique() <= 2:
+            continue  # binary column — zeros are legitimate
+        warnings.append({
+            "column": col,
+            "zero_count": zero_count,
+            "zero_pct": round(zero_pct * 100, 1),
+            "message": (
+                f"'{col}' has {zero_count} exact zeros ({zero_pct * 100:.1f}% of non-null values). "
+                f"Zeros may encode missing data rather than a true measurement. "
+                f"Verify with the data source before modeling."
+            ),
+        })
+    return warnings
+
+
+def _extract_date_features(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
+    """
+    For each datetime column, extract calendar features as new numeric columns:
+    year, month, day, day_of_week (0=Mon … 6=Sun), quarter, is_weekend.
+
+    Returns the augmented DataFrame and a list of newly created column names.
+    """
+    created: list[str] = []
+    datetime_cols = df.select_dtypes(include=["datetime64"]).columns.tolist()
+    for col in datetime_cols:
+        series = df[col]
+        base = col  # already snake_case after step 3
+        features = {
+            f"{base}_year":         series.dt.year,
+            f"{base}_month":        series.dt.month,
+            f"{base}_day":          series.dt.day,
+            f"{base}_day_of_week":  series.dt.dayofweek,
+            f"{base}_quarter":      series.dt.quarter,
+            f"{base}_is_weekend":   series.dt.dayofweek.isin([5, 6]).astype(int),
+        }
+        for feat_name, feat_series in features.items():
+            if feat_name not in df.columns:
+                df[feat_name] = feat_series
+                created.append(feat_name)
+    return df, created
+
+
+def _compute_confidence_score(
+    original_rows: int,
+    original_cols: int,
+    missing_pct_original: float,
+    placeholders_replaced: int,
+    suspicious_issues_count: int,
+    total_outliers_winsorized: int,
+    duplicate_cols_removed: int,
+) -> int:
+    """
+    Compute a 0–100 data confidence score.
+
+    Penalises:
+    - High original missingness      → up to −30 pts
+    - Placeholder pollution          → up to −20 pts
+    - Suspicious issues remaining    → up to −20 pts  (5 pts each, max 4)
+    - High outlier / winsorization rate → up to −15 pts
+    - Duplicate columns              → up to −10 pts
+    """
+    score = 100.0
+    total_cells = max(original_rows * original_cols, 1)
+
+    # Missing data penalty
+    score -= min(30.0, missing_pct_original * 0.5)
+
+    # Placeholder penalty (as % of total cells)
+    placeholder_rate = placeholders_replaced / total_cells * 100
+    score -= min(20.0, placeholder_rate * 0.4)
+
+    # Suspicious zero issues penalty
+    score -= min(20.0, suspicious_issues_count * 5.0)
+
+    # Outlier winsorization penalty (as % of total numeric cells)
+    outlier_rate = total_outliers_winsorized / max(total_cells, 1) * 100
+    score -= min(15.0, outlier_rate * 0.3)
+
+    # Duplicate columns penalty
+    score -= min(10.0, duplicate_cols_removed * 2.0)
+
+    return max(0, min(100, round(score)))
+
+
 def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
-    report = []
+    report: list[dict] = []
     df_clean = df.copy()
     original_shape = df_clean.shape
 
-    # Early return for empty DataFrames (no columns → column name ops would crash)
+    # Track new summary fields
+    placeholders_replaced = 0
+    duplicate_cols_removed = 0
+    duplicate_col_names: list[str] = []
+    date_features_created: list[str] = []
+    total_outliers_winsorized = 0
+    suspicious_issues: list[dict] = []
+
+    # Snapshot original missing % before any changes
+    missing_pct_original = round(
+        df_clean.isnull().sum().sum() / max(original_shape[0] * original_shape[1], 1) * 100, 1
+    )
+
+    # Early return for empty DataFrames
     if df_clean.empty and len(df_clean.columns) == 0:
         return df_clean, report, {
             "original_rows": 0, "original_cols": 0, "final_rows": 0, "final_cols": 0,
-            "rows_removed": 0, "cols_removed": 0, "steps": 0, "time_saved_estimate": "~1 minutes",
+            "rows_removed": 0, "cols_removed": 0, "steps": 0,
+            "time_saved_estimate": "~1 minutes",
+            "confidence_score": 0,
+            "placeholders_replaced": 0,
+            "duplicate_cols_removed": 0,
+            "date_features_created": [],
+            "suspicious_issues_remaining": [],
         }
 
-    # 1. Remove fully empty rows and columns
+    # ── Step 0: Replace placeholder strings with NaN ─────────────────────────
+    df_clean, placeholders_replaced = _replace_placeholders(df_clean)
+    if placeholders_replaced > 0:
+        report.append({
+            "step": "Replace placeholder values",
+            "detail": (
+                f"Replaced {placeholders_replaced} placeholder strings "
+                f"(N/A, None, null, -, ?, unknown, …) with NaN across string columns"
+            ),
+            "impact": "high",
+        })
+
+    # ── Step 1: Remove fully empty rows and columns ───────────────────────────
     empty_rows = int(df_clean.isnull().all(axis=1).sum())
     empty_cols = int(df_clean.isnull().all(axis=0).sum())
     df_clean.dropna(how="all", inplace=True)
@@ -213,7 +376,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
             "impact": "high",
         })
 
-    # 2. Remove duplicate rows
+    # ── Step 2: Remove duplicate rows ────────────────────────────────────────
     dupes = int(df_clean.duplicated().sum())
     if dupes > 0:
         df_clean.drop_duplicates(inplace=True)
@@ -223,7 +386,20 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
             "impact": "high",
         })
 
-    # 3. Standardize column names
+    # ── Step 2b: Remove duplicate columns ────────────────────────────────────
+    df_clean, duplicate_cols_removed, duplicate_col_names = _remove_duplicate_columns(df_clean)
+    if duplicate_cols_removed > 0:
+        names_str = ", ".join(f"'{c}'" for c in duplicate_col_names[:5])
+        report.append({
+            "step": "Remove duplicate columns",
+            "detail": (
+                f"Dropped {duplicate_cols_removed} column(s) with identical content to a preceding column: "
+                f"{names_str}"
+            ),
+            "impact": "medium",
+        })
+
+    # ── Step 3: Standardize column names ─────────────────────────────────────
     original_cols = df_clean.columns.tolist()
     df_clean.columns = (
         df_clean.columns
@@ -242,8 +418,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
             "impact": "medium",
         })
 
-    # 4. Smart string type parsing (currency, percentage, datetime, numeric)
-    # Use is_string_dtype to handle both legacy 'object' and pandas 3.x 'str' dtypes
+    # ── Step 4: Smart string type parsing (currency, %, datetime, numeric) ───
     for col in list(df_clean.columns):
         if not pd.api.types.is_string_dtype(df_clean[col]):
             continue
@@ -251,7 +426,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
         if non_null_original == 0:
             continue
 
-        # 4a. Try currency
+        # 4a. Currency
         parsed, n_conv = _try_parse_currency(df_clean[col])
         if parsed is not None and n_conv / non_null_original > 0.95:
             df_clean[col] = parsed
@@ -262,7 +437,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
             })
             continue
 
-        # 4b. Try percentage
+        # 4b. Percentage
         parsed, n_conv = _try_parse_percentage(df_clean[col])
         if parsed is not None and n_conv / non_null_original > 0.90:
             df_clean[col] = parsed
@@ -273,7 +448,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
             })
             continue
 
-        # 4c. Try numeric
+        # 4c. Numeric
         converted = pd.to_numeric(df_clean[col], errors="coerce")
         if non_null_original > 0 and converted.notna().sum() / non_null_original > 0.9:
             df_clean[col] = converted
@@ -284,7 +459,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
             })
             continue
 
-        # 4d. Try date format harmonization (mixed formats)
+        # 4d. Harmonize mixed date formats
         harmonized, n_conv, formats_found = _harmonize_date_formats(df_clean[col])
         if harmonized is not None and n_conv / non_null_original > 0.8:
             df_clean[col] = harmonized
@@ -299,7 +474,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
             })
             continue
 
-        # 4e. Try datetime
+        # 4e. Datetime
         try:
             converted_dt = pd.to_datetime(df_clean[col], errors="coerce")
             if non_null_original > 0 and converted_dt.notna().sum() / non_null_original > 0.9:
@@ -313,7 +488,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
         except Exception:
             pass
 
-    # 5. Categorical standardization (yes/YES/y/1/True → yes/no)
+    # ── Step 5: Categorical standardization (yes/YES/y/1/True → yes/no) ──────
     for col in list(df_clean.columns):
         if not pd.api.types.is_string_dtype(df_clean[col]):
             continue
@@ -329,7 +504,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
                 "impact": "medium",
             })
 
-    # 6. Handle missing values with missingness mechanism awareness
+    # ── Step 6: Handle missing values with missingness mechanism awareness ────
     for col in list(df_clean.columns):
         missing = int(df_clean[col].isnull().sum())
         if missing == 0:
@@ -413,7 +588,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
                 "impact": "medium",
             })
 
-    # 7. Adaptive winsorization: IQR-based for skewed, sigma-based for normal
+    # ── Step 7: Adaptive winsorization (IQR for skewed, sigma for normal) ─────
     numeric_cols = df_clean.select_dtypes(include=[np.number]).columns.tolist()
     for col in numeric_cols:
         col_data = df_clean[col].dropna()
@@ -436,6 +611,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
 
         if outside > 0:
             df_clean[col] = df_clean[col].clip(lower=lower, upper=upper)
+            total_outliers_winsorized += outside
             report.append({
                 "step": f"Winsorize outliers: {col}",
                 "detail": (
@@ -445,7 +621,21 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
                 "impact": "medium",
             })
 
-    # 8. Strip whitespace from string columns
+    # ── Step 7b: Suspicious zero flagging (warning only — no mutation) ────────
+    suspicious_zeros = _flag_suspicious_zeros(df_clean)
+    for sz in suspicious_zeros:
+        suspicious_issues.append({
+            "type": "suspicious_zeros",
+            "column": sz["column"],
+            "detail": sz["message"],
+        })
+        report.append({
+            "step": f"Suspicious zeros detected: {sz['column']}",
+            "detail": sz["message"],
+            "impact": "warning",
+        })
+
+    # ── Step 8: Strip whitespace from string columns ──────────────────────────
     str_cols = df_clean.select_dtypes(include="object").columns.tolist()
     total_stripped = 0
     cols_stripped = []
@@ -466,7 +656,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
             "impact": "low",
         })
 
-    # 9. Normalize string casing (lowercase all-uppercase columns)
+    # ── Step 8b: Normalize string casing (lowercase all-uppercase columns) ────
     for col in df_clean.select_dtypes(include="object").columns:
         sample = df_clean[col].dropna().head(50)
         if len(sample) > 0:
@@ -479,10 +669,37 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
                     "impact": "low",
                 })
 
+    # ── Step 9: Date feature extraction (after all cleaning) ─────────────────
+    df_clean, date_features_created = _extract_date_features(df_clean)
+    if date_features_created:
+        feat_list = ", ".join(date_features_created[:8])
+        report.append({
+            "step": "Extract date features",
+            "detail": (
+                f"Created {len(date_features_created)} calendar feature(s) from datetime column(s): "
+                f"{feat_list}"
+            ),
+            "impact": "medium",
+        })
+
+    # ── Build summary ─────────────────────────────────────────────────────────
     final_shape = df_clean.shape
-    complex_steps = sum(1 for r in report if any(kw in r["detail"] for kw in ["MICE", "KNN", "MNAR", "currency", "percentage", "Harmonize"]))
+    complex_steps = sum(
+        1 for r in report
+        if any(kw in r["detail"] for kw in ["MICE", "KNN", "MNAR", "currency", "percentage", "Harmonize"])
+    )
     simple_steps = len(report) - complex_steps
     time_saved = simple_steps * 5 + complex_steps * 15
+
+    confidence_score = _compute_confidence_score(
+        original_rows=original_shape[0],
+        original_cols=original_shape[1],
+        missing_pct_original=missing_pct_original,
+        placeholders_replaced=placeholders_replaced,
+        suspicious_issues_count=len(suspicious_issues),
+        total_outliers_winsorized=total_outliers_winsorized,
+        duplicate_cols_removed=duplicate_cols_removed,
+    )
 
     summary = {
         "original_rows": original_shape[0],
@@ -493,6 +710,12 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, list[dict], dict]:
         "cols_removed": original_shape[1] - final_shape[1],
         "steps": len(report),
         "time_saved_estimate": f"~{max(1, time_saved)} minutes",
+        # ── New fields ──
+        "confidence_score": confidence_score,
+        "placeholders_replaced": placeholders_replaced,
+        "duplicate_cols_removed": duplicate_cols_removed,
+        "date_features_created": date_features_created,
+        "suspicious_issues_remaining": suspicious_issues,
     }
 
     return df_clean, report, summary
