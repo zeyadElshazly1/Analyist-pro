@@ -151,6 +151,10 @@ class AuditLog(Base):
     detail = Column(Text, nullable=True)                      # optional JSON with extra context
     ip_address = Column(String(64), nullable=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow, index=True)
+    # Enriched event classification (additive — nullable so existing rows are unaffected)
+    severity   = Column(String(16),  nullable=True, index=True)   # low/medium/high/critical
+    category   = Column(String(32),  nullable=True, index=True)   # data_access/auth/export/…
+    user_agent = Column(String(256), nullable=True)
 
     def to_dict(self):
         return {
@@ -162,6 +166,8 @@ class AuditLog(Base):
             "detail": self.detail,
             "ip_address": self.ip_address,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "severity": self.severity,
+            "category": self.category,
         }
 
 
