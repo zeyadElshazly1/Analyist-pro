@@ -12,7 +12,7 @@ from app.limiter import limiter
 from app.middleware.auth import get_current_user, optional_current_user
 from app.middleware.plans import require_feature
 from app.models import AnalysisResult, Project, ProjectFile, User
-from app.schemas.analysis import AnalysisRequest
+from app.schemas.analysis_schema import AnalysisRequest
 from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
 from app.services.cache import get_cached_analysis, set_cached_analysis
 from app.services.cleaner import clean_dataset
