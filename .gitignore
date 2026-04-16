@@ -33,4 +33,5 @@ htmlcov/
 .idea/
 
 # Upload artifacts
-apps/api/uploads/
+apps/api/uploads/analyistpro.db
+apps/api/analyistpro.db
