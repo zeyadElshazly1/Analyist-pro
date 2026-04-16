@@ -81,10 +81,10 @@ def setup_db(tmp_path, monkeypatch):
 
     # Isolate model persistence to a per-test temp directory so trained models
     # from one test don't bleed into another.
-    import app.services.automl_service as automl_mod
+    import app.services.automl.persistence as persistence_mod
     test_models_dir = str(tmp_path / "models")
     os.makedirs(test_models_dir, exist_ok=True)
-    monkeypatch.setattr(automl_mod, "_MODELS_DIR", test_models_dir)
+    monkeypatch.setattr(persistence_mod, "_MODELS_DIR", test_models_dir)
 
     import app.db as db_mod
     monkeypatch.setattr(db_mod, "SessionLocal", TestingSessionLocal)
