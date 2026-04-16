@@ -51,7 +51,7 @@ def train(request: Request, req: TrainRequest, current_user: User = Depends(get_
         result = train_models(df, req.target_col)
         # Persist model artifacts for later prediction; strip before serialising.
         artifacts = result.pop("_artifacts", None)
-        if artifacts is not None and artifacts.get("best_model") is not None:
+        if artifacts is not None and artifacts.get("pipeline") is not None:
             save_model_artifacts(req.project_id, artifacts)
         return to_jsonable(result)
     except Exception as e:
