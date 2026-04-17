@@ -1026,3 +1026,32 @@ export function updateNotificationPrefs(
 ): Promise<{ notification_prefs: NotificationPrefs }> {
   return patch("/auth/me/notifications", prefs);
 }
+
+/**
+ * Trigger a browser download of the cleaned version of a project's dataset.
+ * Runs the cleaning pipeline server-side and streams the result as a CSV file.
+ */
+export async function downloadCleanedData(projectId: number): Promise<void> {
+  const token = await getFreshToken();
+  const res = await fetch(
+    `${API_BASE_URL}/analysis/download-cleaned/${projectId}`,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  );
+  if (!res.ok) {
+    throw new ApiError(
+      "Could not download cleaned data. Please try again.",
+      "DOWNLOAD_FAILED",
+      res.status,
+    );
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = disposition.match(/filename="([^"]+)"/);
+  const filename = match ? match[1] : `cleaned_project_${projectId}.csv`;
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
