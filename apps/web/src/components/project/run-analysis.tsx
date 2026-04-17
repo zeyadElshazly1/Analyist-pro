@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Play, CheckCircle2, Share2, Copy, Check } from "lucide-react";
+import { Loader2, Play, CheckCircle2, Share2, Copy, Check, Download } from "lucide-react";
 
 import { StatsCards } from "@/components/analysis/stats-cards";
 import { InsightsList } from "@/components/analysis/insights-list";
@@ -30,7 +30,7 @@ import { QueryView } from "@/components/analysis/query-view";
 import { DataStoryView } from "@/components/analysis/data-story-view";
 import { DataTableView } from "@/components/analysis/data-table-view";
 import { DiffView } from "@/components/analysis/diff-view";
-import { ApiError, getFreshToken, shareAnalysis } from "@/lib/api";
+import { ApiError, getFreshToken, shareAnalysis, downloadCleanedData } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 import { SafePanel } from "@/components/ui/error-boundary";
 
@@ -153,6 +153,8 @@ export function RunAnalysis({ projectId }: Props) {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [analysisId, setAnalysisId] = useState<number | null>(null);
   const [tab, setTab] = useState("overview");
+  const [useCleaned, setUseCleaned] = useState(true);
+  const [downloading, setDownloading] = useState(false);
 
   // Sync tab ↔ URL hash for shareable deep-links
   useEffect(() => {
@@ -188,7 +190,7 @@ export function RunAnalysis({ projectId }: Props) {
       setProgress(null);
       return;
     }
-    const tokenParam = `?token=${encodeURIComponent(token)}`;
+    const tokenParam = `?token=${encodeURIComponent(token)}&use_cleaned=${useCleaned}`;
     const es = new EventSource(`${API_BASE_URL}/analysis/stream/${projectId}${tokenParam}`);
     esRef.current = es;
 
@@ -239,6 +241,18 @@ export function RunAnalysis({ projectId }: Props) {
     };
   }
 
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      await downloadCleanedData(projectId);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.userMessage : "Download failed. Please try again.";
+      toast.error(msg);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   async function handleShare() {
     setSharing(true);
     try {
@@ -265,6 +279,32 @@ export function RunAnalysis({ projectId }: Props) {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
+        {/* Data mode toggle */}
+        <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1 text-xs">
+          <button
+            onClick={() => setUseCleaned(true)}
+            disabled={loading}
+            className={`rounded-md px-3 py-1.5 transition-colors ${
+              useCleaned
+                ? "bg-indigo-600 text-white"
+                : "text-white/50 hover:text-white/80"
+            }`}
+          >
+            Cleaned data
+          </button>
+          <button
+            onClick={() => setUseCleaned(false)}
+            disabled={loading}
+            className={`rounded-md px-3 py-1.5 transition-colors ${
+              !useCleaned
+                ? "bg-indigo-600 text-white"
+                : "text-white/50 hover:text-white/80"
+            }`}
+          >
+            Raw data
+          </button>
+        </div>
+
         <Button
           onClick={handleRun}
           disabled={loading}
@@ -281,6 +321,21 @@ export function RunAnalysis({ projectId }: Props) {
               Run Analysis
             </>
           )}
+        </Button>
+
+        {/* Download cleaned CSV — always available, not gated on analysis result */}
+        <Button
+          onClick={handleDownload}
+          disabled={downloading || loading}
+          variant="ghost"
+          className="gap-2 text-xs text-white/50 hover:text-white border border-white/10 hover:border-white/20"
+        >
+          {downloading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Download className="h-3.5 w-3.5" />
+          )}
+          Download cleaned CSV
         </Button>
 
         {result && !loading && (

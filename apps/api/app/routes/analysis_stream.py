@@ -57,6 +57,7 @@ def _heartbeat() -> str:
 async def stream_analysis(
     project_id: int,
     token: Optional[str] = Query(None, description="JWT token (EventSource can't send headers)"),
+    use_cleaned: bool = Query(True, description="Run analysis on cleaned data (true) or raw data (false)"),
 ):
     """
     SSE endpoint — streams analysis progress in real time.
@@ -101,9 +102,9 @@ async def stream_analysis(
             logger.warning(
                 f"Celery dispatch failed ({e}), falling back to inline analysis"
             )
-            generator = _run_analysis_stream(project_id)
+            generator = _run_analysis_stream(project_id, use_cleaned=use_cleaned)
     else:
-        generator = _run_analysis_stream(project_id)
+        generator = _run_analysis_stream(project_id, use_cleaned=use_cleaned)
 
     return StreamingResponse(
         generator,
@@ -171,7 +172,7 @@ async def _poll_celery_stream(project_id: int, run_key: str) -> AsyncIterator[st
 
 # ── Inline fallback: run analysis synchronously in the async generator ────────
 
-async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
+async def _run_analysis_stream(project_id: int, use_cleaned: bool = True) -> AsyncIterator[str]:
     """
     Original inline SSE generator — used when Redis/Celery is unavailable.
     Runs the entire analysis pipeline within the request.
@@ -209,19 +210,25 @@ async def _run_analysis_stream(project_id: int) -> AsyncIterator[str]:
     yield emit("Dataset loaded", 10, f"{len(df):,} rows × {len(df.columns)} columns")
 
     yield _heartbeat()
-    yield emit("Cleaning data", 20, "Detecting types, imputing missing values...")
-    try:
-        df_clean, cleaning_report, cleaning_summary = clean_dataset(df)
-    except Exception as e:
-        logger.error(f"Data cleaning failed for project {project_id}: {e}", exc_info=True)
-        yield _sse({"error": "Data cleaning failed. Please check your file format and try again."})
-        return
+    if use_cleaned:
+        yield emit("Cleaning data", 20, "Detecting types, imputing missing values...")
+        try:
+            df_clean, cleaning_report, cleaning_summary = clean_dataset(df)
+        except Exception as e:
+            logger.error(f"Data cleaning failed for project {project_id}: {e}", exc_info=True)
+            yield _sse({"error": "Data cleaning failed. Please check your file format and try again."})
+            return
 
-    if df_clean.empty:
-        yield _sse({"error": "Dataset became empty after cleaning."})
-        return
+        if df_clean.empty:
+            yield _sse({"error": "Dataset became empty after cleaning."})
+            return
 
-    yield emit("Data cleaned", 35, f"{cleaning_summary.get('steps', 0)} cleaning operations applied")
+        yield emit("Data cleaned", 35, f"{cleaning_summary.get('steps', 0)} cleaning operations applied")
+    else:
+        df_clean = df
+        cleaning_report = []
+        cleaning_summary = {"steps": 0, "note": "Skipped — raw data mode"}
+        yield emit("Using raw data", 35, "Cleaning skipped per user selection")
 
     yield _heartbeat()
     yield emit("Profiling columns", 45, f"Analyzing {len(df_clean.columns)} columns...")

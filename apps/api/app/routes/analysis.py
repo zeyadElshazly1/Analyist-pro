@@ -69,10 +69,14 @@ def run_analysis(
         if df.empty:
             raise HTTPException(status_code=400, detail="Uploaded dataset is empty.")
 
-        df_clean, cleaning_report, cleaning_summary = clean_dataset(df)
-
-        if df_clean.empty or len(df_clean.columns) == 0:
-            raise HTTPException(status_code=400, detail="Dataset became empty after cleaning.")
+        if payload.use_cleaned:
+            df_clean, cleaning_report, cleaning_summary = clean_dataset(df)
+            if df_clean.empty or len(df_clean.columns) == 0:
+                raise HTTPException(status_code=400, detail="Dataset became empty after cleaning.")
+        else:
+            df_clean = df
+            cleaning_report = []
+            cleaning_summary = {"steps": 0, "note": "Skipped — raw data mode"}
 
         profile = profile_dataset(df_clean)
         health_score = calculate_health_score(df_clean)
@@ -598,3 +602,65 @@ def get_data_table(
         "search": search or "",
         "active_filters": active_filters,
     }
+
+
+@router.get("/download-cleaned/{project_id}")
+def download_cleaned_dataset(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Run the cleaning pipeline on the project's uploaded file and return the
+    result as a CSV file download.  Useful for inspecting or re-using the
+    cleaned data outside Analyist Pro.
+    """
+    import io
+    from fastapi.responses import StreamingResponse as _StreamingResponse
+
+    # Verify project ownership
+    project = db.query(Project).filter(
+        Project.id == project_id, Project.user_id == current_user.id
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    file_path = _get_file_path(project_id)
+    try:
+        df = load_dataset(file_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Uploaded file not found on disk.")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to load dataset for download (project {project_id}): {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not read the uploaded file.")
+
+    if df.empty:
+        raise HTTPException(status_code=400, detail="Uploaded dataset is empty.")
+
+    try:
+        df_clean, _report, _summary = clean_dataset(df)
+    except Exception as e:
+        logger.error(f"Cleaning failed for project {project_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Data cleaning failed.")
+
+    if df_clean.empty:
+        raise HTTPException(status_code=400, detail="Dataset became empty after cleaning.")
+
+    # Resolve original filename for the Content-Disposition header
+    _file_info = PROJECT_FILES.get(project_id) or {}
+    original_name = _file_info.get("filename", f"project_{project_id}")
+    import pathlib
+    stem = pathlib.Path(original_name).stem
+    download_name = f"cleaned_{stem}.csv"
+
+    buf = io.StringIO()
+    df_clean.to_csv(buf, index=False)
+    buf.seek(0)
+
+    return _StreamingResponse(
+        iter([buf.read()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
+    )
