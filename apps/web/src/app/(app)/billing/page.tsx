@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
 import { getProjectStats, createCheckoutSession } from "@/lib/api";
 import { useUser } from "@/lib/user-context";

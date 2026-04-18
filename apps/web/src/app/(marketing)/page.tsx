@@ -220,7 +220,7 @@ export default function HomePage() {
                   "Row-level adds, removes, and changes highlighted",
                   "Column-by-column metric delta",
                   "Before/after health score comparison",
-                  "AI summary: "What changed and why it matters"",
+                  "AI summary: \u201cWhat changed and why it matters\u201d",
                 ].map((item) => (
                   <li key={item} className="flex items-start gap-3 text-sm text-white/60">
                     <CheckCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-indigo-400" />

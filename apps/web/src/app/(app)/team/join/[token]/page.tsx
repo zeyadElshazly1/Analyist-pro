@@ -111,7 +111,7 @@ export default function JoinTeamPage() {
                 <div className="flex h-14 w-14 mx-auto items-center justify-center rounded-full bg-indigo-500/10">
                   <Users className="h-7 w-7 text-indigo-400" />
                 </div>
-                <h2 className="text-lg font-semibold text-white">You've been invited</h2>
+                <h2 className="text-lg font-semibold text-white">You&apos;ve been invited</h2>
                 <p className="text-sm text-white/50">
                   <span className="text-white/80 font-medium">{invite.owner_email}</span> has invited you
                   to join their AnalystPro team.
