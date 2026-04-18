@@ -22,7 +22,10 @@ def build_chart_configs(analysis_result: dict) -> dict:
     configs: dict = {}
 
     # Health breakdown horizontal bar
-    breakdown = analysis_result.get("health_breakdown", {})
+    hs = analysis_result.get("health_score", {})
+    breakdown = hs.get("breakdown", {}) if isinstance(hs, dict) else {}
+    if not breakdown:
+        breakdown = analysis_result.get("health_breakdown", {})
     if breakdown:
         labels = list(breakdown.keys())
         data   = [float(v) if isinstance(v, (int, float)) else 0.0 for v in breakdown.values()]
@@ -57,10 +60,13 @@ def build_chart_configs(analysis_result: dict) -> dict:
         }
 
     # Top-10 columns by missing % horizontal bar (only columns with any missing)
-    profile = analysis_result.get("profile", {})
-    cols = profile.get("columns", []) if isinstance(profile, dict) else []
+    profile = analysis_result.get("profile", [])
+    if isinstance(profile, dict):
+        cols = profile.get("columns", [])
+    else:
+        cols = profile if isinstance(profile, list) else []
     missing_pairs = sorted(
-        [(c.get("name", ""), float(c.get("missing_pct", 0) or 0)) for c in cols],
+        [(c.get("name") or c.get("column", ""), float(c.get("missing_pct", 0) or 0)) for c in cols],
         key=lambda x: x[1],
         reverse=True,
     )[:10]

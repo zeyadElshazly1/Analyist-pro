@@ -44,5 +44,8 @@ def generate_pdf_report(
     except Exception as exc:
         logger.warning("pdfkit failed: %s — returning HTML bytes", exc)
 
-    # 3. HTML fallback
-    return html.encode("utf-8")
+    # No PDF renderer available — raise so the route returns a proper error
+    raise RuntimeError(
+        "PDF generation unavailable: neither WeasyPrint nor wkhtmltopdf is installed. "
+        "Use the Excel or HTML export instead."
+    )

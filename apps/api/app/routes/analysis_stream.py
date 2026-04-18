@@ -181,7 +181,7 @@ async def _run_analysis_stream(project_id: int, use_cleaned: bool = True) -> Asy
     def emit(step: str, progress: int, detail: str = "") -> str:
         return _sse({"step": step, "progress": progress, "detail": detail})
 
-    yield emit("Loading dataset", 5, "Resolving uploaded file...")
+    yield emit("Reading your file", 5, "Resolving uploaded file...")
     info = get_project_file_info(project_id)
     if not info:
         yield _sse({"error": "No uploaded file found for this project."})
@@ -190,8 +190,8 @@ async def _run_analysis_stream(project_id: int, use_cleaned: bool = True) -> Asy
     file_hash = info.get("file_hash")
     cached = get_cached_analysis(project_id, file_hash)
     if cached:
-        yield emit("Loading from cache", 80, "Previous analysis found — loading instantly")
-        yield emit("Complete", 100, "Loaded from cache")
+        yield emit("Reading your file", 80, "Previous analysis found — loading instantly")
+        yield emit("Building your brief", 100, "Loaded from cache")
         yield _sse({"step": "result", "progress": 100, "result": cached, "from_cache": True})
         return
 
@@ -207,11 +207,11 @@ async def _run_analysis_stream(project_id: int, use_cleaned: bool = True) -> Asy
         yield _sse({"error": "Uploaded dataset is empty. Please upload a file with at least one row of data."})
         return
 
-    yield emit("Dataset loaded", 10, f"{len(df):,} rows × {len(df.columns)} columns")
+    yield emit("Reading your file", 10, f"{len(df):,} rows × {len(df.columns)} columns detected")
 
     yield _heartbeat()
     if use_cleaned:
-        yield emit("Cleaning data", 20, "Detecting types, imputing missing values...")
+        yield emit("Checking data quality", 20, "Detecting types, fixing inconsistencies...")
         try:
             df_clean, cleaning_report, cleaning_summary = clean_dataset(df)
         except Exception as e:
@@ -223,15 +223,15 @@ async def _run_analysis_stream(project_id: int, use_cleaned: bool = True) -> Asy
             yield _sse({"error": "Dataset became empty after cleaning."})
             return
 
-        yield emit("Data cleaned", 35, f"{cleaning_summary.get('steps', 0)} cleaning operations applied")
+        yield emit("Checking data quality", 35, f"{cleaning_summary.get('steps', 0)} issues resolved")
     else:
         df_clean = df
         cleaning_report = []
         cleaning_summary = {"steps": 0, "note": "Skipped — raw data mode"}
-        yield emit("Using raw data", 35, "Cleaning skipped per user selection")
+        yield emit("Checking data quality", 35, "Quality check skipped — using raw data")
 
     yield _heartbeat()
-    yield emit("Profiling columns", 45, f"Analyzing {len(df_clean.columns)} columns...")
+    yield emit("Finding key patterns", 45, f"Scanning {len(df_clean.columns)} columns for signals...")
     try:
         profile = profile_dataset(df_clean)
         health_score = calculate_health_score(df_clean)
@@ -241,10 +241,10 @@ async def _run_analysis_stream(project_id: int, use_cleaned: bool = True) -> Asy
         return
 
     grade = health_score.get("grade", "?")
-    yield emit("Profile complete", 60, f"Data health grade: {grade}")
+    yield emit("Finding key patterns", 60, f"Data quality grade: {grade}")
 
     yield _heartbeat()
-    yield emit("Detecting insights", 70, "Running correlation, anomaly, and segment analysis...")
+    yield emit("Finding key patterns", 70, "Running correlation, anomaly, and trend analysis...")
     try:
         insights, narrative = analyze_dataset(df_clean)
         dataset_summary = get_dataset_summary(df_clean)
@@ -253,7 +253,7 @@ async def _run_analysis_stream(project_id: int, use_cleaned: bool = True) -> Asy
         yield _sse({"error": "Insight generation failed. Please try running the analysis again."})
         return
 
-    yield emit("Insights ready", 90, f"{len(insights)} insights found")
+    yield emit("Building your brief", 90, f"{len(insights)} findings ready for review")
 
     result = {
         "project_id": project_id,
@@ -303,5 +303,5 @@ async def _run_analysis_stream(project_id: int, use_cleaned: bool = True) -> Asy
     if analysis_id:
         result["analysis_id"] = analysis_id
 
-    yield emit("Complete", 100, "Analysis finished")
+    yield emit("Building your brief", 100, "Ready to review")
     yield _sse({"step": "result", "progress": 100, "result": result})

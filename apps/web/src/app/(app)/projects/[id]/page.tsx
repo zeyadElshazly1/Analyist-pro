@@ -112,7 +112,7 @@ export default function ProjectPage() {
               className="mb-3 inline-flex items-center gap-1.5 text-xs text-white/35 hover:text-white/60 transition-colors"
             >
               <ArrowLeft className="h-3 w-3" />
-              Projects
+              Workspaces
             </Link>
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -120,7 +120,7 @@ export default function ProjectPage() {
                   <Database className="h-4.5 w-4.5 text-indigo-400" strokeWidth={1.75} />
                 </div>
                 <div>
-                  <p className="text-[11px] text-white/30">Project #{projectId}</p>
+                  <p className="text-[11px] text-white/30">Workspace #{projectId}</p>
                   <h1 className="text-xl font-bold tracking-tight text-white">
                     {projectName ?? "Loading…"}
                   </h1>

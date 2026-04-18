@@ -33,34 +33,46 @@ from app.models import Project, User
 
 PLAN_LIMITS: dict[str, dict] = {
     "free": {
-        "max_projects": 3,
-        "max_file_mb":  10,
-        "ai_chat":      False,
-        "ai_story":     False,
+        "max_projects":  3,
+        "max_file_mb":   10,
+        "ai_chat":       False,
+        "ai_story":      False,
+        "file_compare":  False,
+        "report_export": False,
     },
     "pro": {
-        "max_projects": None,   # unlimited
-        "max_file_mb":  100,
-        "ai_chat":      True,
-        "ai_story":     True,
+        "max_projects":  None,   # unlimited
+        "max_file_mb":   100,
+        "ai_chat":       True,
+        "ai_story":      True,
+        "file_compare":  True,
+        "report_export": True,
     },
     "team": {
-        "max_projects": None,
-        "max_file_mb":  500,
-        "ai_chat":      True,
-        "ai_story":     True,
+        "max_projects":  None,
+        "max_file_mb":   500,
+        "ai_chat":       True,
+        "ai_story":      True,
+        "file_compare":  True,
+        "report_export": True,
     },
 }
 
 UPGRADE_MESSAGES: dict[str, str] = {
-    "ai_chat":  (
-        "AI Chat is a Pro feature. Upgrade to ask unlimited questions about your data."
+    "ai_chat": (
+        "AI Chat is a Consultant plan feature. Upgrade to ask questions about your data."
     ),
     "ai_story": (
-        "AI Data Story is a Pro feature. Upgrade to generate 5-slide data narratives with Claude."
+        "Client summaries are a Consultant plan feature. Upgrade to generate AI-written executive summaries."
+    ),
+    "file_compare": (
+        "File comparison is a Consultant plan feature. Upgrade to compare datasets and track changes."
+    ),
+    "report_export": (
+        "Polished exports (PDF, Excel) are a Consultant plan feature. Upgrade to download client-ready reports."
     ),
     "projects": (
-        "Free plan is limited to 3 projects. Upgrade to Pro for unlimited projects."
+        "Free plan is limited to 3 workspaces. Upgrade to the Consultant plan for unlimited workspaces."
     ),
     "file_size": (
         "Your file exceeds your plan's size limit. Upgrade for larger file support."

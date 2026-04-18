@@ -9,6 +9,7 @@ import { InsightsList } from "@/components/analysis/insights-list";
 import { HealthScore } from "@/components/analysis/health-score";
 import { ProjectTabs } from "./project-tabs";
 import { CleaningReport } from "@/components/analysis/cleaning-report";
+import { CleaningReview } from "./cleaning-review";
 import { CleaningSummaryCards } from "@/components/analysis/cleaning-summary-cards";
 import { InsightHighlights } from "@/components/analysis/insight-highlights";
 import { RecommendedAction } from "@/components/analysis/recommended-action";
@@ -23,6 +24,7 @@ import { MultifileCompare } from "@/components/analysis/multifile-compare";
 import { JoinView } from "@/components/analysis/join-view";
 import { PredictionsView } from "@/components/analysis/predictions-view";
 import { AiChatView } from "@/components/analysis/ai-chat-view";
+import { ReportBuilder } from "./report-builder";
 import { PivotView } from "@/components/analysis/pivot-view";
 import { SegmentsView } from "@/components/analysis/segments-view";
 import { AbTestsView } from "@/components/analysis/ab-tests-view";
@@ -180,7 +182,7 @@ export function RunAnalysis({ projectId }: Props) {
 
     setLoading(true);
     setError("");
-    setProgress({ step: "Starting…", progress: 0, detail: "" });
+    setProgress({ step: "Reading your file", progress: 0, detail: "Preparing analysis…" });
 
     // Get a fresh token (not stale localStorage) before opening the SSE stream
     const token = await getFreshToken();
@@ -318,7 +320,7 @@ export function RunAnalysis({ projectId }: Props) {
           ) : (
             <>
               <Play className="h-4 w-4" />
-              Run Analysis
+              Analyze File
             </>
           )}
         </Button>
@@ -342,7 +344,7 @@ export function RunAnalysis({ projectId }: Props) {
           <>
             <span className="flex items-center gap-1.5 text-xs text-emerald-400">
               <CheckCircle2 className="h-3.5 w-3.5" />
-              Analysis complete
+              Ready to review
             </span>
 
             {!shareToken ? (
@@ -439,7 +441,15 @@ export function RunAnalysis({ projectId }: Props) {
           {tab === "insights" && (
             <SafePanel label="Insights">
               <TabPanel>
-                <h2 className="mb-4 font-semibold text-white">All Insights</h2>
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="font-semibold text-white">Top Findings</h2>
+                  <button
+                    onClick={() => handleTabChange("compare-files")}
+                    className="flex items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-600/10 px-3 py-1.5 text-xs font-medium text-indigo-300 transition hover:bg-indigo-600/20"
+                  >
+                    Compare with another file →
+                  </button>
+                </div>
                 <InsightsList insights={result.insights} />
               </TabPanel>
             </SafePanel>
@@ -449,8 +459,11 @@ export function RunAnalysis({ projectId }: Props) {
           {tab === "cleaning" && (
             <SafePanel label="Cleaning Report">
               <TabPanel>
-                <h2 className="mb-4 font-semibold text-white">Cleaning Report</h2>
-                <CleaningReport items={result.cleaning_report} />
+                <h2 className="mb-4 font-semibold text-white">Cleaning Log</h2>
+                <CleaningReview
+                  items={result.cleaning_report}
+                  summary={result.cleaning_summary}
+                />
               </TabPanel>
             </SafePanel>
           )}
@@ -528,10 +541,25 @@ export function RunAnalysis({ projectId }: Props) {
             </SafePanel>
           )}
 
-          {/* ── Ask AI ───────────────────────────────────────────────── */}
+          {/* ── Report Builder + AI Copilot ──────────────────────────── */}
           {tab === "ask-ai" && (
-            <SafePanel label="AI Chat">
-              <TabPanel><AiChatView projectId={projectId} /></TabPanel>
+            <SafePanel label="Report Builder">
+              <TabPanel>
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="mb-1 font-semibold text-white">Build your report</h2>
+                    <p className="text-xs text-white/40">Select insights, edit the summary, and export a client-ready PDF or Excel file.</p>
+                  </div>
+                  <ReportBuilder
+                    projectId={projectId}
+                    insights={result.insights ?? []}
+                  />
+                  <div className="border-t border-white/[0.06] pt-4">
+                    <h3 className="mb-3 text-sm font-semibold text-white/60">Ask AI copilot</h3>
+                    <AiChatView projectId={projectId} />
+                  </div>
+                </div>
+              </TabPanel>
             </SafePanel>
           )}
 
@@ -563,23 +591,45 @@ export function RunAnalysis({ projectId }: Props) {
             </SafePanel>
           )}
 
-          {/* ── Data Story ───────────────────────────────────────────── */}
+          {/* ── Client Summary ───────────────────────────────────────── */}
           {tab === "story" && (
-            <SafePanel label="Data Story">
+            <SafePanel label="Client Summary">
               <TabPanel><DataStoryView analysisId={analysisId} /></TabPanel>
             </SafePanel>
           )}
         </div>
       ) : (
         !loading && (
-          <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-12 text-center">
-            <div className="mx-auto mb-4 h-12 w-12 rounded-xl bg-indigo-500/10 flex items-center justify-center">
-              <Play className="h-5 w-5 text-indigo-400" />
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-10 text-center">
+              <div className="mx-auto mb-4 h-12 w-12 rounded-xl bg-indigo-500/10 flex items-center justify-center">
+                <Play className="h-5 w-5 text-indigo-400" />
+              </div>
+              <p className="text-white/70 text-sm font-medium mb-1">Ready to analyze</p>
+              <p className="text-white/35 text-xs">
+                Upload a client file above, then click{" "}
+                <span className="text-white/60">Analyze File</span> to begin
+              </p>
             </div>
-            <p className="text-white/50 text-sm">
-              Upload a dataset and click{" "}
-              <span className="text-white/80">Run Analysis</span> to get started
-            </p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {[
+                { step: "1", label: "Intake", desc: "Parse & structure review" },
+                { step: "2", label: "Health", desc: "Data quality check" },
+                { step: "3", label: "Insights", desc: "Key patterns & findings" },
+                { step: "4", label: "Export", desc: "PDF, Excel or share link" },
+              ].map((s) => (
+                <div
+                  key={s.step}
+                  className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3 text-left"
+                >
+                  <span className="mb-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-white/[0.06] text-[10px] font-bold text-white/30">
+                    {s.step}
+                  </span>
+                  <p className="text-xs font-medium text-white/50">{s.label}</p>
+                  <p className="mt-0.5 text-[11px] text-white/25">{s.desc}</p>
+                </div>
+              ))}
+            </div>
           </div>
         )
       )}

@@ -3,11 +3,11 @@ from pydantic import BaseModel
 import pandas as pd
 
 from app.middleware.auth import get_current_user
+from app.middleware.plans import require_feature
 from app.models import User
-from app.state import PROJECT_FILES, get_project_file_info
-from app.services.file_loader import load_dataset
-from app.services.cleaner import clean_dataset
+from app.services.dataset_loader import load_prepared
 from app.services.serializers import to_jsonable
+from app.state import PROJECT_FILES
 from app.services.timeseries import detect_date_columns, run_timeseries
 from app.services.outlier_explorer import get_numeric_columns, explore_outliers
 from app.services.correlation_matrix import build_correlation_matrix
@@ -20,18 +20,7 @@ router = APIRouter(prefix="/explore", tags=["explore"])
 
 def _load(project_id: int):
     """Load + clean a dataset by project_id. Raises HTTPException on failure."""
-    file_info = get_project_file_info(project_id)
-    if not file_info:
-        raise HTTPException(status_code=404, detail="No uploaded file for this project.")
-    path = file_info["path"]
-    try:
-        df = load_dataset(path)
-        df_clean, _, _ = clean_dataset(df)
-        return df_clean
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Uploaded file not found on disk.")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to load dataset: {e}")
+    return load_prepared(project_id)
 
 
 # ── Time Series ───────────────────────────────────────────────────────────────
@@ -152,7 +141,11 @@ class MultifileRequest(BaseModel):
 
 
 @router.post("/multifile")
-def multifile_compare(payload: MultifileRequest, current_user: User = Depends(get_current_user)):
+def multifile_compare(
+    payload: MultifileRequest,
+    current_user: User = Depends(get_current_user),
+    _plan: None = Depends(require_feature("file_compare")),
+):
     file_a = get_project_file_info(payload.project_id_a)
     if not file_a:
         raise HTTPException(status_code=404, detail=f"No file for project {payload.project_id_a}")
@@ -167,9 +160,30 @@ def multifile_compare(payload: MultifileRequest, current_user: User = Depends(ge
 
     try:
         result = compare_files(path_a, path_b, label_a=label_a, label_b=label_b)
-        return to_jsonable(result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Multi-file comparison failed: {e}")
+
+    try:
+        from app.db import SessionLocal
+        from app.services.audit import log_event
+        db = SessionLocal()
+        try:
+            log_event(
+                db,
+                action="compare_used",
+                user_id=current_user.id,
+                resource_type="project",
+                resource_id=str(payload.project_id_a),
+                detail={"project_b": payload.project_id_b},
+                category="activation",
+            )
+            db.commit()
+        finally:
+            db.close()
+    except Exception:
+        pass
+
+    return to_jsonable(result)
 
 
 # ── Join ─────────────────────────────────────────────────────────────────────

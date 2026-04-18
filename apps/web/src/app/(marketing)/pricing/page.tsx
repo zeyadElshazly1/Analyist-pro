@@ -9,52 +9,50 @@ const plans = [
     name: "Free",
     price: "$0",
     period: "forever",
-    description: "Perfect for trying out AnalystPro",
+    description: "Try the workflow before you commit",
     cta: "Start for free",
     ctaHref: "/signup",
     highlighted: false,
     features: [
-      "3 projects",
-      "Basic analysis pipeline",
-      "Health score & profiling",
+      "3 client workspaces",
+      "Smart file ingestion & cleaning",
+      "Data health score & column profiles",
+      "Top insights & chart recommendations",
       "Up to 10K rows per file",
-      "Community support",
     ],
   },
   {
-    name: "Pro",
-    price: "$19",
+    name: "Consultant",
+    price: "$39",
     period: "/ month",
-    description: "For solo analysts and founders",
-    cta: "Get started",
+    description: "For freelance consultants doing recurring client reporting",
+    cta: "Start free trial",
     ctaHref: "/signup",
     highlighted: true,
     features: [
-      "Unlimited projects",
-      "Full AI insight engine",
-      "Advanced charts & time series",
-      "Outlier, correlation & duplicate detection",
-      "Multi-file comparison",
-      "Up to 1M rows per file",
+      "Unlimited client workspaces",
+      "File comparison (month-over-month, before/after)",
+      "PDF & Excel report export",
+      "AI Q&A and executive summary drafts",
+      "AI client summary generation",
+      "Up to 500K rows per file",
       "Email support",
     ],
   },
   {
-    name: "Team",
-    price: "$49",
+    name: "Studio",
+    price: "$99",
     period: "/ month",
-    description: "For growing teams",
-    cta: "Get started",
+    description: "For small agencies with multiple clients",
+    cta: "Contact us",
     ctaHref: "/signup",
     highlighted: false,
     features: [
-      "Everything in Pro",
-      "5 team seats",
-      "Shared workspace",
-      "Scheduled reports",
+      "Everything in Consultant",
+      "Up to 5 team members",
+      "Shared client workspaces",
       "Priority support",
-      "Custom branding on exports",
-      "API access",
+      "Up to 2M rows per file",
     ],
   },
 ];
@@ -72,10 +70,11 @@ export default function PricingPage() {
 
         <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-indigo-400">Pricing</p>
         <h1 className="mx-auto max-w-2xl text-5xl font-bold tracking-tight">
-          Simple, transparent pricing
+          Priced for professionals
         </h1>
         <p className="mx-auto mt-4 max-w-lg text-white/60">
-          Start free, upgrade when you need more power. Cancel anytime.
+          Start free to try the workflow. Upgrade to the Consultant plan when you need
+          exports, file comparison, and AI-written summaries. Cancel anytime.
         </p>
       </section>
 
@@ -139,7 +138,7 @@ function PlanCard({ plan }: { plan: typeof plans[number] }) {
       {plan.highlighted && (
         <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
           <span className="rounded-full bg-indigo-600 px-4 py-1 text-xs font-semibold text-white shadow-lg shadow-indigo-500/30">
-            Most popular
+            Best for consultants
           </span>
         </div>
       )}

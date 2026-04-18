@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react";
 import { uploadFile, getDataPreview, ApiError } from "@/lib/api";
 import { Upload, FileText, CheckCircle2, AlertCircle, TableIcon } from "lucide-react";
+import { IntakeReview } from "./intake-review";
 
 type Props = {
   projectId: number;
@@ -18,12 +19,16 @@ type Preview = {
   total_columns: number;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ParseReport = Record<string, any>;
+
 export function UploadDataset({ projectId, onUploaded }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
   const [dragging, setDragging] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [parseReport, setParseReport] = useState<ParseReport | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   function selectFile(f: File) {
@@ -31,6 +36,7 @@ export function UploadDataset({ projectId, onUploaded }: Props) {
     setStatus("idle");
     setMessage("");
     setPreview(null);
+    setParseReport(null);
   }
 
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -44,9 +50,12 @@ export function UploadDataset({ projectId, onUploaded }: Props) {
     if (!file) return;
     try {
       setStatus("uploading");
-      await uploadFile(projectId, file);
+      const result = await uploadFile(projectId, file);
       setStatus("success");
       setMessage(`${file.name} uploaded successfully.`);
+      if (result?.parse_report && Object.keys(result.parse_report).length > 0) {
+        setParseReport(result.parse_report);
+      }
       onUploaded?.();
       // fetch preview in background — non-blocking, failure is not critical
       getDataPreview(projectId, 5)
@@ -135,6 +144,10 @@ export function UploadDataset({ projectId, onUploaded }: Props) {
           <CheckCircle2 className="h-4 w-4" />
           {message}
         </p>
+      )}
+
+      {status === "success" && parseReport && file && (
+        <IntakeReview filename={file.name} parseReport={parseReport} />
       )}
 
       {status === "error" && (
