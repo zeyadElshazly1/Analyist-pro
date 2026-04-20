@@ -462,7 +462,7 @@ export function RunAnalysis({ projectId }: Props) {
                 <h2 className="mb-4 font-semibold text-white">Cleaning Log</h2>
                 <CleaningReview
                   items={result.cleaning_report}
-                  summary={result.cleaning_summary}
+                  summary={result.cleaning_summary ?? undefined}
                 />
               </TabPanel>
             </SafePanel>

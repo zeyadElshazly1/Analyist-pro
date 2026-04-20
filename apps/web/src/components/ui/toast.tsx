@@ -61,7 +61,10 @@ function Toast({ item, onRemove }: { item: ToastItem; onRemove: (id: string) => 
   const [visible, setVisible] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const onRemoveRef = useRef(onRemove);
-  onRemoveRef.current = onRemove;
+
+  useEffect(() => {
+    onRemoveRef.current = onRemove;
+  }, [onRemove]);
 
   function dismiss() {
     setVisible(false);
