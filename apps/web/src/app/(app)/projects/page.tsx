@@ -16,9 +16,9 @@ export default function ProjectsPage() {
 
           {/* Header */}
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white">Projects</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-white">Client Workspaces</h1>
             <p className="mt-1 text-sm text-white/40">
-              Create and manage your data analysis projects.
+              Create and manage workspaces for each client or reporting cycle.
             </p>
           </div>
 

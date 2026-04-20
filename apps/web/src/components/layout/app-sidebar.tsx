@@ -17,7 +17,7 @@ import { useUser } from "@/lib/user-context";
 
 const BASE_LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/projects", label: "Projects", icon: FolderOpen },
+  { href: "/projects", label: "Workspaces", icon: FolderOpen },
   { href: "/reports", label: "Reports", icon: BarChart2 },
   { href: "/billing", label: "Billing", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -81,13 +81,13 @@ export function AppSidebar() {
             <p className="text-xs font-semibold text-indigo-300">Free plan</p>
           </div>
           <p className="mb-2.5 text-[11px] leading-relaxed text-white/40">
-            Upgrade to Pro for unlimited projects and AI insights.
+            Upgrade to Consultant for unlimited workspaces and AI reports.
           </p>
           <Link
             href="/billing"
             className="block rounded-lg bg-indigo-600 px-3 py-1.5 text-center text-[11px] font-semibold text-white transition-colors hover:bg-indigo-500"
           >
-            Upgrade to Pro
+            Upgrade to Consultant
           </Link>
         </div>
       )}

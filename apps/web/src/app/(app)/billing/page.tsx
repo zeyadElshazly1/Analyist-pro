@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
 import { getProjectStats, createCheckoutSession } from "@/lib/api";
 import { useUser } from "@/lib/user-context";
@@ -71,11 +70,18 @@ export default function BillingPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
   const { user } = useUser();
 
   useEffect(() => {
     getProjectStats().then(setStats).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (redirectUrl) {
+      window.location.href = redirectUrl;
+    }
+  }, [redirectUrl]);
 
   async function handleUpgrade(planId: string) {
     if (planId !== "pro" && planId !== "team") return;
@@ -83,7 +89,7 @@ export default function BillingPage() {
     setLoadingPlan(planId);
     try {
       const { checkout_url } = await createCheckoutSession(planId);
-      window.location.href = checkout_url;
+      setRedirectUrl(checkout_url);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not start checkout. Please try again.";
       setCheckoutError(msg);

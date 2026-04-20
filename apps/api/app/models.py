@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Column, Integer, String, Text, DateTime, BigInteger, ForeignKey,
+    Boolean, Column, Integer, String, Text, DateTime, BigInteger, ForeignKey,
 )
 from sqlalchemy.orm import relationship
 
@@ -127,6 +127,8 @@ class AnalysisResult(Base):
     file_hash = Column(String(64), nullable=True)        # Hash of the file at analysis time
     result_json = Column(Text, nullable=False)           # Full analysis JSON (compressed if needed)
     share_token = Column(String(64), nullable=True, unique=True, index=True)  # UUID for public share link
+    share_expires_at = Column(DateTime(timezone=True), nullable=True)
+    share_revoked = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 
     project = relationship("Project", back_populates="analyses")
@@ -200,6 +202,48 @@ class TeamInvite(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "accepted_at": self.accepted_at.isoformat() if self.accepted_at else None,
         }
+
+
+class ReportDraft(Base):
+    """Editable report draft assembled from an analysis result."""
+    __tablename__ = "report_drafts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    analysis_result_id = Column(Integer, ForeignKey("analysis_results.id", ondelete="SET NULL"), nullable=True)
+    title = Column(String(512), nullable=False, default="")
+    summary = Column(Text, nullable=True)
+    selected_insight_ids_json = Column(Text, nullable=True)  # JSON list of insight indices
+    selected_chart_ids_json = Column(Text, nullable=True)    # JSON list of chart identifiers
+    template = Column(String(64), nullable=True)             # e.g. "monthly_performance"
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    project = relationship("Project")
+
+    @property
+    def selected_insights(self) -> list:
+        return json.loads(self.selected_insight_ids_json) if self.selected_insight_ids_json else []
+
+    @property
+    def selected_charts(self) -> list:
+        return json.loads(self.selected_chart_ids_json) if self.selected_chart_ids_json else []
+
+
+class PreparedDataset(Base):
+    """Durable artifact: cleaned Parquet file derived from a raw upload."""
+    __tablename__ = "prepared_datasets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    file_hash = Column(String(64), nullable=False, index=True)   # Hash of the source raw file
+    stored_path = Column(String(512), nullable=False)            # Path to Parquet file on disk / S3
+    rows = Column(Integer, nullable=True)
+    columns = Column(Integer, nullable=True)
+    cleaning_meta_json = Column(Text, nullable=True)             # JSON summary of cleaning steps
+    created_at = Column(DateTime(timezone=True), default=_utcnow)
+
+    project = relationship("Project")
 
 
 class ProjectFeature(Base):

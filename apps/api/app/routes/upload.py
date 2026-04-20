@@ -156,7 +156,29 @@ async def upload_file(
         resource_id=str(project_id),
         detail={"filename": filename, "size_bytes": size_bytes, "file_hash": file_hash[:8]},
         ip_address=request.client.host if request and request.client else None,
+        category="activation",
     )
+
+    # ── Parse report (best-effort — never blocks the upload response) ─────────
+    parse_report: dict = {}
+    try:
+        from app.services.file_loader import load_dataset_with_report
+        local_path = get_local_path(stored_path) or stored_path
+        _, report = load_dataset_with_report(local_path)
+        parse_report = {
+            "file_kind": report.file_kind,
+            "status": report.status,
+            "confidence": round(report.confidence, 2),
+            "header_row": report.header_row,
+            "table_start_row": report.table_start_row,
+            "footer_start_row": report.footer_start_row,
+            "preamble_rows_skipped": len(report.metadata_rows),
+            "warnings": report.warnings,
+            "parsing_decisions": report.parsing_decisions,
+            "metadata": report.metadata,
+        }
+    except Exception as e:
+        logger.debug(f"Parse report generation failed for project {project_id}: {e}")
 
     return {
         "project_id": project_id,
@@ -164,4 +186,5 @@ async def upload_file(
         "stored_path": stored_path,
         "size_bytes": size_bytes,
         "file_hash": file_hash,
+        "parse_report": parse_report,
     }

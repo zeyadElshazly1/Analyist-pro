@@ -6,27 +6,15 @@ from app.middleware.auth import get_current_user
 from app.middleware.plans import require_feature
 from app.models import User
 from app.services.ai_chat_service import chat_with_data
-from app.services.cleaner import clean_dataset
-from app.services.file_loader import load_dataset
+from app.services.dataset_loader import load_prepared
 from app.services.serializers import to_jsonable
-from app.state import PROJECT_FILES, get_project_file_info
+from app.state import PROJECT_FILES
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 def _load(project_id: int):
-    info = get_project_file_info(project_id)
-    if not info:
-        raise HTTPException(status_code=404, detail="No uploaded file for this project.")
-    path = info["path"]
-    try:
-        df = load_dataset(path)
-        df_clean, _, _ = clean_dataset(df)
-        return df_clean
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Uploaded file not found on disk.")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to load dataset: {e}")
+    return load_prepared(project_id)
 
 
 class ChatMessage(BaseModel):

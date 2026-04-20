@@ -352,7 +352,7 @@ export default function TeamPage() {
             <div className="rounded-2xl border border-dashed border-white/[0.08] p-8 text-center">
               <Users className="mx-auto h-8 w-8 text-white/15" />
               <p className="mt-3 text-sm text-white/40">No members yet.</p>
-              <p className="text-xs text-white/25">Click "Invite member" to generate a shareable link.</p>
+              <p className="text-xs text-white/25">Click &quot;Invite member&quot; to generate a shareable link.</p>
             </div>
           )}
 

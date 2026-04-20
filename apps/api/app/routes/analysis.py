@@ -2,6 +2,7 @@ import json
 import logging
 import math
 import uuid
+from datetime import timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -125,6 +126,21 @@ def run_analysis(
         ]
 
         logger.info(f"Analysis completed for project {project_id}: {len(insights)} insights")
+
+        from app.services.audit import log_event
+        try:
+            log_event(
+                db,
+                action="analysis_completed",
+                user_id=current_user.id,
+                resource_type="project",
+                resource_id=str(project_id),
+                detail={"insights": len(insights)},
+                category="activation",
+            )
+        except Exception:
+            pass
+
         return result
 
     except HTTPException:
@@ -236,7 +252,8 @@ def create_share_link(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Generate (or return existing) a public share token for the latest analysis."""
+    """Generate (or refresh) a public share token for the latest analysis. Expires in 30 days."""
+    from datetime import datetime, timezone
     analysis = (
         db.query(AnalysisResult)
         .filter(AnalysisResult.project_id == project_id)
@@ -246,17 +263,45 @@ def create_share_link(
     if not analysis:
         raise HTTPException(status_code=404, detail="No analysis results found. Run analysis first.")
 
-    if not analysis.share_token:
+    now = datetime.now(timezone.utc)
+    if not analysis.share_token or analysis.share_revoked:
         analysis.share_token = uuid.uuid4().hex
+        analysis.share_revoked = False
+        analysis.share_expires_at = now + timedelta(days=30)
         db.commit()
         db.refresh(analysis)
 
-    return {"share_token": analysis.share_token}
+    return {
+        "share_token": analysis.share_token,
+        "expires_at": analysis.share_expires_at.isoformat() if analysis.share_expires_at else None,
+    }
+
+
+@router.delete("/share/{project_id}")
+def revoke_share_link(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Revoke the share link for the latest analysis of a project."""
+    analysis = (
+        db.query(AnalysisResult)
+        .filter(AnalysisResult.project_id == project_id)
+        .order_by(AnalysisResult.created_at.desc())
+        .first()
+    )
+    if not analysis or not analysis.share_token:
+        raise HTTPException(status_code=404, detail="No active share link found.")
+
+    analysis.share_revoked = True
+    db.commit()
+    return {"detail": "Share link revoked."}
 
 
 @router.get("/shared/{token}")
 def get_shared_analysis(token: str, db: Session = Depends(get_db)):
     """Public endpoint — returns a full analysis result by share token (no auth required)."""
+    from datetime import datetime, timezone
     analysis = (
         db.query(AnalysisResult)
         .filter(AnalysisResult.share_token == token)
@@ -265,10 +310,20 @@ def get_shared_analysis(token: str, db: Session = Depends(get_db)):
     if not analysis:
         raise HTTPException(status_code=404, detail="Share link not found or expired.")
 
+    if analysis.share_revoked:
+        raise HTTPException(status_code=404, detail="Share link not found or expired.")
+
+    expires = analysis.share_expires_at
+    if expires is not None and expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if expires is not None and expires < datetime.now(timezone.utc):
+        raise HTTPException(status_code=404, detail="Share link not found or expired.")
+
     result = json.loads(analysis.result_json)
     return {
         "project_id": analysis.project_id,
         "created_at": analysis.created_at.isoformat() if analysis.created_at else None,
+        "expires_at": analysis.share_expires_at.isoformat() if analysis.share_expires_at else None,
         "result": result,
     }
 

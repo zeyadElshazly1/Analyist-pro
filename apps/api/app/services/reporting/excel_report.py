@@ -108,10 +108,14 @@ def generate_excel_report(
     _style_header(ws3, 1, len(headers3))
     ws3.freeze_panes = "A2"
 
-    profile = analysis_result.get("profile", {})
-    for col in (profile.get("columns", []) if isinstance(profile, dict) else []):
+    profile = analysis_result.get("profile", [])
+    if isinstance(profile, dict):
+        profile_cols = profile.get("columns", [])
+    else:
+        profile_cols = profile if isinstance(profile, list) else []
+    for col in profile_cols:
         ws3.append([
-            col.get("name", ""),
+            col.get("name") or col.get("column", ""),
             col.get("dtype", ""),
             round(float(col.get("missing_pct", 0) or 0), 1),
             col.get("unique_count", col.get("n_unique", "—")),
@@ -166,6 +170,34 @@ def generate_excel_report(
                 for v in row_vals
             ])
         _auto_width(ws5)
+
+    # ── Sheet 6: Report Info (trust labels) ──────────────────────────────────
+    ws6 = wb.create_sheet("Report Info")
+    ws6.sheet_view.showGridLines = False
+
+    ws6["A1"] = "Report Metadata"
+    ws6["A1"].font = TITLE_FONT
+
+    cleaning_steps = len(analysis_result.get("cleaning_report", []))
+    n_rows, n_cols = df.shape
+    health = analysis_result.get("health_score", {})
+    health_total = health.get("total", health.get("overall", "—")) if isinstance(health, dict) else health
+
+    meta_rows = [
+        ("Report title", project_name),
+        ("Generated", datetime.now().strftime("%Y-%m-%d %H:%M UTC")),
+        ("Rows analyzed", f"{n_rows:,}"),
+        ("Columns analyzed", n_cols),
+        ("Health score", f"{health_total}/100"),
+        ("Cleaning steps applied", cleaning_steps),
+        ("Source", "Analyst Pro — analyst-pro.io"),
+        ("Note", "Narrative sections marked 'AI-generated' were produced by Claude AI and should be reviewed."),
+    ]
+
+    ws6.append([])
+    for label, val in meta_rows:
+        ws6.append([label, str(val)])
+    _auto_width(ws6)
 
     buf = io.BytesIO()
     wb.save(buf)

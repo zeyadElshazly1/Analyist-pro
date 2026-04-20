@@ -51,9 +51,9 @@ def build_context(
     narrative_paras = [p.strip() for p in str(narrative).split("\n\n") if p.strip()] if narrative else []
 
     # Quality rows (fallback if no breakdown)
-    breakdown = analysis_result.get("health_breakdown", {})
+    breakdown = analysis_result.get("health_score", {}).get("breakdown", {}) if isinstance(analysis_result.get("health_score"), dict) else {}
     if not breakdown:
-        breakdown = {"Overall": health_score}
+        breakdown = analysis_result.get("health_breakdown", {"Overall": health_score})
     quality_rows = []
     for dim, score in breakdown.items():
         sc = float(score) if isinstance(score, (int, float)) else 0.0
@@ -76,8 +76,11 @@ def build_context(
         })
 
     # Column rows (analyst only)
-    profile = analysis_result.get("profile", {})
-    columns_data = profile.get("columns", []) if isinstance(profile, dict) else []
+    profile = analysis_result.get("profile", [])
+    if isinstance(profile, dict):
+        columns_data = profile.get("columns", [])
+    else:
+        columns_data = profile if isinstance(profile, list) else []
     column_rows = []
     for col in columns_data[:50]:
         miss_f = float(col.get("missing_pct", 0) or 0)
@@ -90,7 +93,7 @@ def build_context(
         mean = col.get("mean", "")
         std  = col.get("std", "")
         column_rows.append({
-            "name":         col.get("name", ""),
+            "name":         col.get("name") or col.get("column", ""),
             "dtype":        col.get("dtype", ""),
             "missing_pct":  f"{miss_f:.1f}%",
             "unique":       col.get("unique_count", col.get("n_unique", "—")),
@@ -114,20 +117,30 @@ def build_context(
     # Chart configs
     chart_configs = build_chart_configs(analysis_result)
 
+    # Trust metadata
+    cleaning_steps = len(analysis_result.get("cleaning_report", []))
+    trust_meta = {
+        "rows_analyzed": f"{n_rows:,}",
+        "columns_analyzed": n_cols,
+        "cleaning_steps": cleaning_steps,
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M UTC"),
+    }
+
     return {
-        "title":          project_name,
-        "date":           datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "mode":           mode,
-        "n_rows":         f"{n_rows:,}",
-        "n_cols":         n_cols,
-        "missing_pct":    missing_pct,
-        "grade":          grade,
-        "narrative":      narrative,
+        "title":           project_name,
+        "date":            datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "mode":            mode,
+        "n_rows":          f"{n_rows:,}",
+        "n_cols":          n_cols,
+        "missing_pct":     missing_pct,
+        "grade":           grade,
+        "narrative":       narrative,
         "narrative_paras": narrative_paras,
-        "quality_rows":   quality_rows,
-        "insights":       insights,
-        "column_rows":    column_rows,
-        "cleaning_rows":  cleaning_rows,
-        "health_chart":   chart_configs.get("health_chart"),
-        "missing_chart":  chart_configs.get("missing_chart"),
+        "quality_rows":    quality_rows,
+        "insights":        insights,
+        "column_rows":     column_rows,
+        "cleaning_rows":   cleaning_rows,
+        "health_chart":    chart_configs.get("health_chart"),
+        "missing_chart":   chart_configs.get("missing_chart"),
+        "trust_meta":      trust_meta,
     }

@@ -31,21 +31,21 @@ export default function HomePage() {
         {/* Badge */}
         <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-4 py-1.5 text-sm font-medium text-indigo-300">
           <Sparkles className="h-3.5 w-3.5" />
-          AI-powered data analysis — no SQL required
+          Built for consultants who live in spreadsheets
         </div>
 
         {/* Headline */}
         <h1 className="mx-auto max-w-4xl text-5xl font-bold leading-[1.12] tracking-tight sm:text-6xl lg:text-7xl">
-          Analyze your data{" "}
+          Turn messy client spreadsheets into{" "}
           <span className="bg-gradient-to-r from-indigo-400 via-violet-400 to-purple-400 bg-clip-text text-transparent">
-            like an expert
+            client-ready analysis
           </span>
         </h1>
 
         {/* Subheading */}
         <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-white/60">
-          Upload any spreadsheet and get instant AI insights, beautiful charts, correlation
-          analysis, outlier detection, and client-ready reports — in seconds.
+          Upload CSV or Excel files, auto-clean the data, spot issues and trends, compare
+          versions, and export polished reports — without rebuilding everything in Excel.
         </p>
 
         {/* CTAs */}
@@ -138,19 +138,19 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── STATS BAR ───────────────────────────────────────────────────── */}
+      {/* ── OUTCOME PROOFS ──────────────────────────────────────────────── */}
       <section className="border-y border-white/[0.06] bg-white/[0.01] py-10">
         <div className="mx-auto max-w-5xl px-6">
-          <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
+          <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
             {[
-              { value: "2M+", label: "Datasets analyzed" },
-              { value: "98%", label: "Accuracy rate" },
-              { value: "< 10s", label: "Avg. analysis time" },
-              { value: "50K+", label: "Analysts using it" },
-            ].map((stat) => (
-              <div key={stat.label} className="text-center">
-                <p className="text-3xl font-bold text-white">{stat.value}</p>
-                <p className="mt-1 text-sm text-white/40">{stat.label}</p>
+              { icon: "⚡", value: "Upload messy client files", label: "Auto-detected structure, cleaned and ready in seconds" },
+              { icon: "↔", value: "Compare month vs month", label: "See exactly what changed between two client exports in one click" },
+              { icon: "📄", value: "Export a polished report", label: "PDF and Excel output ready to send — no reformatting required" },
+            ].map((item) => (
+              <div key={item.value} className="text-center">
+                <p className="text-2xl mb-2">{item.icon}</p>
+                <p className="text-lg font-semibold text-white">{item.value}</p>
+                <p className="mt-1 text-sm text-white/40">{item.label}</p>
               </div>
             ))}
           </div>
@@ -199,6 +199,76 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ── COMPARE SECTION ─────────────────────────────────────────────── */}
+      <section className="border-t border-white/[0.06] py-24">
+        <div className="mx-auto max-w-5xl px-6">
+          <div className="grid gap-10 md:grid-cols-2 md:items-center">
+            <div>
+              <p className="mb-3 text-sm font-semibold uppercase tracking-widest text-indigo-400">
+                Month-over-month comparison
+              </p>
+              <h2 className="text-4xl font-bold tracking-tight">
+                See exactly what changed between two client files
+              </h2>
+              <p className="mt-4 text-lg leading-relaxed text-white/50">
+                Upload your March and April exports side by side. Get a diff of every
+                metric — rows added, columns changed, values shifted — with one click.
+                No more manually reconciling spreadsheets.
+              </p>
+              <ul className="mt-6 space-y-3">
+                {[
+                  "Row-level adds, removes, and changes highlighted",
+                  "Column-by-column metric delta",
+                  "Before/after health score comparison",
+                  "AI summary: \u201cWhat changed and why it matters\u201d",
+                ].map((item) => (
+                  <li key={item} className="flex items-start gap-3 text-sm text-white/60">
+                    <CheckCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-indigo-400" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href="/signup"
+                className={cn(buttonVariants(), "mt-8 inline-flex rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/25 hover:bg-indigo-500 transition-all")}
+              >
+                Try file comparison free
+              </Link>
+            </div>
+
+            {/* Visual mock */}
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5">
+              <p className="mb-3 text-[11px] font-medium text-white/30 uppercase tracking-wider">
+                March vs April — Revenue by channel
+              </p>
+              <div className="space-y-2">
+                {[
+                  { label: "Organic Search", before: "$12,400", after: "$14,800", delta: "+19%", up: true },
+                  { label: "Paid Social",    before: "$8,200",  after: "$6,900",  delta: "-16%", up: false },
+                  { label: "Email",          before: "$5,600",  after: "$6,100",  delta: "+9%",  up: true },
+                  { label: "Direct",         before: "$3,100",  after: "$3,300",  delta: "+6%",  up: true },
+                ].map((row) => (
+                  <div
+                    key={row.label}
+                    className="grid grid-cols-4 items-center gap-2 rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-2"
+                  >
+                    <p className="text-xs text-white/60 col-span-1">{row.label}</p>
+                    <p className="text-xs text-white/30 text-right">{row.before}</p>
+                    <p className="text-xs text-white/70 text-right font-medium">{row.after}</p>
+                    <p className={`text-xs font-semibold text-right ${row.up ? "text-emerald-400" : "text-rose-400"}`}>
+                      {row.delta}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-[10px] text-white/20">
+                AI summary: Organic growth offset paid social decline. Net revenue up 8%.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── CTA BANNER ──────────────────────────────────────────────────── */}
       <section className="py-24">
         <div className="mx-auto max-w-4xl px-6">
@@ -206,9 +276,9 @@ export default function HomePage() {
             <div className="pointer-events-none absolute inset-0 -z-10">
               <div className="absolute left-1/2 top-0 h-72 w-96 -translate-x-1/2 rounded-full bg-indigo-600/15 blur-[80px]" />
             </div>
-            <h2 className="text-4xl font-bold tracking-tight">Start analyzing your data today</h2>
+            <h2 className="text-4xl font-bold tracking-tight">Get from messy file to client-ready brief today</h2>
             <p className="mx-auto mt-4 max-w-lg text-white/60">
-              No setup. No SQL. No data science degree required. Just upload your file and let AI do the work.
+              Upload a client CSV or Excel file and see the health score, top findings, and a report draft in under 2 minutes.
             </p>
             <div className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
               <Link
@@ -224,7 +294,7 @@ export default function HomePage() {
                 See pricing
               </Link>
             </div>
-            <p className="mt-6 text-sm text-white/30">Free plan includes 3 projects. No credit card required.</p>
+            <p className="mt-6 text-sm text-white/30">Free plan includes 3 client workspaces. No credit card required.</p>
           </div>
         </div>
       </section>

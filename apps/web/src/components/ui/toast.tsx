@@ -60,6 +60,16 @@ const STYLE = {
 function Toast({ item, onRemove }: { item: ToastItem; onRemove: (id: string) => void }) {
   const [visible, setVisible] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const onRemoveRef = useRef(onRemove);
+
+  useEffect(() => {
+    onRemoveRef.current = onRemove;
+  }, [onRemove]);
+
+  function dismiss() {
+    setVisible(false);
+    setTimeout(() => onRemoveRef.current(item.id), 300);
+  }
 
   useEffect(() => {
     // Animate in
@@ -71,11 +81,6 @@ function Toast({ item, onRemove }: { item: ToastItem; onRemove: (id: string) => 
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function dismiss() {
-    setVisible(false);
-    setTimeout(() => onRemove(item.id), 300);
-  }
 
   const Icon = ICON[item.type];
 

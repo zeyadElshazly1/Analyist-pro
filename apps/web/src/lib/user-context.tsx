@@ -61,7 +61,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   // Single fetch on mount — all children share this one result
   useEffect(() => {
-    fetchUser().finally(() => setLoading(false));
+    let mounted = true;
+    fetchUser().finally(() => { if (mounted) setLoading(false); });
+    return () => { mounted = false; };
   }, [fetchUser]);
 
   const refetch = useCallback(async () => {
