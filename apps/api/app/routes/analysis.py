@@ -313,7 +313,10 @@ def get_shared_analysis(token: str, db: Session = Depends(get_db)):
     if analysis.share_revoked:
         raise HTTPException(status_code=404, detail="Share link not found or expired.")
 
-    if analysis.share_expires_at and analysis.share_expires_at < datetime.now(timezone.utc):
+    expires = analysis.share_expires_at
+    if expires is not None and expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if expires is not None and expires < datetime.now(timezone.utc):
         raise HTTPException(status_code=404, detail="Share link not found or expired.")
 
     result = json.loads(analysis.result_json)
