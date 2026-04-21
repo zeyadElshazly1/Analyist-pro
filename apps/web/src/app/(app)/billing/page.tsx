@@ -88,12 +88,12 @@ export default function BillingPage() {
     }
   }, [redirectUrl]);
 
-  async function handleUpgrade(planId: string) {
-    if (planId !== PLAN_NAMES.CONSULTANT && planId !== PLAN_NAMES.STUDIO) return;
+  async function handleUpgrade(planId: PlanName) {
+    if (planId === PLAN_NAMES.FREE) return;
     setCheckoutError(null);
     setLoadingPlan(planId);
     try {
-      const { checkout_url } = await createCheckoutSession(planId as PlanName);
+      const { checkout_url } = await createCheckoutSession(planId);
       setRedirectUrl(checkout_url);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not start checkout. Please try again.";
