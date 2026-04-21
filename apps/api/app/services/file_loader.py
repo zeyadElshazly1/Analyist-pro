@@ -127,6 +127,9 @@ def _smart_load_csv(path: Path):
 
         df = normalize_schema(df, report)
         report.status = "parsed_with_warnings" if report.warnings else "ok"
+        report.delimiter = sniff.delimiter
+        report.encoding = encoding
+        report.n_columns = len(df.columns)
         report.parsing_decisions.append(
             f"file_kind={sniff.file_kind} header_row={header_row} "
             f"delimiter={repr(sniff.delimiter)} confidence={sniff.confidence}"
@@ -201,6 +204,9 @@ def _smart_load_excel(path: Path):
 
         report.confidence = 0.92 if skiprows else 0.97
         report.status     = "parsed_with_warnings" if report.warnings else "ok"
+        report.delimiter  = ""             # not applicable for Excel
+        report.encoding   = "binary"
+        report.n_columns  = len(df.columns)
 
         logger.info(
             "Loaded Excel %s: %d rows × %d cols (skiprows=%s)",

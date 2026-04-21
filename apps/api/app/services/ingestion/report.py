@@ -18,3 +18,7 @@ class ParseReport:
     tables_found: int = 1
     selected_table: int = 0
     parsing_decisions: list[str] = field(default_factory=list)
+    # Populated by file_loader after loading — used by IntakeResult adapter
+    delimiter: str = ""          # field separator (empty for Excel)
+    encoding: str = "utf-8"      # character encoding used to read the file
+    n_columns: int = 0           # column count post-cleanup

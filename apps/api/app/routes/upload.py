@@ -160,26 +160,16 @@ async def upload_file(
         category="activation",
     )
 
-    # ── Parse report (best-effort — never blocks the upload response) ─────────
-    parse_report: dict = {}
+    # ── Intake result (best-effort — never blocks the upload response) ─────────
+    intake_result: dict = {}
     try:
         from app.services.file_loader import load_dataset_with_report
+        from app.services.intake_adapter import build_intake_result
         local_path = get_local_path(stored_path) or stored_path
-        _, report = load_dataset_with_report(local_path)
-        parse_report = {
-            "file_kind": report.file_kind,
-            "status": report.status,
-            "confidence": round(report.confidence, 2),
-            "header_row": report.header_row,
-            "table_start_row": report.table_start_row,
-            "footer_start_row": report.footer_start_row,
-            "preamble_rows_skipped": len(report.metadata_rows),
-            "warnings": report.warnings,
-            "parsing_decisions": report.parsing_decisions,
-            "metadata": report.metadata,
-        }
+        df, report = load_dataset_with_report(local_path)
+        intake_result = build_intake_result(project_file, df, report).model_dump()
     except Exception as e:
-        logger.debug(f"Parse report generation failed for project {project_id}: {e}")
+        logger.debug(f"Intake result generation failed for project {project_id}: {e}")
 
     return {
         "project_id": project_id,
@@ -187,5 +177,5 @@ async def upload_file(
         "stored_path": stored_path,
         "size_bytes": size_bytes,
         "file_hash": file_hash,
-        "parse_report": parse_report,
+        "intake_result": intake_result,
     }
