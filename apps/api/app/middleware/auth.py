@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import User
+from app.plan_names import PLAN_FREE
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +135,7 @@ def _get_or_create_user(payload: dict, db: Session) -> User:
         return user
 
     try:
-        user = User(id=user_id, email=email, plan="free")
+        user = User(id=user_id, email=email, plan=PLAN_FREE)
         db.add(user)
         db.commit()
         db.refresh(user)

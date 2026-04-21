@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import type { PlanName } from "./plans";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
@@ -941,7 +942,7 @@ export function getAnalysisDiff(runA: number, runB: number) {
   return get<AnalysisDiff>(`/analysis/diff?run_a=${runA}&run_b=${runB}`);
 }
 
-export function createCheckoutSession(plan: "pro" | "team"): Promise<{ checkout_url: string }> {
+export function createCheckoutSession(plan: PlanName): Promise<{ checkout_url: string }> {
   return post<{ checkout_url: string }>("/billing/create-checkout-session", { plan });
 }
 

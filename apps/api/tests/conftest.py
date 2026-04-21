@@ -25,6 +25,7 @@ os.environ["SUPABASE_JWT_SECRET"] = TEST_JWT_SECRET
 
 from app.db import Base, get_db
 from app.main import app
+from app.plan_names import PLAN_CONSULTANT
 
 # ── In-memory test engine ─────────────────────────────────────────────────────
 TEST_DB_URL = "sqlite:///:memory:"
@@ -135,7 +136,7 @@ def pro_auth_headers(client, auth_headers):
     try:
         user = db.query(UserModel).filter(UserModel.id == TEST_USER_ID).first()
         if user:
-            user.plan = "pro"
+            user.plan = PLAN_CONSULTANT
             db.commit()
     finally:
         db.close()

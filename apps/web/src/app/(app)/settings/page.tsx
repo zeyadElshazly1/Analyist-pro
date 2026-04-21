@@ -6,6 +6,7 @@ import { useUser } from "@/lib/user-context";
 import { User, Bell, Shield, Download, Loader2, Check, AlertTriangle } from "lucide-react";
 import { toast } from "@/components/ui/toast";
 import { deleteMyAccount, exportMyData, updateNotificationPrefs, NotificationPrefs, ApiError } from "@/lib/api";
+import { PLAN_NAMES, PLAN_LABELS } from "@/lib/plans";
 
 function Section({
   title,
@@ -107,10 +108,9 @@ export default function SettingsPage() {
   }
 
   const initial = user?.email?.[0]?.toUpperCase() ?? "U";
-  const planLabel =
-    user?.plan
-      ? user.plan.charAt(0).toUpperCase() + user.plan.slice(1) + " plan"
-      : "Free plan";
+  const planLabel = user?.plan
+    ? (PLAN_LABELS[user.plan as keyof typeof PLAN_LABELS] ?? user.plan) + " plan"
+    : PLAN_LABELS[PLAN_NAMES.FREE] + " plan";
 
   const memberSince = user?.created_at
     ? new Date(user.created_at).toLocaleDateString(undefined, { year: "numeric", month: "long" })
@@ -195,7 +195,7 @@ export default function SettingsPage() {
                       <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-sm text-white/50">
                         {planLabel}
                       </div>
-                      {user?.plan === "free" && (
+                      {user?.plan === PLAN_NAMES.FREE && (
                         <a
                           href="/billing"
                           className="rounded-lg bg-indigo-600/20 border border-indigo-500/30 px-3 py-1.5 text-xs font-medium text-indigo-300 hover:bg-indigo-600/30 transition-colors"

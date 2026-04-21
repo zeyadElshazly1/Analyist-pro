@@ -12,6 +12,7 @@ from app.db import get_db
 from app.middleware.auth import get_current_user
 from app.middleware.plans import plan_max_file_bytes
 from app.models import Project, ProjectFile, User
+from app.plan_names import PLAN_FREE
 from app.services.audit import log_event
 from app.services.cache import invalidate_project_cache
 from app.services.storage import get_local_path, save_file
@@ -61,11 +62,11 @@ async def upload_file(
         if size_bytes > plan_limit:
             detail = {
                 "message": (
-                    f"File too large for your {current_user.plan or 'free'} plan "
+                    f"File too large for your {current_user.plan or PLAN_FREE} plan "
                     f"({mb:.1f} MB). Upgrade for larger file support."
                 ),
                 "feature": "file_size",
-                "current_plan": current_user.plan or "free",
+                "current_plan": current_user.plan or PLAN_FREE,
             }
             raise HTTPException(status_code=402, detail=detail)
         raise HTTPException(

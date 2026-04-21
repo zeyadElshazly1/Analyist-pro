@@ -28,11 +28,12 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.middleware.auth import get_current_user
 from app.models import Project, User
+from app.plan_names import PLAN_CONSULTANT, PLAN_FREE, PLAN_STUDIO, normalize_plan
 
 # ── Plan feature matrix ───────────────────────────────────────────────────────
 
 PLAN_LIMITS: dict[str, dict] = {
-    "free": {
+    PLAN_FREE: {
         "max_projects":  3,
         "max_file_mb":   10,
         "ai_chat":       False,
@@ -40,7 +41,7 @@ PLAN_LIMITS: dict[str, dict] = {
         "file_compare":  False,
         "report_export": False,
     },
-    "pro": {
+    PLAN_CONSULTANT: {
         "max_projects":  None,   # unlimited
         "max_file_mb":   100,
         "ai_chat":       True,
@@ -48,7 +49,7 @@ PLAN_LIMITS: dict[str, dict] = {
         "file_compare":  True,
         "report_export": True,
     },
-    "team": {
+    PLAN_STUDIO: {
         "max_projects":  None,
         "max_file_mb":   500,
         "ai_chat":       True,
@@ -81,8 +82,9 @@ UPGRADE_MESSAGES: dict[str, str] = {
 
 
 def _limits(user: User) -> dict:
-    """Return the plan limits for a user, falling back to 'free' for unknown plans."""
-    return PLAN_LIMITS.get(user.plan or "free", PLAN_LIMITS["free"])
+    """Return the plan limits for a user, normalizing legacy plan names and falling back to free."""
+    plan = normalize_plan(user.plan)
+    return PLAN_LIMITS.get(plan, PLAN_LIMITS[PLAN_FREE])
 
 
 # ── Reusable dependencies ─────────────────────────────────────────────────────
@@ -102,7 +104,7 @@ def require_feature(feature: str) -> Callable:
                         feature, f"Feature '{feature}' requires a higher plan."
                     ),
                     "feature": feature,
-                    "current_plan": current_user.plan or "free",
+                    "current_plan": current_user.plan or PLAN_FREE,
                 },
             )
     return _check
@@ -123,7 +125,7 @@ def check_project_limit(
             detail={
                 "message": UPGRADE_MESSAGES["projects"],
                 "feature": "projects",
-                "current_plan": current_user.plan or "free",
+                "current_plan": current_user.plan or PLAN_FREE,
             },
         )
 

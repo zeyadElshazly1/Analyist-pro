@@ -22,6 +22,7 @@ import {
   TeamMember,
   ApiError,
 } from "@/lib/api";
+import { PLAN_NAMES, PLAN_LABELS } from "@/lib/plans";
 
 function SeatBar({ used, limit }: { used: number; limit: number }) {
   const pct = Math.min(100, (used / limit) * 100);
@@ -141,7 +142,7 @@ export default function TeamPage() {
   const [copiedNew, setCopiedNew] = useState(false);
 
   useEffect(() => {
-    if (!loadingUser && user?.plan === "team") {
+    if (!loadingUser && user?.plan === PLAN_NAMES.STUDIO) {
       getTeamMembers()
         .then(setData)
         .catch(() => {})
@@ -196,7 +197,7 @@ export default function TeamPage() {
     );
   }
 
-  if (user?.plan !== "team") {
+  if (user?.plan !== PLAN_NAMES.STUDIO) {
     return (
       <AppShell>
         <div className="flex min-h-full flex-col items-center justify-center gap-4 bg-[#080810] p-6 text-center">
@@ -204,9 +205,9 @@ export default function TeamPage() {
             <Users className="h-6 w-6 text-indigo-400" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-white">Team plan required</h2>
+            <h2 className="text-lg font-semibold text-white">{PLAN_LABELS[PLAN_NAMES.STUDIO]} plan required</h2>
             <p className="mt-1 text-sm text-white/40">
-              Upgrade to the Team plan to invite collaborators and manage seats.
+              Upgrade to the {PLAN_LABELS[PLAN_NAMES.STUDIO]} plan to invite collaborators and manage seats.
             </p>
           </div>
           <a

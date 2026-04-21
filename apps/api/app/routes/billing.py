@@ -2,12 +2,16 @@
 Billing routes — Stripe Checkout session creation and webhook handling.
 
 Environment variables required for Stripe integration:
-  STRIPE_SECRET_KEY        — your Stripe secret key (sk_live_... or sk_test_...)
-  STRIPE_WEBHOOK_SECRET    — from the Stripe dashboard after registering the webhook
-  STRIPE_PRO_PRICE_ID      — Stripe Price ID for the Pro plan
-  STRIPE_TEAM_PRICE_ID     — Stripe Price ID for the Team plan
-  STRIPE_SUCCESS_URL       — URL to redirect to after successful checkout
-  STRIPE_CANCEL_URL        — URL to redirect to when checkout is abandoned
+  STRIPE_SECRET_KEY             — your Stripe secret key (sk_live_... or sk_test_...)
+  STRIPE_WEBHOOK_SECRET         — from the Stripe dashboard after registering the webhook
+  STRIPE_CONSULTANT_PRICE_ID    — Stripe Price ID for the Consultant plan
+  STRIPE_STUDIO_PRICE_ID        — Stripe Price ID for the Studio plan
+  STRIPE_SUCCESS_URL            — URL to redirect to after successful checkout
+  STRIPE_CANCEL_URL             — URL to redirect to when checkout is abandoned
+
+Legacy aliases (kept until env vars are renamed in deployment):
+  STRIPE_PRO_PRICE_ID   → falls back to STRIPE_CONSULTANT_PRICE_ID if not set
+  STRIPE_TEAM_PRICE_ID  → falls back to STRIPE_STUDIO_PRICE_ID if not set
 
 Without STRIPE_SECRET_KEY the checkout endpoint returns a 503 with a clear message
 so the rest of the app continues to work during development.
@@ -20,11 +24,12 @@ import os
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 import app.db as _db_module
 from app.middleware.auth import get_current_user
 from app.models import User
+from app.plan_names import PLAN_CONSULTANT, PLAN_FREE, PLAN_STUDIO
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["billing"])
@@ -32,8 +37,8 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 # Map Stripe price/product IDs → internal plan names.
 # Populate these with your actual Stripe IDs.
 STRIPE_PLAN_MAP: dict[str, str] = {
-    os.getenv("STRIPE_PRO_PRICE_ID", "price_pro"): "pro",
-    os.getenv("STRIPE_TEAM_PRICE_ID", "price_team"): "team",
+    os.getenv("STRIPE_CONSULTANT_PRICE_ID", os.getenv("STRIPE_PRO_PRICE_ID", "price_consultant")): PLAN_CONSULTANT,
+    os.getenv("STRIPE_STUDIO_PRICE_ID", os.getenv("STRIPE_TEAM_PRICE_ID", "price_studio")): PLAN_STUDIO,
 }
 
 
@@ -106,7 +111,7 @@ async def stripe_webhook(request: Request):
         if not price_id:
             # Fallback: metadata field set in your Stripe Checkout session
             price_id = (data.get("metadata") or {}).get("price_id")
-        plan = STRIPE_PLAN_MAP.get(price_id or "", "pro")
+        plan = STRIPE_PLAN_MAP.get(price_id or "", PLAN_CONSULTANT)
         if email:
             _set_user_plan(email, plan)
 
@@ -114,13 +119,13 @@ async def stripe_webhook(request: Request):
         customer_email = data.get("customer_email") or ""
         if event_type == "customer.subscription.deleted":
             if customer_email:
-                _set_user_plan(customer_email, "free")
+                _set_user_plan(customer_email, PLAN_FREE)
         else:
             # Extract price from the first subscription item
             items = data.get("items", {}).get("data", [])
             if items:
                 price_id = (items[0].get("price") or {}).get("id")
-                plan = STRIPE_PLAN_MAP.get(price_id or "", "pro")
+                plan = STRIPE_PLAN_MAP.get(price_id or "", PLAN_CONSULTANT)
                 if customer_email:
                     _set_user_plan(customer_email, plan)
 
@@ -133,9 +138,14 @@ async def stripe_webhook(request: Request):
 
 # ── Checkout session creation ─────────────────────────────────────────────────
 
-_PLAN_PRICE_MAP = {
-    "pro":  os.getenv("STRIPE_PRO_PRICE_ID", ""),
-    "team": os.getenv("STRIPE_TEAM_PRICE_ID", ""),
+# Plans available for checkout — free has no Stripe price.
+# This is the single authoritative set; both the schema validator and
+# the price map are derived from it.
+CHECKOUT_PLANS: frozenset[str] = frozenset({PLAN_CONSULTANT, PLAN_STUDIO})
+
+_PLAN_PRICE_MAP: dict[str, str] = {
+    PLAN_CONSULTANT: os.getenv("STRIPE_CONSULTANT_PRICE_ID", os.getenv("STRIPE_PRO_PRICE_ID", "")),
+    PLAN_STUDIO:     os.getenv("STRIPE_STUDIO_PRICE_ID", os.getenv("STRIPE_TEAM_PRICE_ID", "")),
 }
 
 _DEFAULT_SUCCESS_URL = os.getenv(
@@ -149,7 +159,16 @@ _DEFAULT_CANCEL_URL = os.getenv(
 
 
 class CheckoutRequest(BaseModel):
-    plan: str  # "pro" | "team"
+    plan: str
+
+    @field_validator("plan")
+    @classmethod
+    def plan_must_be_checkout_plan(cls, v: str) -> str:
+        if v not in CHECKOUT_PLANS:
+            raise ValueError(
+                f"plan must be one of: {', '.join(sorted(CHECKOUT_PLANS))}"
+            )
+        return v
 
 
 @router.post("/create-checkout-session")
@@ -173,8 +192,8 @@ def create_checkout_session(
     price_id = _PLAN_PRICE_MAP.get(body.plan, "")
     if not price_id:
         raise HTTPException(
-            status_code=400,
-            detail=f"Unknown plan '{body.plan}'. Valid values: pro, team.",
+            status_code=503,
+            detail=f"Stripe price ID for plan '{body.plan}' is not configured. Contact support.",
         )
 
     try:
