@@ -71,6 +71,7 @@ def run_analysis(
             raise HTTPException(status_code=400, detail="Uploaded dataset is empty.")
 
         from app.services.cleaning_adapter import build_cleaning_result
+        from app.services.health_adapter import build_health_result
 
         original_cols = df.columns.tolist()
         if payload.use_cleaned:
@@ -88,6 +89,8 @@ def run_analysis(
 
         profile = profile_dataset(df_clean)
         health_score = calculate_health_score(df_clean)
+        health_result = build_health_result(df_clean, health_score, profile).model_dump()
+
         insights, narrative = analyze_dataset(df_clean)
         dataset_summary = get_dataset_summary(df_clean)
 
@@ -99,8 +102,9 @@ def run_analysis(
             "cleaning_summary": to_jsonable(cleaning_summary),   # kept for backward compat
             "cleaning_report": to_jsonable(cleaning_report),     # kept for backward compat
             "cleaning_result": cleaning_result,                  # canonical V1 schema
-            "health_score": to_jsonable(health_score),
-            "profile": to_jsonable(profile),
+            "health_score": to_jsonable(health_score),           # kept for backward compat
+            "profile": to_jsonable(profile),                     # kept for backward compat
+            "health_result": health_result,                      # canonical V1 schema
             "insights": to_jsonable(insights),
             "narrative": narrative,
             "executive_panel": to_jsonable(executive_panel),
