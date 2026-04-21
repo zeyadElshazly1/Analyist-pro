@@ -70,14 +70,21 @@ def run_analysis(
         if df.empty:
             raise HTTPException(status_code=400, detail="Uploaded dataset is empty.")
 
+        from app.services.cleaning_adapter import build_cleaning_result
+
+        original_cols = df.columns.tolist()
         if payload.use_cleaned:
             df_clean, cleaning_report, cleaning_summary = clean_dataset(df)
             if df_clean.empty or len(df_clean.columns) == 0:
                 raise HTTPException(status_code=400, detail="Dataset became empty after cleaning.")
+            cleaning_result = build_cleaning_result(
+                original_cols, df_clean.columns.tolist(), cleaning_report, cleaning_summary
+            ).model_dump()
         else:
             df_clean = df
             cleaning_report = []
             cleaning_summary = {"steps": 0, "note": "Skipped — raw data mode"}
+            cleaning_result = {}
 
         profile = profile_dataset(df_clean)
         health_score = calculate_health_score(df_clean)
@@ -89,8 +96,9 @@ def run_analysis(
         result = {
             "project_id": project_id,
             "dataset_summary": to_jsonable(dataset_summary),
-            "cleaning_summary": to_jsonable(cleaning_summary),
-            "cleaning_report": to_jsonable(cleaning_report),
+            "cleaning_summary": to_jsonable(cleaning_summary),   # kept for backward compat
+            "cleaning_report": to_jsonable(cleaning_report),     # kept for backward compat
+            "cleaning_result": cleaning_result,                  # canonical V1 schema
             "health_score": to_jsonable(health_score),
             "profile": to_jsonable(profile),
             "insights": to_jsonable(insights),

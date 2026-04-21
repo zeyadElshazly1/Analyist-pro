@@ -555,6 +555,7 @@ def clean_dataset(
         "confidence_grade": score_to_grade(confidence_score),
         "placeholders_replaced": placeholders_replaced,
         "duplicate_cols_removed": duplicate_cols_removed,
+        "duplicate_col_names": duplicate_col_names,
         "date_features_created": date_features_created,
         "suspicious_issues_remaining": suspicious_issues,
         "semantic_columns": semantic_map,
