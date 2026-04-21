@@ -72,6 +72,7 @@ def run_analysis(
 
         from app.services.cleaning_adapter import build_cleaning_result
         from app.services.health_adapter import build_health_result
+        from app.services.insight_adapter import build_insight_results
 
         original_cols = df.columns.tolist()
         if payload.use_cleaned:
@@ -92,6 +93,7 @@ def run_analysis(
         health_result = build_health_result(df_clean, health_score, profile).model_dump()
 
         insights, narrative = analyze_dataset(df_clean)
+        insight_results = [r.model_dump() for r in build_insight_results(insights)]
         dataset_summary = get_dataset_summary(df_clean)
 
         executive_panel = generate_executive_panel(insights)
@@ -105,7 +107,8 @@ def run_analysis(
             "health_score": to_jsonable(health_score),           # kept for backward compat
             "profile": to_jsonable(profile),                     # kept for backward compat
             "health_result": health_result,                      # canonical V1 schema
-            "insights": to_jsonable(insights),
+            "insights": to_jsonable(insights),                   # kept for backward compat
+            "insight_results": insight_results,                  # canonical V1 schema
             "narrative": narrative,
             "executive_panel": to_jsonable(executive_panel),
         }
