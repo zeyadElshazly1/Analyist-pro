@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { logout } from "@/lib/api";
 import { useUser } from "@/lib/user-context";
+import { PLAN_NAMES, PLAN_LABELS } from "@/lib/plans";
 
 const BASE_LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -31,8 +32,8 @@ export function AppSidebar() {
 
   const initial = user?.email?.[0]?.toUpperCase() ?? "U";
   const planLabel = user?.plan
-    ? user.plan.charAt(0).toUpperCase() + user.plan.slice(1) + " plan"
-    : "Free plan";
+    ? (PLAN_LABELS[user.plan as keyof typeof PLAN_LABELS] ?? user.plan) + " plan"
+    : PLAN_LABELS[PLAN_NAMES.FREE] + " plan";
 
   return (
     <aside className="hidden w-60 flex-shrink-0 flex-col border-r border-white/[0.05] bg-[#09090f] lg:flex">
@@ -49,7 +50,7 @@ export function AppSidebar() {
 
       {/* Nav */}
       <nav className="flex-1 space-y-0.5 px-3 py-4">
-        {[...BASE_LINKS, ...(user?.plan === "team" ? [TEAM_LINK] : [])].map(({ href, label, icon: Icon }) => {
+        {[...BASE_LINKS, ...(user?.plan === PLAN_NAMES.STUDIO ? [TEAM_LINK] : [])].map(({ href, label, icon: Icon }) => {
           const active =
             pathname === href ||
             (href !== "/dashboard" && pathname.startsWith(href));
@@ -74,7 +75,7 @@ export function AppSidebar() {
       </nav>
 
       {/* Upgrade nudge */}
-      {(!user || user.plan === "free") && (
+      {(!user || user.plan === PLAN_NAMES.FREE) && (
         <div className="mx-3 mb-3 rounded-xl border border-indigo-500/20 bg-indigo-600/8 p-3">
           <div className="mb-1.5 flex items-center gap-2">
             <Sparkles className="h-3.5 w-3.5 text-indigo-400" />

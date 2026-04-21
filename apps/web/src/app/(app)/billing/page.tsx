@@ -4,14 +4,15 @@ import { useEffect, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { getProjectStats, createCheckoutSession } from "@/lib/api";
 import { useUser } from "@/lib/user-context";
+import { PLAN_NAMES, PLAN_LABELS, type PlanName } from "@/lib/plans";
 import { CheckCircle, Sparkles, Zap, Users, ArrowRight, Loader2 } from "lucide-react";
 
 type Stats = { total_projects: number; total_analyses: number };
 
 const PLANS = [
   {
-    id: "free",
-    name: "Free",
+    id: PLAN_NAMES.FREE,
+    name: PLAN_LABELS[PLAN_NAMES.FREE],
     price: "$0",
     period: "forever",
     highlighted: false,
@@ -26,9 +27,9 @@ const PLANS = [
     cta: "Current plan",
   },
   {
-    id: "pro",
-    name: "Pro",
-    price: "$19",
+    id: PLAN_NAMES.CONSULTANT,
+    name: PLAN_LABELS[PLAN_NAMES.CONSULTANT],
+    price: "$39",
     period: "/ month",
     highlighted: true,
     projectLimit: Infinity,
@@ -42,17 +43,17 @@ const PLANS = [
       "Shareable analysis links",
       "Priority email support",
     ],
-    cta: "Upgrade to Pro",
+    cta: "Upgrade to Consultant",
   },
   {
-    id: "team",
-    name: "Team",
+    id: PLAN_NAMES.STUDIO,
+    name: PLAN_LABELS[PLAN_NAMES.STUDIO],
     price: "$49",
     period: "/ month",
     highlighted: false,
     projectLimit: Infinity,
     features: [
-      "Everything in Pro",
+      "Everything in Consultant",
       "5 team seats",
       "Shared workspaces",
       "Scheduled reports",
@@ -64,7 +65,11 @@ const PLANS = [
   },
 ];
 
-const PLAN_ICONS = { free: Sparkles, pro: Zap, team: Users } as const;
+const PLAN_ICONS: Record<PlanName, React.ElementType> = {
+  [PLAN_NAMES.FREE]:       Sparkles,
+  [PLAN_NAMES.CONSULTANT]: Zap,
+  [PLAN_NAMES.STUDIO]:     Users,
+};
 
 export default function BillingPage() {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -84,11 +89,11 @@ export default function BillingPage() {
   }, [redirectUrl]);
 
   async function handleUpgrade(planId: string) {
-    if (planId !== "pro" && planId !== "team") return;
+    if (planId !== PLAN_NAMES.CONSULTANT && planId !== PLAN_NAMES.STUDIO) return;
     setCheckoutError(null);
     setLoadingPlan(planId);
     try {
-      const { checkout_url } = await createCheckoutSession(planId);
+      const { checkout_url } = await createCheckoutSession(planId as PlanName);
       setRedirectUrl(checkout_url);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not start checkout. Please try again.";
@@ -97,7 +102,7 @@ export default function BillingPage() {
     }
   }
 
-  const currentPlan = user?.plan ?? "free";
+  const currentPlan = (user?.plan ?? PLAN_NAMES.FREE) as PlanName;
 
   const activePlan = PLANS.find((p) => p.id === currentPlan) ?? PLANS[0];
   const projectLimit = activePlan.projectLimit;
@@ -126,12 +131,12 @@ export default function BillingPage() {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-widest text-indigo-400">Current plan</p>
-                <h2 className="mt-1 text-2xl font-bold text-white capitalize">{currentPlan}</h2>
+                <h2 className="mt-1 text-2xl font-bold text-white">{PLAN_LABELS[currentPlan]}</h2>
                 <p className="mt-1 text-sm text-white/50">
-                  {currentPlan === "free" ? "$0 / month · No expiry" : "Billed monthly"}
+                  {currentPlan === PLAN_NAMES.FREE ? "$0 / month · No expiry" : "Billed monthly"}
                 </p>
               </div>
-              {currentPlan === "free" && (
+              {currentPlan === PLAN_NAMES.FREE && (
                 <a
                   href="#plans"
                   className="flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 hover:bg-indigo-500 transition-all"
@@ -183,7 +188,7 @@ export default function BillingPage() {
             <h2 className="mb-4 text-base font-semibold text-white">Available plans</h2>
             <div className="grid gap-4 md:grid-cols-3">
               {PLANS.map((plan) => {
-                const Icon = PLAN_ICONS[plan.id as keyof typeof PLAN_ICONS];
+                const Icon = PLAN_ICONS[plan.id as PlanName];
                 const isCurrent = plan.id === currentPlan;
                 return (
                   <div
@@ -244,7 +249,7 @@ export default function BillingPage() {
                       <div className="w-full rounded-xl bg-white/[0.05] py-2 text-center text-sm text-white/30">
                         Current plan
                       </div>
-                    ) : plan.id === "team" ? (
+                    ) : plan.id === PLAN_NAMES.STUDIO ? (
                       <a
                         href="mailto:sales@analystpro.com"
                         className="block w-full rounded-xl bg-white/[0.07] py-2 text-center text-sm font-semibold text-white hover:bg-white/10 transition-all"
@@ -286,7 +291,7 @@ export default function BillingPage() {
               <ArrowRight className="h-4 w-4 text-white/20" />
             </div>
             <p className="mt-3 text-sm text-white/35 italic">
-              {currentPlan === "free"
+              {currentPlan === PLAN_NAMES.FREE
                 ? "No invoices yet — you're on the Free plan."
                 : "Invoice history will appear here."}
             </p>
