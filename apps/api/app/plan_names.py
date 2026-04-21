@@ -6,20 +6,23 @@ Do not hardcode "pro", "team", "consultant", "studio", or "free" anywhere else.
 """
 from __future__ import annotations
 
+PLAN_FREE       = "free"
+PLAN_CONSULTANT = "consultant"
+PLAN_STUDIO     = "studio"
 
-class PlanName:
-    FREE       = "free"
-    CONSULTANT = "consultant"
-    STUDIO     = "studio"
-
-
-PLAN_ORDER: list[str] = [PlanName.FREE, PlanName.CONSULTANT, PlanName.STUDIO]
+PLAN_VALUES: set[str] = {
+    PLAN_FREE,
+    PLAN_CONSULTANT,
+    PLAN_STUDIO,
+}
 
 PLAN_LABELS: dict[str, str] = {
-    PlanName.FREE:       "Free",
-    PlanName.CONSULTANT: "Consultant",
-    PlanName.STUDIO:     "Studio",
+    PLAN_FREE:       "Free",
+    PLAN_CONSULTANT: "Consultant",
+    PLAN_STUDIO:     "Studio",
 }
+
+PLAN_ORDER: list[str] = [PLAN_FREE, PLAN_CONSULTANT, PLAN_STUDIO]
 
 
 def plan_at_least(user_plan: str, required: str) -> bool:
