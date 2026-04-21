@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.middleware.auth import get_current_user, optional_current_user
 from app.models import TeamInvite, User
+from app.plan_names import PLAN_FREE, PLAN_STUDIO, normalize_plan
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/team", tags=["team"])
@@ -23,13 +24,13 @@ TEAM_SEAT_LIMIT = 5  # total seats including owner
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _require_team_plan(user: User) -> None:
-    if user.plan != "team":
+    if normalize_plan(user.plan) != PLAN_STUDIO:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail={
-                "message": "Team management requires a Team plan.",
+                "message": "Team management requires a Studio plan.",
                 "feature": "team",
-                "current_plan": user.plan or "free",
+                "current_plan": user.plan or PLAN_FREE,
             },
         )
 

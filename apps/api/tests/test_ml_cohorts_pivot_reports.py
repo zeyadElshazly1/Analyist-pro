@@ -5,6 +5,7 @@ Uses the same in-memory SQLite setup as the rest of the test suite.
 import io
 import json
 
+from app.plan_names import PLAN_CONSULTANT
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -383,7 +384,7 @@ class TestBillingWebhook:
         try:
             u = db.query(UserModel).filter(UserModel.id == TEST_USER_ID).first()
             if u:
-                u.plan = "pro"
+                u.plan = PLAN_CONSULTANT
                 db.commit()
         finally:
             db.close()
