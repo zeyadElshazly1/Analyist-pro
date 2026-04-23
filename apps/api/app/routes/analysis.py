@@ -15,6 +15,7 @@ from app.middleware.auth import get_current_user, optional_current_user
 from app.middleware.plans import require_feature
 from app.models import AnalysisResult, Project, ProjectFile, User
 from app.schemas.analysis_schema import AnalysisRequest
+from app.schemas.run_summary import RunSummary
 from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
 from app.services.cache import get_cached_analysis, set_cached_analysis
 from app.services.cleaner import clean_dataset
@@ -231,6 +232,65 @@ def get_analysis_history(
         }
         for r in results
     ]
+
+
+@router.get("/runs/{project_id}", response_model=list[RunSummary])
+def list_runs(
+    project_id: int,
+    limit: int = Query(20, ge=1, le=100),
+    status: Optional[str] = Query(None, description="Filter by status, e.g. 'failed'"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Return recent analysis runs for a project, newest first.
+
+    Lightweight — never includes result_json blobs.
+    Supports run-history UI, failure debugging, and execution comparison.
+    """
+    from sqlalchemy.orm import joinedload
+
+    project = db.query(Project).filter(
+        Project.id == project_id, Project.user_id == current_user.id
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    q = (
+        db.query(AnalysisResult)
+        .options(joinedload(AnalysisResult.source_file))
+        .filter(AnalysisResult.project_id == project_id)
+    )
+    if status:
+        q = q.filter(AnalysisResult.status == status)
+
+    runs = q.order_by(AnalysisResult.id.desc()).limit(limit).all()
+
+    summaries: list[RunSummary] = []
+    for r in runs:
+        started = r.started_at
+        finished = r.created_at  # created_at is stamped at completion by finalise_run
+
+        duration: Optional[float] = None
+        if started and finished and finished > started:
+            duration = (finished - started).total_seconds()
+
+        summaries.append(RunSummary(
+            run_id=r.id,
+            project_id=r.project_id,
+            status=r.status,
+            trigger_source=r.trigger_source,
+            started_at=started,
+            finished_at=finished if r.status == "report_ready" else None,
+            error_summary=r.error_summary,
+            file_id=r.file_id,
+            file_hash=r.file_hash,
+            filename=r.source_file.filename if r.source_file else None,
+            has_result=r.status == "report_ready",
+            duration_seconds=duration,
+        ))
+
+    return summaries
 
 
 @router.get("/result/{analysis_id}")
