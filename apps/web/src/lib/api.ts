@@ -606,6 +606,29 @@ export function getAnalysisResult(analysisId: number) {
   }>(`/analysis/result/${analysisId}`);
 }
 
+// Mirrors RunResults schema from GET /analysis/run/{run_id}/results
+export interface RunResultsResponse {
+  run_id: number;
+  project_id: number;
+  status: string;
+  error_summary: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  cleaning_result: Record<string, any> | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  health_result: Record<string, any> | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  insight_results: any[] | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  executive_panel: Record<string, any> | null;
+  narrative: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  report_result: Record<string, any> | null;
+}
+
+export function getRunResults(runId: number) {
+  return get<RunResultsResponse>(`/analysis/run/${runId}/results`);
+}
+
 export interface StorySlide {
   slide_num: number;
   title: string;

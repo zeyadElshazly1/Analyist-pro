@@ -6,8 +6,15 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
 import { UploadDataset } from "@/components/project/upload-dataset";
-import { RunAnalysis } from "@/components/project/run-analysis";
-import { getProject, getAnalysisHistory, type LatestRun, type ProjectDetail } from "@/lib/api";
+import { RunAnalysis, type AnalysisResult } from "@/components/project/run-analysis";
+import {
+  getProject,
+  getAnalysisHistory,
+  getRunResults,
+  type LatestRun,
+  type ProjectDetail,
+  type RunResultsResponse,
+} from "@/lib/api";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -19,7 +26,56 @@ import {
   Zap,
 } from "lucide-react";
 
+// ── Types ─────────────────────────────────────────────────────────────────────
+
 type HistoryEntry = { id: number; project_id: number; created_at: string; file_hash: string | null };
+
+// ── Adapter: canonical RunResults → RunAnalysis shape ─────────────────────────
+
+function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
+  const hr = stored.health_result;
+  const cr = stored.cleaning_result;
+  const ir = stored.insight_results ?? [];
+  const hs = hr?.health_score ?? {};
+  const ms = hr?.missingness_stats ?? {};
+
+  return {
+    run_id: stored.run_id,
+    analysis_id: stored.run_id,
+    dataset_summary: {
+      rows: hr?.row_count ?? 0,
+      columns: hr?.column_count ?? 0,
+      // numeric_cols / categorical_cols not available in canonical health_result
+      numeric_cols: 0,
+      categorical_cols: 0,
+      missing_pct: ms.missing_cell_pct ?? 0,
+    },
+    health_score: {
+      total: hs.total_score,
+      score: hs.total_score,
+      grade: hs.grade,
+      label: hs.label,
+      breakdown: hs.breakdown,
+    },
+    cleaning_summary: cr
+      ? { steps: cr.steps_applied?.length ?? 0, flagged: cr.steps_flagged?.length ?? 0 }
+      : null,
+    // insight_results shape matches the Insight type used in RunAnalysis
+    insights: ir,
+    // Full column profiles are not included in canonical blocks; ProfileView
+    // renders empty for stored runs — acceptable until a richer fetch is added.
+    profile: [],
+    cleaning_report: (cr?.steps_applied ?? []).map((s: any) => ({
+      step: s.rule,
+      detail: s.detail,
+      impact: s.impact ?? "low",
+    })),
+    narrative: stored.narrative ?? undefined,
+    executive_panel: stored.executive_panel ?? undefined,
+  };
+}
+
+// ── HistoryPanel ──────────────────────────────────────────────────────────────
 
 function HistoryPanel({ projectId }: { projectId: number }) {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -84,14 +140,21 @@ function HistoryPanel({ projectId }: { projectId: number }) {
   );
 }
 
-// ── Latest-run state banner ───────────────────────────────────────────────────
+// ── RunStateBanner ────────────────────────────────────────────────────────────
 
-function RunStateBanner({ run }: { run: LatestRun }) {
+function RunStateBanner({
+  run,
+  onOpenPrevious,
+  loadingPrevious,
+}: {
+  run: LatestRun;
+  onOpenPrevious: () => void;
+  loadingPrevious: boolean;
+}) {
   const finishedAt = run.finished_at
     ? new Date(run.finished_at).toLocaleString()
     : null;
 
-  // ── Completed run ─────────────────────────────────────────────────────────
   if (run.has_result) {
     return (
       <div className="flex items-start justify-between gap-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
@@ -106,19 +169,18 @@ function RunStateBanner({ run }: { run: LatestRun }) {
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Link
-            href={`/reports/${run.project_id}`}
-            className="rounded-lg bg-emerald-600/20 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-600/30 transition-colors"
-          >
-            Open previous analysis
-          </Link>
-        </div>
+        <button
+          onClick={onOpenPrevious}
+          disabled={loadingPrevious}
+          className="flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600/20 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-600/30 disabled:opacity-60 transition-colors"
+        >
+          {loadingPrevious && <Loader2 className="h-3 w-3 animate-spin" />}
+          Open previous analysis
+        </button>
       </div>
     );
   }
 
-  // ── Failed run ────────────────────────────────────────────────────────────
   if (run.status === "failed") {
     return (
       <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3">
@@ -138,7 +200,6 @@ function RunStateBanner({ run }: { run: LatestRun }) {
     );
   }
 
-  // ── In-progress run ───────────────────────────────────────────────────────
   return (
     <div className="flex items-center gap-3 rounded-xl border border-indigo-500/20 bg-indigo-500/5 px-4 py-3">
       <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin text-indigo-400" strokeWidth={1.75} />
@@ -160,6 +221,9 @@ export default function ProjectPage() {
   const projectId = Array.isArray(rawId) ? Number(rawId[0]) : Number(rawId);
 
   const [project, setProject] = useState<ProjectDetail | null>(null);
+  const [storedResult, setStoredResult] = useState<AnalysisResult | null>(null);
+  const [loadingPrevious, setLoadingPrevious] = useState(false);
+  const [openError, setOpenError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!projectId || isNaN(projectId)) return;
@@ -167,6 +231,21 @@ export default function ProjectPage() {
       .then(setProject)
       .catch(() => {});
   }, [projectId]);
+
+  async function handleOpenPrevious() {
+    const runId = project?.latest_run?.run_id;
+    if (!runId) return;
+    setLoadingPrevious(true);
+    setOpenError(null);
+    try {
+      const stored = await getRunResults(runId);
+      setStoredResult(adaptStoredResults(stored));
+    } catch {
+      setOpenError("Could not load the previous analysis. Please try again.");
+    } finally {
+      setLoadingPrevious(false);
+    }
+  }
 
   if (!projectId || isNaN(projectId)) {
     return (
@@ -215,9 +294,20 @@ export default function ProjectPage() {
             </div>
           </div>
 
-          {/* Latest-run state banner — shown once project loads */}
-          {project && project.latest_run && (
-            <RunStateBanner run={project.latest_run} />
+          {/* Latest-run state banner */}
+          {project?.latest_run && (
+            <RunStateBanner
+              run={project.latest_run}
+              onOpenPrevious={handleOpenPrevious}
+              loadingPrevious={loadingPrevious}
+            />
+          )}
+
+          {/* Error loading previous */}
+          {openError && (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs text-red-400">
+              {openError}
+            </div>
           )}
 
           {/* Dataset upload */}
@@ -238,7 +328,7 @@ export default function ProjectPage() {
             <UploadDataset projectId={projectId} />
           </section>
 
-          {/* Analysis */}
+          {/* Analysis — receives stored result when user clicks "Open previous analysis" */}
           <section className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
             <div className="mb-5 flex items-center gap-2.5">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600/15">
@@ -253,7 +343,11 @@ export default function ProjectPage() {
                 </p>
               </div>
             </div>
-            <RunAnalysis projectId={projectId} />
+            <RunAnalysis
+              projectId={projectId}
+              initialResult={storedResult ?? undefined}
+              initialRunId={project?.latest_run?.run_id}
+            />
           </section>
 
           {/* Analysis history */}

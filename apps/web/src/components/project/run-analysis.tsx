@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, Play, CheckCircle2, Share2, Copy, Check, Download } from "lucide-react";
+import { Clock, Loader2, Play, CheckCircle2, Share2, Copy, Check, Download } from "lucide-react";
 
 import { StatsCards } from "@/components/analysis/stats-cards";
 import { InsightsList } from "@/components/analysis/insights-list";
@@ -82,7 +82,7 @@ type CleaningItem = {
   impact: "high" | "medium" | "low";
 };
 
-type AnalysisResult = {
+export type AnalysisResult = {
   analysis_id?: number;
   dataset_summary: {
     rows: number;
@@ -116,6 +116,8 @@ type AnalysisResult = {
 
 type Props = {
   projectId: number;
+  initialResult?: AnalysisResult;   // pre-populated from stored run
+  initialRunId?: number;            // run_id for the stored result (used as analysisId)
 };
 
 type ProgressState = {
@@ -150,11 +152,23 @@ function ProgressBar({ progress, step, detail }: ProgressState) {
   );
 }
 
-export function RunAnalysis({ projectId }: Props) {
+export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [analysisId, setAnalysisId] = useState<number | null>(null);
+  const [isStoredResult, setIsStoredResult] = useState(false);
   const [tab, setTab] = useState("overview");
+
+  // Hydrate from a stored run passed by the parent page.
+  // Runs when initialResult changes (e.g. after parent fetches /run/{id}/results).
+  useEffect(() => {
+    if (initialResult) {
+      setResult(initialResult);
+      setAnalysisId(initialRunId ?? null);
+      setTab("overview");
+      setIsStoredResult(true);
+    }
+  }, [initialResult, initialRunId]);
   const [useCleaned, setUseCleaned] = useState(true);
   const [downloading, setDownloading] = useState(false);
 
@@ -180,6 +194,7 @@ export function RunAnalysis({ projectId }: Props) {
       esRef.current.close();
     }
 
+    setIsStoredResult(false);
     setLoading(true);
     setError("");
     setProgress({ step: "Reading your file", progress: 0, detail: "Preparing analysis…" });
@@ -342,10 +357,17 @@ export function RunAnalysis({ projectId }: Props) {
 
         {result && !loading && (
           <>
-            <span className="flex items-center gap-1.5 text-xs text-emerald-400">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              Ready to review
-            </span>
+            {isStoredResult ? (
+              <span className="flex items-center gap-1.5 text-xs text-indigo-300/70">
+                <Clock className="h-3.5 w-3.5" />
+                Viewing saved analysis
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Ready to review
+              </span>
+            )}
 
             {!shareToken ? (
               <Button
