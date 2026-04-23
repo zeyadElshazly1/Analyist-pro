@@ -15,7 +15,7 @@ from app.middleware.auth import get_current_user, optional_current_user
 from app.middleware.plans import require_feature
 from app.models import AnalysisResult, Project, ProjectFile, User
 from app.schemas.analysis_schema import AnalysisRequest
-from app.schemas.run_summary import RunSummary
+from app.schemas.run_summary import RunDetail, RunSummary
 from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
 from app.services.cache import get_cached_analysis, set_cached_analysis
 from app.services.cleaner import clean_dataset
@@ -291,6 +291,67 @@ def list_runs(
         ))
 
     return summaries
+
+
+@router.get("/run/{run_id}", response_model=RunDetail)
+def get_run(
+    run_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Fetch a single analysis run by id.
+
+    Ownership is enforced via a project join — users can only see their own runs.
+    Returns RunDetail: all RunSummary fields plus has_* payload-presence flags
+    derived from result_json keys (never dumps the blob itself).
+    """
+    from sqlalchemy.orm import joinedload
+
+    r = (
+        db.query(AnalysisResult)
+        .options(joinedload(AnalysisResult.source_file))
+        .join(Project, AnalysisResult.project_id == Project.id)
+        .filter(AnalysisResult.id == run_id, Project.user_id == current_user.id)
+        .first()
+    )
+    if not r:
+        raise HTTPException(status_code=404, detail="Run not found.")
+
+    started = r.started_at
+    finished = r.created_at
+    duration: Optional[float] = None
+    if started and finished and finished > started:
+        duration = (finished - started).total_seconds()
+
+    # Peek at result_json keys without returning the blob.
+    # result_json is "{}" for runs that never completed, so parse is cheap.
+    result_keys: set[str] = set()
+    if r.status == "report_ready" and r.result_json and r.result_json != "{}":
+        try:
+            result_keys = set(json.loads(r.result_json).keys())
+        except (json.JSONDecodeError, AttributeError):
+            pass
+
+    return RunDetail(
+        run_id=r.id,
+        project_id=r.project_id,
+        status=r.status,
+        trigger_source=r.trigger_source,
+        started_at=started,
+        finished_at=finished if r.status == "report_ready" else None,
+        error_summary=r.error_summary,
+        file_id=r.file_id,
+        file_hash=r.file_hash,
+        filename=r.source_file.filename if r.source_file else None,
+        has_result=r.status == "report_ready",
+        duration_seconds=duration,
+        has_cleaning_result="cleaning_result" in result_keys,
+        has_health_result="health_result" in result_keys,
+        has_insight_results="insight_results" in result_keys,
+        has_executive_panel="executive_panel" in result_keys,
+        has_report_result=bool(r.story_result_json),
+    )
 
 
 @router.get("/result/{analysis_id}")
