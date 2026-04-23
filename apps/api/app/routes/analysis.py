@@ -16,6 +16,7 @@ from app.middleware.plans import require_feature
 from app.models import AnalysisResult, Project, ProjectFile, User
 from app.schemas.analysis_schema import AnalysisRequest
 from app.schemas.run_summary import RunDetail, RunSummary
+from app.services.run_resolver import build_run_detail, resolve_latest_run
 from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
 from app.services.cache import get_cached_analysis, set_cached_analysis
 from app.services.cleaner import clean_dataset
@@ -293,43 +294,6 @@ def list_runs(
     return summaries
 
 
-def _to_run_detail(r: AnalysisResult) -> RunDetail:
-    """Convert a fetched AnalysisResult (with source_file pre-loaded) to RunDetail."""
-    started = r.started_at
-    finished = r.created_at
-    duration: Optional[float] = None
-    if started and finished and finished > started:
-        duration = (finished - started).total_seconds()
-
-    # Peek at result_json keys only — never include the blob in the response.
-    result_keys: set[str] = set()
-    if r.status == "report_ready" and r.result_json and r.result_json != "{}":
-        try:
-            result_keys = set(json.loads(r.result_json).keys())
-        except (json.JSONDecodeError, AttributeError):
-            pass
-
-    return RunDetail(
-        run_id=r.id,
-        project_id=r.project_id,
-        status=r.status,
-        trigger_source=r.trigger_source,
-        started_at=started,
-        finished_at=finished if r.status == "report_ready" else None,
-        error_summary=r.error_summary,
-        file_id=r.file_id,
-        file_hash=r.file_hash,
-        filename=r.source_file.filename if r.source_file else None,
-        has_result=r.status == "report_ready",
-        duration_seconds=duration,
-        has_cleaning_result="cleaning_result" in result_keys,
-        has_health_result="health_result" in result_keys,
-        has_insight_results="insight_results" in result_keys,
-        has_executive_panel="executive_panel" in result_keys,
-        has_report_result=bool(r.story_result_json),
-    )
-
-
 @router.get("/run/{run_id}", response_model=RunDetail)
 def get_run(
     run_id: int,
@@ -353,7 +317,7 @@ def get_run(
     )
     if not r:
         raise HTTPException(status_code=404, detail="Run not found.")
-    return _to_run_detail(r)
+    return build_run_detail(r)
 
 
 @router.get("/runs/{project_id}/latest", response_model=RunDetail)
@@ -365,40 +329,23 @@ def get_latest_run(
     """
     Return the latest usable run for a project.
 
-    Selection priority (single query, no round-trips):
+    Selection priority (single query):
       1. Most recent report_ready run
-      2. Most recent non-failed run (in progress or incomplete)
+      2. Most recent non-failed run
       3. Most recent run of any status
 
-    This lets the frontend reopen prior work without forcing a rerun.
     Returns 404 when the project has no runs at all.
     """
-    from sqlalchemy import case
-    from sqlalchemy.orm import joinedload
-
     project = db.query(Project).filter(
         Project.id == project_id, Project.user_id == current_user.id
     ).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
 
-    # Single query: order by status priority then recency.
-    # report_ready=0  →  any non-failed=1  →  failed=2
-    priority = case(
-        (AnalysisResult.status == "report_ready", 0),
-        (AnalysisResult.status != "failed", 1),
-        else_=2,
-    )
-    r = (
-        db.query(AnalysisResult)
-        .options(joinedload(AnalysisResult.source_file))
-        .filter(AnalysisResult.project_id == project_id)
-        .order_by(priority, AnalysisResult.id.desc())
-        .first()
-    )
+    r = resolve_latest_run(db, project_id)
     if not r:
         raise HTTPException(status_code=404, detail="No runs found for this project.")
-    return _to_run_detail(r)
+    return build_run_detail(r)
 
 
 @router.get("/result/{analysis_id}")
