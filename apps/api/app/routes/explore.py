@@ -159,9 +159,16 @@ def multifile_compare(
     label_b = file_b.get("filename", f"Project {payload.project_id_b}")
 
     try:
-        result = compare_files(path_a, path_b, label_a=label_a, label_b=label_b)
+        raw = compare_files(path_a, path_b, label_a=label_a, label_b=label_b)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Multi-file comparison failed: {e}")
+
+    from app.services.compare_adapter import build_compare_result
+    compare_result = build_compare_result(
+        raw,
+        project_id_a=payload.project_id_a,
+        project_id_b=payload.project_id_b,
+    ).model_dump()
 
     try:
         from app.db import SessionLocal
@@ -183,7 +190,10 @@ def multifile_compare(
     except Exception:
         pass
 
-    return to_jsonable(result)
+    return to_jsonable({
+        **raw,                          # raw keys kept for frontend backward compat
+        "compare_result": compare_result,  # canonical V1 schema
+    })
 
 
 # ── Join ─────────────────────────────────────────────────────────────────────
