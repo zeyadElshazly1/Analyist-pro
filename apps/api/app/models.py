@@ -119,19 +119,62 @@ class ProjectFile(Base):
         }
 
 
+_RUN_STATUSES = {
+    "created",           # stub written, processing not yet started
+    "intake_complete",   # file parsed, structure detected
+    "cleaning_complete", # cleaning pipeline done, PreparedDataset saved
+    "profiling_complete",# column profiles and health score computed
+    "insights_complete", # insights, narrative, executive panel generated
+    "report_ready",      # full result_json committed — run is readable
+    "export_ready",      # at least one export artifact stored
+    "failed",            # pipeline stopped with an unhandled error
+}
+
+
 class AnalysisResult(Base):
+    """
+    Canonical run record — one execution of the analysis pipeline against one file version.
+
+    V1 run fields (added): status, started_at, trigger_source, error_summary,
+    file_id, user_id, ai_model_version, story_result_json.
+
+    Deferred: prepared_dataset_id FK (after PreparedDataset loader is wired).
+    """
     __tablename__ = "analysis_results"
 
+    # ── Identity ──────────────────────────────────────────────────────────────
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
-    file_hash = Column(String(64), nullable=True)        # Hash of the file at analysis time
-    result_json = Column(Text, nullable=False)           # Full analysis JSON (compressed if needed)
-    share_token = Column(String(64), nullable=True, unique=True, index=True)  # UUID for public share link
+
+    # ── Run status ────────────────────────────────────────────────────────────
+    status = Column(String(32), nullable=False, server_default="report_ready")
+    started_at = Column(DateTime(timezone=True), nullable=True)      # None for historical rows
+    trigger_source = Column(String(32), nullable=True)               # "user" | "background_job" | "retry"
+    error_summary = Column(Text, nullable=True)                      # set when status="failed"
+
+    # ── Source file link ──────────────────────────────────────────────────────
+    file_id = Column(Integer, ForeignKey("project_files.id"), nullable=True)  # resolved ProjectFile
+    file_hash = Column(String(64), nullable=True)                    # SHA-256 of source file
+
+    # ── Ownership ─────────────────────────────────────────────────────────────
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=True)  # denormalized from project
+
+    # ── Result payloads ───────────────────────────────────────────────────────
+    result_json = Column(Text, nullable=False)                       # full pipeline output (all stages)
+    story_result_json = Column(Text, nullable=True)                  # AI data-story JSON (separate stage)
+    ai_model_version = Column(String(64), nullable=True)             # model used for AI story/chat
+
+    # ── Share link ────────────────────────────────────────────────────────────
+    share_token = Column(String(64), nullable=True, unique=True, index=True)
     share_expires_at = Column(DateTime(timezone=True), nullable=True)
     share_revoked = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime(timezone=True), default=_utcnow)
 
+    # ── Timestamps ────────────────────────────────────────────────────────────
+    created_at = Column(DateTime(timezone=True), default=_utcnow)    # completion time
+
+    # ── Relationships ─────────────────────────────────────────────────────────
     project = relationship("Project", back_populates="analyses")
+    source_file = relationship("ProjectFile", foreign_keys=[file_id])
 
     @property
     def result(self) -> dict:
