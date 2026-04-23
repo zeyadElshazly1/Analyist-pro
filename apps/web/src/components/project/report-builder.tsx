@@ -22,10 +22,12 @@ const TEMPLATES = [
 ];
 
 type Insight = {
-  finding?: string;
   title?: string;
   severity?: string;
-  type?: string;
+  explanation?: string;  // canonical
+  category?: string;     // canonical
+  finding?: string;      // legacy
+  type?: string;         // legacy
 };
 
 type Draft = {
@@ -187,7 +189,7 @@ export function ReportBuilder({ projectId, insights, projectName }: Props) {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium text-white/80">
-                      {ins.finding ?? ins.title ?? `Finding ${idx + 1}`}
+                      {ins.explanation ?? ins.finding ?? ins.title ?? `Finding ${idx + 1}`}
                     </p>
                     {ins.severity && (
                       <span className="text-[10px] text-white/30">{ins.severity} severity</span>

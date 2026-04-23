@@ -1,7 +1,9 @@
 type Insight = {
   title?: string;
-  finding?: string;
-  type?: string;
+  category?: string;      // canonical
+  explanation?: string;   // canonical — replaces finding
+  type?: string;          // legacy
+  finding?: string;       // legacy
   confidence?: number;
 };
 
@@ -22,7 +24,8 @@ export function InsightHighlights({ insights }: Props) {
   return (
     <div className="grid gap-3 md:grid-cols-3">
       {insights.slice(0, 3).map((insight, i) => {
-        const style = TYPE_STYLE[insight.type ?? ""] ?? {
+        const insightType = insight.category ?? insight.type ?? "";
+        const style = TYPE_STYLE[insightType] ?? {
           card: "border-white/10 bg-white/[0.03]",
           dot: "bg-white/30",
         };
@@ -35,10 +38,10 @@ export function InsightHighlights({ insights }: Props) {
               </span>
             </div>
             <p className="text-sm font-semibold text-white leading-snug">
-              {insight.title || insight.type || "Insight"}
+              {insight.title || insightType || "Insight"}
             </p>
             <p className="mt-2 text-xs text-white/60 leading-relaxed line-clamp-3">
-              {insight.finding || "No finding available."}
+              {insight.explanation ?? insight.finding ?? "No finding available."}
             </p>
           </div>
         );
