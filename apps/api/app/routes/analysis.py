@@ -2,10 +2,11 @@ import json
 import logging
 import math
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -26,6 +27,45 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
 
+# ── Run model helpers ─────────────────────────────────────────────────────────
+
+def _resolve_file_id(db: Session, project_id: int, file_hash: str | None) -> int | None:
+    """Return the ProjectFile.id matching (project_id, file_hash), or None."""
+    if not file_hash:
+        return None
+    pf = (
+        db.query(ProjectFile)
+        .filter(ProjectFile.project_id == project_id, ProjectFile.file_hash == file_hash)
+        .order_by(ProjectFile.uploaded_at.desc())
+        .first()
+    )
+    return pf.id if pf else None
+
+
+def _set_run_status(db: Session, run: AnalysisResult, status: str) -> None:
+    """Commit a status transition. Best-effort — never raises."""
+    try:
+        run.status = status
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.warning(f"Failed to commit run status={status} for run id={run.id}")
+
+
+def _fail_run(db: Session, run: AnalysisResult | None, summary: str) -> None:
+    """Mark a run as failed and commit. Best-effort — never raises."""
+    if run is None:
+        return
+    try:
+        run.status = "failed"
+        run.error_summary = summary[:500]
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+# ── Route helpers ─────────────────────────────────────────────────────────────
+
 def _get_file_path(project_id: int) -> str:
     """Resolve the uploaded file path for a project (cache → DB → disk)."""
     info = get_project_file_info(project_id)
@@ -36,6 +76,8 @@ def _get_file_path(project_id: int) -> str:
         )
     return info["path"]
 
+
+# ── Main analysis endpoint ────────────────────────────────────────────────────
 
 @router.post("/run")
 @limiter.limit("6/minute")
@@ -64,8 +106,36 @@ def run_analysis(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to load dataset for project {project_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Could not read the uploaded file. It may be corrupted or in an unsupported format.")
+        raise HTTPException(
+            status_code=500,
+            detail="Could not read the uploaded file. It may be corrupted or in an unsupported format.",
+        )
 
+    # ── Create run stub ───────────────────────────────────────────────────────
+    # Written before pipeline starts so failures always leave a run record.
+    run: AnalysisResult | None = None
+    try:
+        _file_id = _resolve_file_id(db, project_id, _file_hash)
+        run = AnalysisResult(
+            project_id=project_id,
+            status="created",
+            started_at=datetime.now(timezone.utc),
+            trigger_source="user",
+            file_hash=_file_hash,
+            file_id=_file_id,
+            user_id=current_user.id,
+            result_json="{}",  # placeholder until pipeline completes
+        )
+        db.add(run)
+        db.commit()
+        db.refresh(run)
+        logger.info(f"Run {run.id} created for project {project_id}")
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Failed to create run stub for project {project_id}: {e}", exc_info=True)
+        run = None  # continue without run tracking
+
+    # ── Pipeline ──────────────────────────────────────────────────────────────
     try:
         if df.empty:
             raise HTTPException(status_code=400, detail="Uploaded dataset is empty.")
@@ -88,59 +158,83 @@ def run_analysis(
             cleaning_summary = {"steps": 0, "note": "Skipped — raw data mode"}
             cleaning_result = {}
 
+        _set_run_status(db, run, "cleaning_complete")
+
         profile = profile_dataset(df_clean)
         health_score = calculate_health_score(df_clean)
         health_result = build_health_result(df_clean, health_score, profile).model_dump()
 
+        _set_run_status(db, run, "profiling_complete")
+
         insights, narrative = analyze_dataset(df_clean)
         insight_results = [r.model_dump() for r in build_insight_results(insights)]
         dataset_summary = get_dataset_summary(df_clean)
-
         executive_panel = generate_executive_panel(insights)
+
+        _set_run_status(db, run, "insights_complete")
 
         result = {
             "project_id": project_id,
+            "run_id": run.id if run else None,
             "dataset_summary": to_jsonable(dataset_summary),
-            "cleaning_summary": to_jsonable(cleaning_summary),   # kept for backward compat
-            "cleaning_report": to_jsonable(cleaning_report),     # kept for backward compat
-            "cleaning_result": cleaning_result,                  # canonical V1 schema
-            "health_score": to_jsonable(health_score),           # kept for backward compat
-            "profile": to_jsonable(profile),                     # kept for backward compat
-            "health_result": health_result,                      # canonical V1 schema
-            "insights": to_jsonable(insights),                   # kept for backward compat
-            "insight_results": insight_results,                  # canonical V1 schema
+            "cleaning_summary": to_jsonable(cleaning_summary),   # backward compat
+            "cleaning_report": to_jsonable(cleaning_report),     # backward compat
+            "cleaning_result": cleaning_result,                  # canonical V1
+            "health_score": to_jsonable(health_score),           # backward compat
+            "profile": to_jsonable(profile),                     # backward compat
+            "health_result": health_result,                      # canonical V1
+            "insights": to_jsonable(insights),                   # backward compat
+            "insight_results": insight_results,                  # canonical V1
             "narrative": narrative,
             "executive_panel": to_jsonable(executive_panel),
         }
 
-        # ── Write to Redis cache (before DB commit so cache is warm on retry) ──
+        # ── Warm Redis cache before final DB commit ───────────────────────────
         set_cached_analysis(project_id, _file_hash, result)
 
-        # ── Persist analysis result to DB ─────────────────────────────────────
-        from sqlalchemy.exc import SQLAlchemyError
-        file_hash = _file_hash
-        analysis = AnalysisResult(
-            project_id=project_id,
-            file_hash=file_hash,
-            result_json=json.dumps(result, default=str),
-        )
-        db.add(analysis)
-        try:
-            db.commit()
-        except SQLAlchemyError as e:
-            db.rollback()
-            logger.error(f"DB commit failed for analysis project {project_id}: {e}", exc_info=True)
-            raise HTTPException(
-                status_code=503,
-                detail="Analysis completed but could not be saved. Please try again.",
+        # ── Finalise run record ───────────────────────────────────────────────
+        result_json_str = json.dumps(result, default=str)
+        if run is not None:
+            run.result_json = result_json_str
+            run.status = "report_ready"
+            run.created_at = datetime.now(timezone.utc)   # mark completion time
+            try:
+                db.commit()
+            except SQLAlchemyError as e:
+                db.rollback()
+                logger.error(f"DB commit failed for run {run.id}: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=503,
+                    detail="Analysis completed but could not be saved. Please try again.",
+                )
+        else:
+            # Run tracking unavailable — persist a plain AnalysisResult (fallback)
+            fallback = AnalysisResult(
+                project_id=project_id,
+                file_hash=_file_hash,
+                result_json=result_json_str,
+                status="report_ready",
             )
+            db.add(fallback)
+            try:
+                db.commit()
+            except SQLAlchemyError as e:
+                db.rollback()
+                logger.error(f"DB commit failed (fallback) for project {project_id}: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=503,
+                    detail="Analysis completed but could not be saved. Please try again.",
+                )
 
-        # Update in-memory cache ONLY after successful commit
+        # ── Post-commit ───────────────────────────────────────────────────────
         PROJECT_FILES.setdefault(project_id, {})["last_insights"] = [
             i.get("finding", "") for i in insights[:5] if isinstance(i, dict)
         ]
 
-        logger.info(f"Analysis completed for project {project_id}: {len(insights)} insights")
+        logger.info(
+            f"Run {run.id if run else 'fallback'} completed for project {project_id}: "
+            f"{len(insights)} insights"
+        )
 
         from app.services.audit import log_event
         try:
@@ -150,7 +244,7 @@ def run_analysis(
                 user_id=current_user.id,
                 resource_type="project",
                 resource_id=str(project_id),
-                detail={"insights": len(insights)},
+                detail={"insights": len(insights), "run_id": run.id if run else None},
                 category="activation",
             )
         except Exception:
@@ -159,20 +253,22 @@ def run_analysis(
         return result
 
     except HTTPException:
+        _fail_run(db, run, "HTTPException raised during pipeline")
         raise
     except MemoryError:
+        _fail_run(db, run, "MemoryError: dataset too large for available memory")
         logger.error(f"Out of memory during analysis for project {project_id}", exc_info=True)
         raise HTTPException(
             status_code=503,
             detail="The dataset is too large to analyze with the current server resources. Try a smaller file.",
         )
     except Exception as e:
+        _fail_run(db, run, f"{type(e).__name__}: {e}")
         logger.error(f"Analysis failed for project {project_id}: {type(e).__name__}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="Analysis failed due to an unexpected error. Please try again.",
         )
-
 
 @router.get("/history/{project_id}")
 def get_analysis_history(
