@@ -91,7 +91,7 @@ def _build_health_score(health: dict) -> HealthScore:
         label=health["label"],
         breakdown=dict(health["breakdown"]),
         dataset_type=health["dataset_type"],
-        dataset_type_confidence=float(health.get("dataset_type_confidence", 1.0)),
+        dataset_type_confidence=float(health.get("dataset_type_confidence", 100)) / 100.0,
     )
 
 
