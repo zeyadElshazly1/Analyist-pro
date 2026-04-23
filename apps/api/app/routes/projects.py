@@ -11,6 +11,7 @@ from app.middleware.auth import get_current_user
 from app.middleware.plans import check_project_limit
 from app.models import AnalysisResult, Project, ProjectFile, User
 from app.schemas.project import ProjectCreate, ProjectResponse
+from app.services.run_resolver import build_run_detail, resolve_latest_run
 from app.state import PROJECT_FILES
 
 logger = logging.getLogger(__name__)
@@ -134,6 +135,16 @@ def get_project(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    """
+    Return project metadata plus the latest usable run context.
+
+    latest_run is None when the project has never been analysed.
+    When present it carries enough context for the UI to decide:
+      - "Open previous analysis" (has_result=True)
+      - "Continue from last run" (status != report_ready)
+      - "See last failure"       (status == failed)
+      - "Run again"              (always available)
+    """
     project = (
         db.query(Project)
         .filter(Project.id == project_id, Project.user_id == current_user.id)
@@ -141,7 +152,11 @@ def get_project(
     )
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
-    return project.to_dict()
+
+    run = resolve_latest_run(db, project_id)
+    result = project.to_dict()
+    result["latest_run"] = build_run_detail(run).model_dump(mode="json") if run else None
+    return result
 
 
 @router.delete("/{project_id}", status_code=204)

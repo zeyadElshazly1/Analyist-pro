@@ -6,11 +6,76 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
 import { UploadDataset } from "@/components/project/upload-dataset";
-import { RunAnalysis } from "@/components/project/run-analysis";
-import { getProject, getAnalysisHistory } from "@/lib/api";
-import { ArrowLeft, Database, Zap, Clock, FileText } from "lucide-react";
+import { RunAnalysis, type AnalysisResult } from "@/components/project/run-analysis";
+import {
+  getProject,
+  getAnalysisHistory,
+  getRunResults,
+  type LatestRun,
+  type ProjectDetail,
+  type RunResultsResponse,
+} from "@/lib/api";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Clock,
+  Database,
+  FileText,
+  Loader2,
+  XCircle,
+  Zap,
+} from "lucide-react";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type HistoryEntry = { id: number; project_id: number; created_at: string; file_hash: string | null };
+
+// ── Adapter: canonical RunResults → RunAnalysis shape ─────────────────────────
+
+function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
+  const hr = stored.health_result;
+  const cr = stored.cleaning_result;
+  const ir = stored.insight_results ?? [];
+  const hs = hr?.health_score ?? {};
+  const ms = hr?.missingness_stats ?? {};
+
+  return {
+    run_id: stored.run_id,
+    analysis_id: stored.run_id,
+    dataset_summary: {
+      rows: hr?.row_count ?? 0,
+      columns: hr?.column_count ?? 0,
+      // numeric_cols / categorical_cols not available in canonical health_result
+      numeric_cols: 0,
+      categorical_cols: 0,
+      missing_pct: ms.missing_cell_pct ?? 0,
+    },
+    health_score: {
+      total: hs.total_score,
+      score: hs.total_score,
+      grade: hs.grade,
+      label: hs.label,
+      breakdown: hs.breakdown,
+    },
+    cleaning_summary: cr
+      ? { steps: cr.steps_applied?.length ?? 0, flagged: cr.steps_flagged?.length ?? 0 }
+      : null,
+    // insight_results shape matches the Insight type used in RunAnalysis
+    insights: ir,
+    // Full column profiles are not included in canonical blocks; ProfileView
+    // renders empty for stored runs — acceptable until a richer fetch is added.
+    profile: [],
+    cleaning_report: (cr?.steps_applied ?? []).map((s: any) => ({
+      step: s.rule,
+      detail: s.detail,
+      impact: s.impact ?? "low",
+    })),
+    narrative: stored.narrative ?? undefined,
+    executive_panel: stored.executive_panel ?? undefined,
+  };
+}
+
+// ── HistoryPanel ──────────────────────────────────────────────────────────────
 
 function HistoryPanel({ projectId }: { projectId: number }) {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -75,19 +140,112 @@ function HistoryPanel({ projectId }: { projectId: number }) {
   );
 }
 
+// ── RunStateBanner ────────────────────────────────────────────────────────────
+
+function RunStateBanner({
+  run,
+  onOpenPrevious,
+  loadingPrevious,
+}: {
+  run: LatestRun;
+  onOpenPrevious: () => void;
+  loadingPrevious: boolean;
+}) {
+  const finishedAt = run.finished_at
+    ? new Date(run.finished_at).toLocaleString()
+    : null;
+
+  if (run.has_result) {
+    return (
+      <div className="flex items-start justify-between gap-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3">
+        <div className="flex items-start gap-3">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-400" strokeWidth={1.75} />
+          <div>
+            <p className="text-sm font-medium text-white">Previous analysis ready</p>
+            <p className="mt-0.5 text-xs text-white/40">
+              {run.filename && <span className="text-white/60">{run.filename}</span>}
+              {run.filename && finishedAt && <span className="mx-1.5 text-white/20">·</span>}
+              {finishedAt && <span>{finishedAt}</span>}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={onOpenPrevious}
+          disabled={loadingPrevious}
+          className="flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600/20 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-600/30 disabled:opacity-60 transition-colors"
+        >
+          {loadingPrevious && <Loader2 className="h-3 w-3 animate-spin" />}
+          Open previous analysis
+        </button>
+      </div>
+    );
+  }
+
+  if (run.status === "failed") {
+    return (
+      <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3">
+        <div className="flex items-start gap-3">
+          <XCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-400" strokeWidth={1.75} />
+          <div>
+            <p className="text-sm font-medium text-white">Last run failed</p>
+            {run.error_summary && (
+              <p className="mt-0.5 text-xs text-red-300/70">{run.error_summary}</p>
+            )}
+            <p className="mt-1 text-xs text-white/35">
+              Run the analysis again below to retry.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-indigo-500/20 bg-indigo-500/5 px-4 py-3">
+      <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin text-indigo-400" strokeWidth={1.75} />
+      <div>
+        <p className="text-sm font-medium text-white">Analysis in progress</p>
+        <p className="mt-0.5 text-xs text-white/40 capitalize">
+          {run.status.replace(/_/g, " ")}…
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function ProjectPage() {
   const params = useParams();
   const rawId = params?.id;
   const projectId = Array.isArray(rawId) ? Number(rawId[0]) : Number(rawId);
 
-  const [projectName, setProjectName] = useState<string | null>(null);
+  const [project, setProject] = useState<ProjectDetail | null>(null);
+  const [storedResult, setStoredResult] = useState<AnalysisResult | null>(null);
+  const [loadingPrevious, setLoadingPrevious] = useState(false);
+  const [openError, setOpenError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!projectId || isNaN(projectId)) return;
     getProject(projectId)
-      .then((p) => setProjectName(p.name))
+      .then(setProject)
       .catch(() => {});
   }, [projectId]);
+
+  async function handleOpenPrevious() {
+    const runId = project?.latest_run?.run_id;
+    if (!runId) return;
+    setLoadingPrevious(true);
+    setOpenError(null);
+    try {
+      const stored = await getRunResults(runId);
+      setStoredResult(adaptStoredResults(stored));
+    } catch {
+      setOpenError("Could not load the previous analysis. Please try again.");
+    } finally {
+      setLoadingPrevious(false);
+    }
+  }
 
   if (!projectId || isNaN(projectId)) {
     return (
@@ -122,7 +280,7 @@ export default function ProjectPage() {
                 <div>
                   <p className="text-[11px] text-white/30">Workspace #{projectId}</p>
                   <h1 className="text-xl font-bold tracking-tight text-white">
-                    {projectName ?? "Loading…"}
+                    {project?.name ?? "Loading…"}
                   </h1>
                 </div>
               </div>
@@ -136,6 +294,22 @@ export default function ProjectPage() {
             </div>
           </div>
 
+          {/* Latest-run state banner */}
+          {project?.latest_run && (
+            <RunStateBanner
+              run={project.latest_run}
+              onOpenPrevious={handleOpenPrevious}
+              loadingPrevious={loadingPrevious}
+            />
+          )}
+
+          {/* Error loading previous */}
+          {openError && (
+            <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-xs text-red-400">
+              {openError}
+            </div>
+          )}
+
           {/* Dataset upload */}
           <section className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
             <div className="mb-5 flex items-center gap-2.5">
@@ -144,13 +318,17 @@ export default function ProjectPage() {
               </div>
               <div>
                 <h2 className="text-sm font-semibold text-white">Dataset</h2>
-                <p className="text-xs text-white/40">Upload a CSV or Excel file to begin.</p>
+                <p className="text-xs text-white/40">
+                  {project?.latest_run
+                    ? "Upload a new file to run fresh analysis."
+                    : "Upload a CSV or Excel file to begin."}
+                </p>
               </div>
             </div>
             <UploadDataset projectId={projectId} />
           </section>
 
-          {/* Analysis */}
+          {/* Analysis — receives stored result when user clicks "Open previous analysis" */}
           <section className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
             <div className="mb-5 flex items-center gap-2.5">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600/15">
@@ -159,11 +337,17 @@ export default function ProjectPage() {
               <div>
                 <h2 className="text-sm font-semibold text-white">Analysis</h2>
                 <p className="text-xs text-white/40">
-                  Run the full pipeline — insights, charts, and data quality report.
+                  {project?.latest_run?.has_result
+                    ? "Run again to refresh with the latest file."
+                    : "Run the full pipeline — insights, charts, and data quality report."}
                 </p>
               </div>
             </div>
-            <RunAnalysis projectId={projectId} />
+            <RunAnalysis
+              projectId={projectId}
+              initialResult={storedResult ?? undefined}
+              initialRunId={project?.latest_run?.run_id}
+            />
           </section>
 
           {/* Analysis history */}

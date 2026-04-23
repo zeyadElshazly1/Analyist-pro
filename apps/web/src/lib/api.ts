@@ -376,8 +376,37 @@ export function getProjects() {
   return get<{ id: number; name: string; status: string; created_at?: string }[]>("/projects");
 }
 
+// Mirrors RunDetail schema from GET /analysis/run/{run_id}
+export interface LatestRun {
+  run_id: number;
+  project_id: number;
+  status: string;             // created | cleaning_complete | … | report_ready | failed
+  has_result: boolean;
+  filename: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  error_summary: string | null;
+  file_id: number | null;
+  file_hash: string | null;
+  trigger_source: string | null;
+  duration_seconds: number | null;
+  has_cleaning_result: boolean;
+  has_health_result: boolean;
+  has_insight_results: boolean;
+  has_executive_panel: boolean;
+  has_report_result: boolean;
+}
+
+export interface ProjectDetail {
+  id: number;
+  name: string;
+  status: string;
+  created_at: string;
+  latest_run: LatestRun | null;
+}
+
 export function getProject(projectId: number) {
-  return get<{ id: number; name: string; status: string; created_at: string }>(`/projects/${projectId}`);
+  return get<ProjectDetail>(`/projects/${projectId}`);
 }
 
 export function getAnnotations(projectId: number) {
@@ -575,6 +604,29 @@ export function getAnalysisResult(analysisId: number) {
     file_hash: string | null;
     result: Record<string, unknown>;
   }>(`/analysis/result/${analysisId}`);
+}
+
+// Mirrors RunResults schema from GET /analysis/run/{run_id}/results
+export interface RunResultsResponse {
+  run_id: number;
+  project_id: number;
+  status: string;
+  error_summary: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  cleaning_result: Record<string, any> | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  health_result: Record<string, any> | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  insight_results: any[] | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  executive_panel: Record<string, any> | null;
+  narrative: string | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  report_result: Record<string, any> | null;
+}
+
+export function getRunResults(runId: number) {
+  return get<RunResultsResponse>(`/analysis/run/${runId}/results`);
 }
 
 export interface StorySlide {
