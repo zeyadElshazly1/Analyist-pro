@@ -293,39 +293,15 @@ def list_runs(
     return summaries
 
 
-@router.get("/run/{run_id}", response_model=RunDetail)
-def get_run(
-    run_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Fetch a single analysis run by id.
-
-    Ownership is enforced via a project join — users can only see their own runs.
-    Returns RunDetail: all RunSummary fields plus has_* payload-presence flags
-    derived from result_json keys (never dumps the blob itself).
-    """
-    from sqlalchemy.orm import joinedload
-
-    r = (
-        db.query(AnalysisResult)
-        .options(joinedload(AnalysisResult.source_file))
-        .join(Project, AnalysisResult.project_id == Project.id)
-        .filter(AnalysisResult.id == run_id, Project.user_id == current_user.id)
-        .first()
-    )
-    if not r:
-        raise HTTPException(status_code=404, detail="Run not found.")
-
+def _to_run_detail(r: AnalysisResult) -> RunDetail:
+    """Convert a fetched AnalysisResult (with source_file pre-loaded) to RunDetail."""
     started = r.started_at
     finished = r.created_at
     duration: Optional[float] = None
     if started and finished and finished > started:
         duration = (finished - started).total_seconds()
 
-    # Peek at result_json keys without returning the blob.
-    # result_json is "{}" for runs that never completed, so parse is cheap.
+    # Peek at result_json keys only — never include the blob in the response.
     result_keys: set[str] = set()
     if r.status == "report_ready" and r.result_json and r.result_json != "{}":
         try:
@@ -352,6 +328,77 @@ def get_run(
         has_executive_panel="executive_panel" in result_keys,
         has_report_result=bool(r.story_result_json),
     )
+
+
+@router.get("/run/{run_id}", response_model=RunDetail)
+def get_run(
+    run_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Fetch a single analysis run by id.
+
+    Ownership is enforced via a project join.
+    Returns RunDetail: all RunSummary fields plus has_* payload-presence flags.
+    """
+    from sqlalchemy.orm import joinedload
+
+    r = (
+        db.query(AnalysisResult)
+        .options(joinedload(AnalysisResult.source_file))
+        .join(Project, AnalysisResult.project_id == Project.id)
+        .filter(AnalysisResult.id == run_id, Project.user_id == current_user.id)
+        .first()
+    )
+    if not r:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    return _to_run_detail(r)
+
+
+@router.get("/runs/{project_id}/latest", response_model=RunDetail)
+def get_latest_run(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Return the latest usable run for a project.
+
+    Selection priority (single query, no round-trips):
+      1. Most recent report_ready run
+      2. Most recent non-failed run (in progress or incomplete)
+      3. Most recent run of any status
+
+    This lets the frontend reopen prior work without forcing a rerun.
+    Returns 404 when the project has no runs at all.
+    """
+    from sqlalchemy import case
+    from sqlalchemy.orm import joinedload
+
+    project = db.query(Project).filter(
+        Project.id == project_id, Project.user_id == current_user.id
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    # Single query: order by status priority then recency.
+    # report_ready=0  →  any non-failed=1  →  failed=2
+    priority = case(
+        (AnalysisResult.status == "report_ready", 0),
+        (AnalysisResult.status != "failed", 1),
+        else_=2,
+    )
+    r = (
+        db.query(AnalysisResult)
+        .options(joinedload(AnalysisResult.source_file))
+        .filter(AnalysisResult.project_id == project_id)
+        .order_by(priority, AnalysisResult.id.desc())
+        .first()
+    )
+    if not r:
+        raise HTTPException(status_code=404, detail="No runs found for this project.")
+    return _to_run_detail(r)
 
 
 @router.get("/result/{analysis_id}")
