@@ -15,7 +15,7 @@ from app.middleware.auth import get_current_user, optional_current_user
 from app.middleware.plans import require_feature
 from app.models import AnalysisResult, Project, ProjectFile, User
 from app.schemas.analysis_schema import AnalysisRequest
-from app.schemas.run_summary import RunDetail, RunSummary
+from app.schemas.run_summary import RunDetail, RunResults, RunSummary
 from app.services.run_resolver import build_run_detail, resolve_latest_run
 from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
 from app.services.cache import get_cached_analysis, set_cached_analysis
@@ -318,6 +318,85 @@ def get_run(
     if not r:
         raise HTTPException(status_code=404, detail="Run not found.")
     return build_run_detail(r)
+
+
+@router.get("/run/{run_id}/results", response_model=RunResults)
+def get_run_results(
+    run_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Return the canonical result blocks for a completed run.
+
+    Behaves like "open previous run outputs" — never triggers recomputation.
+    All block fields are None for runs that did not reach report_ready status.
+
+    Canonical blocks returned:
+      cleaning_result   — CleaningResult (what was fixed/flagged/skipped)
+      health_result     — HealthResult (scores, warnings, column health)
+      insight_results   — list of InsightResult (findings, evidence, severity)
+      executive_panel   — high-level summary panel
+      narrative         — plain-text analysis narrative
+      report_result     — AI data story if generated (story_result_json)
+
+    Legacy fields (health_score, profile, insights, cleaning_report) are
+    intentionally excluded; use canonical blocks above instead.
+    """
+    r = (
+        db.query(AnalysisResult)
+        .join(Project, AnalysisResult.project_id == Project.id)
+        .filter(AnalysisResult.id == run_id, Project.user_id == current_user.id)
+        .first()
+    )
+    if not r:
+        raise HTTPException(status_code=404, detail="Run not found.")
+
+    # Runs that haven't completed return status context with all blocks null.
+    if r.status != "report_ready":
+        return RunResults(
+            run_id=r.id,
+            project_id=r.project_id,
+            status=r.status,
+            error_summary=r.error_summary,
+            cleaning_result=None,
+            health_result=None,
+            insight_results=None,
+            executive_panel=None,
+            narrative=None,
+            report_result=None,
+        )
+
+    # Parse result_json once; extract canonical blocks only.
+    try:
+        stored = json.loads(r.result_json)
+    except (json.JSONDecodeError, TypeError):
+        stored = {}
+
+    report_result = None
+    if r.story_result_json:
+        try:
+            report_result = json.loads(r.story_result_json)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    def _block(key: str):
+        """Return the block value, or None if absent / empty."""
+        val = stored.get(key)
+        return val if val else None
+
+    return RunResults(
+        run_id=r.id,
+        project_id=r.project_id,
+        status=r.status,
+        error_summary=None,
+        cleaning_result=_block("cleaning_result"),
+        health_result=_block("health_result"),
+        insight_results=_block("insight_results"),
+        executive_panel=_block("executive_panel"),
+        narrative=stored.get("narrative") or None,
+        report_result=report_result,
+    )
 
 
 @router.get("/runs/{project_id}/latest", response_model=RunDetail)

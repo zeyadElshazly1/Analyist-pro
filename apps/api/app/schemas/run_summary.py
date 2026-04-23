@@ -1,13 +1,14 @@
 """
-DTOs for analysis run visibility.
+DTOs for analysis run visibility and result retrieval.
 
-RunSummary  — used by GET /analysis/runs/{project_id} (list, no blobs)
-RunDetail   — used by GET /analysis/run/{run_id}      (single run, adds has_* payload flags)
+RunSummary  — list endpoint, no blobs
+RunDetail   — single-run metadata + has_* flags, no blobs
+RunResults  — canonical result blocks for reopening a completed run
 """
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -41,3 +42,25 @@ class RunDetail(RunSummary):
     has_insight_results: bool    # insight_results list is non-empty
     has_executive_panel: bool    # executive_panel block present
     has_report_result: bool      # AI story (story_result_json) generated
+
+
+class RunResults(BaseModel):
+    """
+    Canonical result blocks for a completed run — the "open prior work" payload.
+
+    All block fields are None when the run did not reach report_ready status.
+    Legacy fields (health_score, profile, insights, cleaning_report) are
+    intentionally excluded; consumers should use the canonical V1 blocks.
+    """
+    run_id: int
+    project_id: int
+    status: str
+    error_summary: Optional[str]
+
+    # ── Canonical V1 result blocks ────────────────────────────────────────────
+    cleaning_result: Optional[dict[str, Any]]   # CleaningResult model dump
+    health_result: Optional[dict[str, Any]]     # HealthResult model dump
+    insight_results: Optional[list[Any]]        # list of InsightResult model dumps
+    executive_panel: Optional[dict[str, Any]]   # high-level summary panel
+    narrative: Optional[str]                    # plain-text narrative
+    report_result: Optional[dict[str, Any]]     # AI data story (story_result_json)
