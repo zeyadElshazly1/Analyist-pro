@@ -336,11 +336,12 @@ def get_run_results(
       cleaning_result   — CleaningResult (what was fixed/flagged/skipped)
       health_result     — HealthResult (scores, warnings, column health)
       insight_results   — list of InsightResult (findings, evidence, severity)
+      profile_result    — list of column profile dicts (type, stats, flags)
       executive_panel   — high-level summary panel
       narrative         — plain-text analysis narrative
       report_result     — AI data story if generated (story_result_json)
 
-    Legacy fields (health_score, profile, insights, cleaning_report) are
+    Legacy fields (health_score, insights, cleaning_report) are
     intentionally excluded; use canonical blocks above instead.
     """
     r = (
@@ -362,6 +363,7 @@ def get_run_results(
             cleaning_result=None,
             health_result=None,
             insight_results=None,
+            profile_result=None,
             executive_panel=None,
             narrative=None,
             report_result=None,
@@ -393,6 +395,7 @@ def get_run_results(
         cleaning_result=_block("cleaning_result"),
         health_result=_block("health_result"),
         insight_results=_block("insight_results"),
+        profile_result=_block("profile"),
         executive_panel=_block("executive_panel"),
         narrative=stored.get("narrative") or None,
         report_result=report_result,

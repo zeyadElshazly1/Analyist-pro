@@ -619,6 +619,8 @@ export interface RunResultsResponse {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   insight_results: any[] | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  profile_result: any[] | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   executive_panel: Record<string, any> | null;
   narrative: string | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

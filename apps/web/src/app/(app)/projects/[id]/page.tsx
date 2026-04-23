@@ -36,8 +36,12 @@ function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
   const hr = stored.health_result;
   const cr = stored.cleaning_result;
   const ir = stored.insight_results ?? [];
+  const pr = stored.profile_result ?? [];
   const hs = hr?.health_score ?? {};
   const ms = hr?.missingness_stats ?? {};
+
+  const numeric_cols = pr.filter((c: any) => c.type === "numeric").length;
+  const categorical_cols = pr.filter((c: any) => c.type === "categorical").length;
 
   return {
     run_id: stored.run_id,
@@ -45,9 +49,8 @@ function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
     dataset_summary: {
       rows: hr?.row_count ?? 0,
       columns: hr?.column_count ?? 0,
-      // numeric_cols / categorical_cols not available in canonical health_result
-      numeric_cols: 0,
-      categorical_cols: 0,
+      numeric_cols,
+      categorical_cols,
       missing_pct: ms.missing_cell_pct ?? 0,
     },
     health_score: {
@@ -60,11 +63,8 @@ function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
     cleaning_summary: cr
       ? { steps: cr.steps_applied?.length ?? 0, flagged: cr.steps_flagged?.length ?? 0 }
       : null,
-    // insight_results shape matches the Insight type used in RunAnalysis
     insights: ir,
-    // Full column profiles are not included in canonical blocks; ProfileView
-    // renders empty for stored runs — acceptable until a richer fetch is added.
-    profile: [],
+    profile: pr,
     cleaning_report: (cr?.steps_applied ?? []).map((s: any) => ({
       step: s.rule,
       detail: s.detail,
