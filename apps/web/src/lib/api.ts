@@ -376,8 +376,37 @@ export function getProjects() {
   return get<{ id: number; name: string; status: string; created_at?: string }[]>("/projects");
 }
 
+// Mirrors RunDetail schema from GET /analysis/run/{run_id}
+export interface LatestRun {
+  run_id: number;
+  project_id: number;
+  status: string;             // created | cleaning_complete | … | report_ready | failed
+  has_result: boolean;
+  filename: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  error_summary: string | null;
+  file_id: number | null;
+  file_hash: string | null;
+  trigger_source: string | null;
+  duration_seconds: number | null;
+  has_cleaning_result: boolean;
+  has_health_result: boolean;
+  has_insight_results: boolean;
+  has_executive_panel: boolean;
+  has_report_result: boolean;
+}
+
+export interface ProjectDetail {
+  id: number;
+  name: string;
+  status: string;
+  created_at: string;
+  latest_run: LatestRun | null;
+}
+
 export function getProject(projectId: number) {
-  return get<{ id: number; name: string; status: string; created_at: string }>(`/projects/${projectId}`);
+  return get<ProjectDetail>(`/projects/${projectId}`);
 }
 
 export function getAnnotations(projectId: number) {
