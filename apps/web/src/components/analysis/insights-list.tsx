@@ -4,16 +4,24 @@ import { useState } from "react";
 import { Copy, Check } from "lucide-react";
 
 type Insight = {
+  // canonical V1 fields
+  category?: string;
+  explanation?: string;
+  recommendation?: string;
+  columns_used?: string[];
+  caveats?: string[];
+  // legacy fields
   type?: string;
-  severity?: string;
-  confidence?: number;
-  title?: string;
   finding?: string;
-  evidence?: string;
   action?: string;
   description?: string;
   why_it_matters?: string;
   likely_drivers?: string;
+  // common
+  title?: string;
+  severity?: string;
+  confidence?: number;   // canonical: 0.0–1.0; legacy: 0–100
+  evidence?: string;
 };
 
 type Props = {
@@ -48,17 +56,26 @@ const ALL_TYPES = [
   "missing_pattern", "multicollinearity", "leading_indicator",
 ];
 
+function insightCategory(i: Insight) { return i.category ?? i.type ?? ""; }
+function insightText(i: Insight)     { return i.explanation ?? i.finding ?? i.description ?? ""; }
+function insightAction(i: Insight)   { return i.recommendation ?? i.action ?? ""; }
+function insightConfidencePct(c: number | undefined) {
+  if (c === undefined) return undefined;
+  return c <= 1 ? Math.round(c * 100) : Math.round(c);
+}
+
 function CopyInsightButton({ insight }: { insight: Insight }) {
   const [copied, setCopied] = useState(false);
 
   function handleCopy(e: React.MouseEvent) {
     e.stopPropagation();
     const lines: string[] = [];
-    const title = insight.title ?? insight.type ?? "Insight";
-    lines.push(title);
-    if (insight.finding ?? insight.description) lines.push(insight.finding ?? insight.description ?? "");
+    lines.push(insight.title ?? insightCategory(insight) ?? "Insight");
+    const text = insightText(insight);
+    if (text) lines.push(text);
     if (insight.evidence) lines.push(`Evidence: ${insight.evidence}`);
-    if (insight.action) lines.push(`Action: ${insight.action}`);
+    const action = insightAction(insight);
+    if (action) lines.push(`Action: ${action}`);
     navigator.clipboard.writeText(lines.join("\n")).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
@@ -84,14 +101,18 @@ export function InsightsList({ insights }: Props) {
     return <p className="text-white/40 text-sm">No insights found. Run analysis on a richer dataset.</p>;
   }
 
-  const filtered = filter === "all" ? insights : insights.filter((i) => i.type === filter);
+  const filtered = filter === "all"
+    ? insights
+    : insights.filter((i) => insightCategory(i) === filter);
 
   return (
     <div className="space-y-4">
       {/* Filter tabs */}
       <div className="flex flex-wrap gap-1.5">
         {ALL_TYPES.map((type) => {
-          const count = type === "all" ? insights.length : insights.filter((i) => i.type === type).length;
+          const count = type === "all"
+            ? insights.length
+            : insights.filter((i) => insightCategory(i) === type).length;
           if (count === 0 && type !== "all") return null;
           const meta = type !== "all" ? TYPE_META[type] : null;
           return (
@@ -113,9 +134,13 @@ export function InsightsList({ insights }: Props) {
       {/* Insight cards */}
       <div className="space-y-2">
         {filtered.map((insight, idx) => {
-          const meta = TYPE_META[insight.type ?? ""] ?? { dot: "bg-white/20", badge: "bg-white/10 text-white/50", label: insight.type ?? "" };
+          const cat = insightCategory(insight);
+          const meta = TYPE_META[cat] ?? { dot: "bg-white/20", badge: "bg-white/10 text-white/50", label: cat };
           const severityClass = SEVERITY_META[insight.severity ?? "medium"] ?? SEVERITY_META.medium;
           const isExpanded = expandedIdx === idx;
+          const bodyText = insightText(insight);
+          const actionText = insightAction(insight);
+          const confidencePct = insightConfidencePct(insight.confidence);
 
           return (
             <div
@@ -132,24 +157,24 @@ export function InsightsList({ insights }: Props) {
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-semibold text-white">
-                        {insight.title ?? insight.type ?? "Insight"}
+                        {insight.title ?? cat ?? "Insight"}
                       </p>
                       <span className={`rounded-full px-2 py-0.5 text-xs ${meta.badge}`}>
-                        {meta.label || insight.type}
+                        {meta.label || cat}
                       </span>
                       {insight.severity === "high" && (
                         <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-xs text-red-300">high severity</span>
                       )}
-                      {insight.confidence !== undefined && (
+                      {confidencePct !== undefined && (
                         <span className="rounded-full bg-white/[0.08] px-2 py-0.5 text-xs text-white/50">
-                          {insight.confidence}% confidence
+                          {confidencePct}% confidence
                         </span>
                       )}
                     </div>
 
-                    {insight.finding || insight.description ? (
+                    {bodyText ? (
                       <p className="mt-1.5 text-sm text-white/60 leading-relaxed">
-                        {insight.finding ?? insight.description}
+                        {bodyText}
                       </p>
                     ) : null}
                   </div>
@@ -181,17 +206,17 @@ export function InsightsList({ insights }: Props) {
                     </div>
                   )}
 
-                  {insight.action && (
+                  {actionText && (
                     <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-3 py-2">
                       <p className="text-xs font-medium text-indigo-400 mb-0.5">Recommended Action</p>
-                      <p className="text-sm text-indigo-200">{insight.action}</p>
+                      <p className="text-sm text-indigo-200">{actionText}</p>
                     </div>
                   )}
                 </div>
               )}
 
               {/* Collapsed: show action hint */}
-              {!isExpanded && insight.action && (
+              {!isExpanded && actionText && (
                 <p className="mt-2 ml-5 text-xs text-indigo-400/70 cursor-pointer" onClick={() => setExpandedIdx(idx)}>
                   Click to see recommendation →
                 </p>

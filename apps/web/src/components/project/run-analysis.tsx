@@ -40,14 +40,28 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
 
 type Insight = {
+  // canonical V1 fields (InsightResult)
+  insight_id?: string;
+  category?: string;      // InsightCategory — use over legacy `type`
+  explanation?: string;   // replaces `finding`
+  recommendation?: string; // replaces `action`
+  columns_used?: string[];
+  method_used?: string;
+  report_safe?: boolean;
+  caveats?: string[];
+  chart_suggestion?: string;
+  // legacy fields (raw pipeline / backward-compat SSE result)
   type?: string;
-  severity?: string;
-  confidence?: number;
-  title?: string;
   finding?: string;
-  evidence?: string;
   action?: string;
   description?: string;
+  why_it_matters?: string;
+  likely_drivers?: string;
+  // common to both
+  title?: string;
+  severity?: string;
+  confidence?: number;    // canonical: 0.0–1.0; legacy: 0–100
+  evidence?: string;
 };
 
 type ColProfile = {
@@ -107,6 +121,7 @@ export type AnalysisResult = {
     deductions?: string[];
   };
   cleaning_summary?: Record<string, unknown> | null;
+  cleaning_result?: Record<string, unknown> | null;  // canonical CleaningResult block
   insights: Insight[];
   profile: ColProfile[];
   cleaning_report: CleaningItem[];
