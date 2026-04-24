@@ -717,10 +717,77 @@ export function runColumnCompare(projectId: number, colA: string, colB: string) 
   });
 }
 
+// ── Canonical compare result types ───────────────────────────────────────────
+
+export interface CompareFileRef {
+  file_name: string;
+  project_id: number | null;
+  row_count: number;
+  column_count: number;
+}
+
+export interface CompareSchemaChanges {
+  added_columns: string[];   // columns present in B but not A
+  removed_columns: string[]; // columns present in A but not B
+  shared_columns: string[];
+}
+
+export interface CompareRowVolume {
+  count_a: number;
+  count_b: number;
+  diff: number;
+  diff_pct: number | null;
+  overlap_count: number;
+  overlap_pct_of_a: number | null;
+}
+
+export interface CompareMetricDelta {
+  column: string;
+  mean_a: number | null;
+  mean_b: number | null;
+  mean_delta_pct: number | null;
+  median_a: number | null;
+  median_b: number | null;
+  std_a: number | null;
+  std_b: number | null;
+  change_flag: "stable" | "notable" | "significant" | "no_data";
+}
+
+export interface CompareHealthChange {
+  score_a: number;
+  score_b: number;
+  grade_a: string;
+  grade_b: string;
+  delta: number;
+  direction: "improved" | "declined" | "unchanged";
+}
+
+export interface CompareCautionFlag {
+  kind: string;
+  severity: "high" | "medium" | "low";
+  message: string;
+  column?: string | null;
+}
+
+export interface CompareResult {
+  compare_id: string;
+  file_a: CompareFileRef;
+  file_b: CompareFileRef;
+  schema_changes: CompareSchemaChanges;
+  row_volume_changes: CompareRowVolume;
+  metric_deltas: CompareMetricDelta[];
+  health_changes: CompareHealthChange;
+  summary_draft: string;
+  caution_flags: CompareCautionFlag[];
+}
+
 // ── Explore: Multi-file Compare ───────────────────────────────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type MultifileRaw = Record<string, any> & { compare_result?: CompareResult };
+
 export function runMultifileCompare(projectIdA: number, projectIdB: number) {
-  return post<Record<string, unknown>>("/explore/multifile", {
+  return post<MultifileRaw>("/explore/multifile", {
     project_id_a: projectIdA,
     project_id_b: projectIdB,
   });
