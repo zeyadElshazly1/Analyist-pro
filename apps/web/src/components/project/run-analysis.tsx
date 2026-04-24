@@ -136,7 +136,7 @@ export type AnalysisResult = {
     categorical_cols: number;
     missing_pct: number;
   };
-  health_score: {
+  health_score?: {
     total?: number;
     score?: number;
     grade?: string;
@@ -150,7 +150,7 @@ export type AnalysisResult = {
       structure: number;
     };
     deductions?: string[];
-  };
+  } | null;
   cleaning_summary?: Record<string, unknown> | null;
   cleaning_result?: Record<string, unknown> | null;  // canonical CleaningResult block
   health_result?: Record<string, unknown> | null;    // canonical HealthResult block
@@ -492,7 +492,7 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
               <div className="space-y-4">
                 <StatsCards summary={result.dataset_summary} healthResult={result.health_result} />
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <TabPanel><HealthScore score={result.health_score} healthResult={result.health_result} /></TabPanel>
+                  <TabPanel><HealthScore healthResult={result.health_result} score={result.health_score} /></TabPanel>
                   <TabPanel>
                     <h2 className="mb-4 text-sm font-semibold text-white/70 uppercase tracking-wider">Cleaning Summary</h2>
                     <CleaningSummaryCards summary={result.cleaning_summary} />

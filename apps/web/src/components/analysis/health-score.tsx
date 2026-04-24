@@ -18,8 +18,8 @@ type LegacyScore = {
 };
 
 type Props = {
-  score: LegacyScore;
-  healthResult?: HealthResult | null;  // canonical HealthResult block — preferred source
+  healthResult?: HealthResult | null;  // canonical — primary source
+  score?: LegacyScore | null;          // legacy fallback for old stored results only
 };
 
 const SEVERITY_STYLE: Record<string, { badge: string; dot: string }> = {

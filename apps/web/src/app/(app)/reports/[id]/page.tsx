@@ -266,7 +266,7 @@ export default function ReportDetailPage() {
                 {/* Health + Cleaning */}
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                   <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
-                    <HealthScore score={result.health_score as any} />
+                    <HealthScore healthResult={result.health_result as any} score={result.health_score as any} />
                   </div>
                   <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
                     <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-white/70">
