@@ -18,7 +18,6 @@ type CleaningSummary = {
   cols_removed?: number;
   steps?: number;
   time_saved_estimate?: string;
-  // new fields
   confidence_score?: number;
   placeholders_replaced?: number;
   duplicate_cols_removed?: number;
@@ -27,7 +26,8 @@ type CleaningSummary = {
 };
 
 type Props = {
-  summary: Record<string, unknown> | null | undefined;
+  cleaningResult?: Record<string, unknown> | null;  // canonical — primary
+  summary?: Record<string, unknown> | null;         // legacy fallback
 };
 
 function ConfidenceBadge({ score }: { score: number }) {
@@ -65,14 +65,45 @@ function StatCard({ label, value, sub }: { label: string; value: string | number
   );
 }
 
-export function CleaningSummaryCards({ summary }: Props) {
+// Normalise canonical CleaningResult → internal CleaningSummary shape.
+// canonical.cleaning_summary uses steps_applied; legacy uses steps.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function fromCanonical(cr: Record<string, any>): CleaningSummary {
+  const cs = cr.cleaning_summary ?? {};
+  return {
+    original_rows: cs.original_rows,
+    original_cols: cs.original_cols,
+    final_rows: cs.final_rows,
+    final_cols: cs.final_cols,
+    rows_removed: cs.rows_removed,
+    cols_removed: cs.cols_removed,
+    steps: cs.steps_applied ?? cs.steps,
+    time_saved_estimate: cs.time_saved_estimate,
+    confidence_score: cs.confidence_score,
+    suspicious_issues_remaining: (cr.suspicious_columns ?? []).map(
+      (sc: { issue_type?: string; column?: string; detail?: string }) => ({
+        type: sc.issue_type,
+        column: sc.column,
+        detail: sc.detail,
+      })
+    ),
+  };
+}
+
+export function CleaningSummaryCards({ cleaningResult, summary }: Props) {
   const [showIssues, setShowIssues] = useState(false);
 
-  if (!summary || typeof summary !== "object") {
+  // Canonical-first resolution into a uniform CleaningSummary shape.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const s: CleaningSummary | null = cleaningResult
+    ? fromCanonical(cleaningResult as Record<string, any>)
+    : summary
+    ? (summary as unknown as CleaningSummary)
+    : null;
+
+  if (!s) {
     return <p className="text-sm text-white/60">No cleaning summary available.</p>;
   }
-
-  const s = summary as unknown as CleaningSummary;
 
   const rowDelta = (s.original_rows ?? 0) - (s.final_rows ?? 0);
   const colDelta = (s.original_cols ?? 0) - (s.final_cols ?? 0);

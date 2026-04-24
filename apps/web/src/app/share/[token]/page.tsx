@@ -104,7 +104,7 @@ export default function SharePage() {
                 <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-white/70">
                   Cleaning Summary
                 </h2>
-                <CleaningSummaryCards summary={data.result.cleaning_summary as any} />
+                <CleaningSummaryCards cleaningResult={data.result.cleaning_result as any} summary={data.result.cleaning_summary as any} />
               </div>
             </div>
 

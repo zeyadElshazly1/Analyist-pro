@@ -156,7 +156,7 @@ export type AnalysisResult = {
   health_result?: Record<string, unknown> | null;    // canonical HealthResult block
   insights: Insight[];
   profile: ColProfile[];
-  cleaning_report: CleaningItem[];
+  cleaning_report?: CleaningItem[] | null;
   narrative?: string;
   story_result?: import("@/lib/api").DataStory | null;  // stored AI data story
   [key: string]: unknown;
@@ -495,7 +495,7 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
                   <TabPanel><HealthScore healthResult={result.health_result} score={result.health_score} /></TabPanel>
                   <TabPanel>
                     <h2 className="mb-4 text-sm font-semibold text-white/70 uppercase tracking-wider">Cleaning Summary</h2>
-                    <CleaningSummaryCards summary={result.cleaning_summary} />
+                    <CleaningSummaryCards cleaningResult={result.cleaning_result} summary={result.cleaning_summary} />
                   </TabPanel>
                 </div>
                 <TabPanel>
@@ -541,8 +541,8 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
               <TabPanel>
                 <h2 className="mb-4 font-semibold text-white">Cleaning Log</h2>
                 <CleaningReview
-                  items={result.cleaning_report}
-                  summary={result.cleaning_summary ?? undefined}
+                  cleaningResult={result.cleaning_result}
+                  items={result.cleaning_report ?? undefined}
                 />
               </TabPanel>
             </SafePanel>
