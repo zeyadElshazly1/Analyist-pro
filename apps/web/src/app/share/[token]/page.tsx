@@ -79,7 +79,10 @@ export default function SharePage() {
           </div>
         )}
 
-        {data && !loading && (
+        {data && !loading && (() => {
+          // insight_results replaced insights for new analyses; fall back for old stored results.
+          const insights = (data.result.insights ?? data.result.insight_results ?? []) as any;
+          return (
           <>
             {/* Meta */}
             <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
@@ -95,7 +98,7 @@ export default function SharePage() {
             {/* Health + Cleaning */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
-                <HealthScore score={data.result.health_score as any} />
+                <HealthScore healthResult={data.result.health_result as any} score={data.result.health_score as any} />
               </div>
               <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
                 <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-white/70">
@@ -108,13 +111,13 @@ export default function SharePage() {
             {/* Highlights */}
             <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
               <h2 className="mb-4 font-semibold text-white">Top Highlights</h2>
-              <InsightHighlights insights={data.result.insights as any} />
+              <InsightHighlights insights={insights} />
             </div>
 
             {/* All insights */}
             <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
               <h2 className="mb-4 font-semibold text-white">All Insights</h2>
-              <InsightsList insights={data.result.insights as any} />
+              <InsightsList insights={insights} />
             </div>
 
             {/* CTA */}
@@ -130,7 +133,8 @@ export default function SharePage() {
               </Link>
             </div>
           </>
-        )}
+          );
+        })()}
       </main>
     </div>
   );

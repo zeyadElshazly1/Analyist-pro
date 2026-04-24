@@ -291,14 +291,12 @@ async def _run_analysis_stream(
             "project_id": project_id,
             "run_id": run.id if run else None,
             "dataset_summary": to_jsonable(dataset_summary),
-            "cleaning_summary": to_jsonable(cleaning_summary),   # backward compat
-            "cleaning_report": to_jsonable(cleaning_report),     # backward compat
+            "cleaning_summary": to_jsonable(cleaning_summary),   # backward compat — CleaningSummaryCards
             "cleaning_result": cleaning_result,                  # canonical V1
-            "health_score": to_jsonable(health_score),           # backward compat
-            "profile": to_jsonable(profile),                     # backward compat
+            "health_score": to_jsonable(health_score),           # backward compat — HealthScore prop
+            "profile": to_jsonable(profile),                     # backward compat — ProfileView
             "health_result": health_result,                      # canonical V1
-            "insights": to_jsonable(insights),                   # backward compat
-            "insight_results": insight_results,                  # canonical V1
+            "insight_results": insight_results,                  # canonical V1 (replaces insights)
             "narrative": narrative,
             "executive_panel": to_jsonable(executive_panel),
         }

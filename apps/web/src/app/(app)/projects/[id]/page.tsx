@@ -70,7 +70,6 @@ function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
   const cr = stored.cleaning_result;
   const ir = stored.insight_results ?? [];
   const pr = stored.profile_result ?? [];
-  const hs = hr?.health_score ?? {};
   const ms = hr?.missingness_stats ?? {};
   const cs = cr?.cleaning_summary;
 
@@ -94,14 +93,7 @@ function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
       categorical_cols,
       missing_pct: ms.missing_cell_pct ?? 0,
     },
-    health_score: {
-      total: hs.total_score,
-      score: hs.total_score,
-      grade: hs.grade,
-      label: hs.label,
-      breakdown: hs.breakdown,
-    },
-    // health_result passes the canonical block directly — HealthScore/StatsCards read from it
+    // health_result passes the canonical block directly — HealthScore reads from it
     health_result: hr ?? null,
     // cleaning_result passes the canonical block directly — CleaningReview reads from it
     cleaning_result: cr ?? null,
