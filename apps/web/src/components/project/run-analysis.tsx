@@ -96,6 +96,37 @@ type CleaningItem = {
   impact: "high" | "medium" | "low";
 };
 
+// Reconstruct flat CleaningItem list from canonical CleaningResult block.
+// Used by CleaningReview when cleaning_report is absent from the result
+// (removed from API response — canonical cleaning_result is the source of truth).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function cleaningItemsFromCanonical(cr: Record<string, any> | null | undefined): CleaningItem[] {
+  if (!cr) return [];
+  const items: CleaningItem[] = [];
+  for (const r of cr.renamed_columns ?? []) {
+    items.push({ step: `Rename: ${r.original} → ${r.cleaned}`, detail: "Column name normalised", impact: "low" });
+  }
+  for (const col of cr.dropped_columns ?? []) {
+    items.push({ step: `Drop column: ${col}`, detail: "Removed — high missingness or no content", impact: "medium" });
+  }
+  for (const fix of cr.type_fixes ?? []) {
+    const count = fix.n_values_converted > 0 ? ` (${fix.n_values_converted} values)` : "";
+    items.push({ step: `Type fix: ${fix.column}`, detail: `Converted to ${fix.to_dtype}${count}`, impact: "medium" });
+  }
+  for (const note of cr.missingness_notes ?? []) {
+    const isSuggestion = note.strategy_applied === "safe_suggestion";
+    items.push({ step: `${isSuggestion ? "[SUGGESTION] Impute missing" : "Impute missing"}: ${note.column}`, detail: `${note.missing_count} missing (${note.missing_pct}%), mechanism: ${note.mechanism}`, impact: isSuggestion ? "low" : "medium" });
+  }
+  const dn = cr.duplicate_notes;
+  if (dn?.duplicate_rows_removed > 0) {
+    items.push({ step: "Remove duplicate rows", detail: `Removed ${dn.duplicate_rows_removed} of ${dn.duplicate_rows_found} duplicates`, impact: "medium" });
+  }
+  for (const susp of cr.suspicious_columns ?? []) {
+    items.push({ step: `[FLAG] ${susp.column}`, detail: susp.detail, impact: "medium" });
+  }
+  return items;
+}
+
 export type AnalysisResult = {
   analysis_id?: number;
   dataset_summary: {
@@ -241,8 +272,18 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
         }
 
         if (data.result) {
-          setResult(data.result as AnalysisResult);
-          if (data.result.analysis_id) setAnalysisId(data.result.analysis_id as number);
+          // Reconstruct fields the backend no longer includes (removed as duplicates).
+          // cleaning_report is rebuilt from canonical cleaning_result.
+          // insights is populated from canonical insight_results.
+          const raw = data.result;
+          const adapted: AnalysisResult = {
+            ...raw,
+            cleaning_report: raw.cleaning_report ?? cleaningItemsFromCanonical(raw.cleaning_result),
+            insights: raw.insights ?? raw.insight_results ?? [],
+          } as AnalysisResult;
+          setResult(adapted);
+          // run_id is the stable identifier for this analysis run
+          if (raw.run_id) setAnalysisId(raw.run_id as number);
           setTab("overview");
           setLoading(false);
           setProgress(null);

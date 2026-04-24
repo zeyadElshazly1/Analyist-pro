@@ -28,6 +28,33 @@ import {
 
 type HistoryEntry = { id: number; project_id: number; created_at: string };
 
+// Reconstruct flat CleaningItem list from canonical CleaningResult block.
+// Needed because cleaning_report is no longer stored in result_json — canonical
+// cleaning_result is the source of truth for new analyses.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function cleaningItemsFromCanonical(cr: Record<string, any> | null | undefined) {
+  if (!cr) return [];
+  const items: { step: string; detail: string; impact: "high" | "medium" | "low" }[] = [];
+  for (const r of cr.renamed_columns ?? [])
+    items.push({ step: `Rename: ${r.original} → ${r.cleaned}`, detail: "Column name normalised", impact: "low" });
+  for (const col of cr.dropped_columns ?? [])
+    items.push({ step: `Drop column: ${col}`, detail: "Removed — high missingness or no content", impact: "medium" });
+  for (const fix of cr.type_fixes ?? []) {
+    const count = fix.n_values_converted > 0 ? ` (${fix.n_values_converted} values)` : "";
+    items.push({ step: `Type fix: ${fix.column}`, detail: `Converted to ${fix.to_dtype}${count}`, impact: "medium" });
+  }
+  for (const note of cr.missingness_notes ?? []) {
+    const isSuggestion = note.strategy_applied === "safe_suggestion";
+    items.push({ step: `${isSuggestion ? "[SUGGESTION] Impute missing" : "Impute missing"}: ${note.column}`, detail: `${note.missing_count} missing (${note.missing_pct}%), mechanism: ${note.mechanism}`, impact: isSuggestion ? "low" : "medium" });
+  }
+  const dn = cr.duplicate_notes;
+  if (dn?.duplicate_rows_removed > 0)
+    items.push({ step: "Remove duplicate rows", detail: `Removed ${dn.duplicate_rows_removed} of ${dn.duplicate_rows_found} duplicates`, impact: "medium" });
+  for (const susp of cr.suspicious_columns ?? [])
+    items.push({ step: `[FLAG] ${susp.column}`, detail: susp.detail, impact: "medium" });
+  return items;
+}
+
 
 export default function ReportDetailPage() {
   const params = useParams();
@@ -218,57 +245,63 @@ export default function ReportDetailPage() {
           )}
 
           {/* Report body */}
-          {result && !loading && (
-            <div className="space-y-6">
-              {/* Stats */}
-              <StatsCards summary={result.dataset_summary as any} />
+          {result && !loading && (() => {
+            // Canonical-first derivations — insight_results replaced insights;
+            // cleaning_result replaced cleaning_report for new analyses.
+            const insights = (result.insights ?? result.insight_results ?? []) as any;
+            const cleaningReport = (result.cleaning_report ?? cleaningItemsFromCanonical(result.cleaning_result as any)) as any;
+            return (
+              <div className="space-y-6">
+                {/* Stats */}
+                <StatsCards summary={result.dataset_summary as any} />
 
-              {/* Executive Panel — above insights */}
-              {!!result.executive_panel && (
-                <div className="space-y-3">
-                  <h2 className="font-semibold text-white">Executive Summary</h2>
-                  <ExecutivePanel panel={result.executive_panel as any} />
+                {/* Executive Panel — above insights */}
+                {!!result.executive_panel && (
+                  <div className="space-y-3">
+                    <h2 className="font-semibold text-white">Executive Summary</h2>
+                    <ExecutivePanel panel={result.executive_panel as any} />
+                  </div>
+                )}
+
+                {/* Health + Cleaning */}
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
+                    <HealthScore score={result.health_score as any} />
+                  </div>
+                  <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
+                    <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-white/70">
+                      Cleaning Summary
+                    </h2>
+                    <CleaningSummaryCards summary={result.cleaning_summary as any} />
+                  </div>
                 </div>
-              )}
 
-              {/* Health + Cleaning */}
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                {/* Highlights */}
                 <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
-                  <HealthScore score={result.health_score as any} />
+                  <h2 className="mb-4 font-semibold text-white">Top Highlights</h2>
+                  <InsightHighlights insights={insights} />
                 </div>
+
+                {/* Column profile */}
                 <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
-                  <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-white/70">
-                    Cleaning Summary
-                  </h2>
-                  <CleaningSummaryCards summary={result.cleaning_summary as any} />
+                  <h2 className="mb-4 font-semibold text-white">Column Profiles</h2>
+                  <ProfileView profile={result.profile as any} />
+                </div>
+
+                {/* All insights */}
+                <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
+                  <h2 className="mb-4 font-semibold text-white">All Findings</h2>
+                  <InsightsList insights={insights} />
+                </div>
+
+                {/* Cleaning report */}
+                <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
+                  <h2 className="mb-4 font-semibold text-white">Cleaning Report</h2>
+                  <CleaningReport items={cleaningReport} />
                 </div>
               </div>
-
-              {/* Highlights */}
-              <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
-                <h2 className="mb-4 font-semibold text-white">Top Highlights</h2>
-                <InsightHighlights insights={result.insights as any} />
-              </div>
-
-              {/* Column profile */}
-              <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
-                <h2 className="mb-4 font-semibold text-white">Column Profiles</h2>
-                <ProfileView profile={result.profile as any} />
-              </div>
-
-              {/* All insights */}
-              <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
-                <h2 className="mb-4 font-semibold text-white">All Insights</h2>
-                <InsightsList insights={result.insights as any} />
-              </div>
-
-              {/* Cleaning report */}
-              <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
-                <h2 className="mb-4 font-semibold text-white">Cleaning Report</h2>
-                <CleaningReport items={result.cleaning_report as any} />
-              </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
     </AppShell>
