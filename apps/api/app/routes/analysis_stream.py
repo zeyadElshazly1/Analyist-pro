@@ -28,7 +28,7 @@ from fastapi.responses import StreamingResponse
 
 from app.db import SessionLocal
 from app.models import AnalysisResult
-from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
+from app.services.analyzer import analyze_dataset, generate_executive_panel
 from app.services.audit import log_event
 from app.services.cache import get_cached_analysis, set_cached_analysis
 from app.services.cleaning_adapter import build_cleaning_result
@@ -275,7 +275,6 @@ async def _run_analysis_stream(
         try:
             insights, narrative = analyze_dataset(df_clean)
             insight_results = [r.model_dump() for r in build_insight_results(insights)]
-            dataset_summary = get_dataset_summary(df_clean)
             executive_panel = generate_executive_panel(insights)
         except Exception as e:
             logger.error(f"Insight generation failed for project {project_id}: {e}", exc_info=True)
@@ -290,10 +289,8 @@ async def _run_analysis_stream(
         result = {
             "project_id": project_id,
             "run_id": run.id if run else None,
-            "dataset_summary": to_jsonable(dataset_summary),
-            "cleaning_summary": to_jsonable(cleaning_summary),   # backward compat — CleaningSummaryCards
+            "cleaning_summary": to_jsonable(cleaning_summary),   # backward compat — CleaningSummaryCards legacy fallback
             "cleaning_result": cleaning_result,                  # canonical V1
-            "health_score": to_jsonable(health_score),           # backward compat — HealthScore prop
             "profile": to_jsonable(profile),                     # backward compat — ProfileView
             "health_result": health_result,                      # canonical V1
             "insight_results": insight_results,                  # canonical V1 (replaces insights)
