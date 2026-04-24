@@ -127,6 +127,8 @@ function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
     cleaning_report: cleaningItemsFromCanonical(cr),
     narrative: stored.narrative ?? undefined,
     executive_panel: stored.executive_panel ?? undefined,
+    // story_result: pre-populate DataStoryView so reopening shows stored story
+    story_result: stored.story_result ?? undefined,
   };
 }
 

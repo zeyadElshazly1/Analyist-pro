@@ -64,4 +64,4 @@ class RunResults(BaseModel):
     profile_result: Optional[list[Any]]         # list of column profile dicts
     executive_panel: Optional[dict[str, Any]]   # high-level summary panel
     narrative: Optional[str]                    # plain-text narrative
-    report_result: Optional[dict[str, Any]]     # AI data story (story_result_json)
+    story_result: Optional[dict[str, Any]]       # AI data story (story_result_json)

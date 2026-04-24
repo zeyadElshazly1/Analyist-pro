@@ -127,6 +127,7 @@ export type AnalysisResult = {
   profile: ColProfile[];
   cleaning_report: CleaningItem[];
   narrative?: string;
+  story_result?: import("@/lib/api").DataStory | null;  // stored AI data story
   [key: string]: unknown;
 };
 
@@ -632,7 +633,12 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
           {/* ── Client Summary ───────────────────────────────────────── */}
           {tab === "story" && (
             <SafePanel label="Client Summary">
-              <TabPanel><DataStoryView analysisId={analysisId} /></TabPanel>
+              <TabPanel>
+                <DataStoryView
+                  analysisId={analysisId}
+                  storedStory={result?.story_result ?? null}
+                />
+              </TabPanel>
             </SafePanel>
           )}
         </div>
