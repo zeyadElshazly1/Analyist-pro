@@ -122,6 +122,7 @@ export type AnalysisResult = {
   };
   cleaning_summary?: Record<string, unknown> | null;
   cleaning_result?: Record<string, unknown> | null;  // canonical CleaningResult block
+  health_result?: Record<string, unknown> | null;    // canonical HealthResult block
   insights: Insight[];
   profile: ColProfile[];
   cleaning_report: CleaningItem[];
@@ -447,9 +448,9 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
           {tab === "overview" && (
             <SafePanel label="Overview">
               <div className="space-y-4">
-                <StatsCards summary={result.dataset_summary} />
+                <StatsCards summary={result.dataset_summary} healthResult={result.health_result} />
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <TabPanel><HealthScore score={result.health_score} /></TabPanel>
+                  <TabPanel><HealthScore score={result.health_score} healthResult={result.health_result} /></TabPanel>
                   <TabPanel>
                     <h2 className="mb-4 text-sm font-semibold text-white/70 uppercase tracking-wider">Cleaning Summary</h2>
                     <CleaningSummaryCards summary={result.cleaning_summary} />
