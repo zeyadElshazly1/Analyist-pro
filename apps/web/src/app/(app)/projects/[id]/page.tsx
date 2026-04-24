@@ -101,6 +101,8 @@ function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
       label: hs.label,
       breakdown: hs.breakdown,
     },
+    // health_result passes the canonical block directly — HealthScore/StatsCards read from it
+    health_result: hr ?? null,
     // cleaning_result passes the canonical block directly — CleaningReview reads from it
     cleaning_result: cr ?? null,
     // cleaning_summary mapped from canonical CleaningSummary for CleaningSummaryCards
