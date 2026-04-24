@@ -1,16 +1,19 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type HealthResult = Record<string, any>;
 
+type LegacySummary = {
+  rows?: number;
+  columns?: number;
+  numeric_cols?: number;
+  categorical_cols?: number;
+  missing_pct?: number;
+  domain?: string;
+};
+
 type Props = {
-  summary: {
-    rows: number;
-    columns: number;
-    numeric_cols: number;
-    categorical_cols: number;
-    missing_pct: number;
-    domain?: string;
-  };
-  healthResult?: HealthResult | null;  // canonical HealthResult block — preferred for domain/type
+  healthResult?: HealthResult | null;   // canonical — primary
+  profileResult?: any[] | null;         // canonical — numeric/categorical counts // eslint-disable-line @typescript-eslint/no-explicit-any
+  summary?: LegacySummary | null;       // legacy fallback for old stored results
 };
 
 const DOMAIN_BADGE: Record<string, string> = {
@@ -34,17 +37,21 @@ const DATASET_TYPE_DISPLAY: Record<string, string> = {
   general:       "General",
 };
 
-export function StatsCards({ summary, healthResult }: Props) {
-  // Prefer canonical row/column counts; fall back to dataset_summary values
-  const rowCount     = healthResult?.row_count    ?? summary.rows;
-  const colCount     = healthResult?.column_count ?? summary.columns;
-  const missingPct   = healthResult?.missingness_stats?.missing_cell_pct ?? summary.missing_pct;
+export function StatsCards({ healthResult, profileResult, summary }: Props) {
+  // Canonical-first reads — fall back to legacy summary values for old stored results.
+  const rowCount       = healthResult?.row_count    ?? summary?.rows    ?? 0;
+  const colCount       = healthResult?.column_count ?? summary?.columns ?? 0;
+  const missingPct     = healthResult?.missingness_stats?.missing_cell_pct ?? summary?.missing_pct ?? 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const numericCols    = profileResult ? profileResult.filter((c: any) => c.type === "numeric").length    : (summary?.numeric_cols    ?? 0);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const categoricalCols = profileResult ? profileResult.filter((c: any) => c.type === "categorical").length : (summary?.categorical_cols ?? 0);
 
   const items = [
-    { label: "Rows",        value: rowCount.toLocaleString() },
+    { label: "Rows",        value: (rowCount as number).toLocaleString() },
     { label: "Columns",     value: colCount },
-    { label: "Numeric",     value: summary.numeric_cols },
-    { label: "Categorical", value: summary.categorical_cols },
+    { label: "Numeric",     value: numericCols },
+    { label: "Categorical", value: categoricalCols },
     { label: "Missing",     value: `${typeof missingPct === "number" ? missingPct.toFixed(1) : missingPct}%`, warn: (missingPct as number) > 10 },
   ];
 
@@ -52,7 +59,7 @@ export function StatsCards({ summary, healthResult }: Props) {
   const canonicalType = healthResult?.health_score?.dataset_type;
   const domainLabel   = canonicalType
     ? (DATASET_TYPE_DISPLAY[canonicalType] ?? canonicalType)
-    : (summary.domain ?? "General");
+    : (summary?.domain ?? "General");
   const domainClass   = DOMAIN_BADGE[domainLabel] ?? DOMAIN_BADGE["General"];
 
   return (

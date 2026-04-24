@@ -222,7 +222,7 @@ export default function ReportDetailPage() {
             return (
               <div className="space-y-6">
                 {/* Stats */}
-                <StatsCards summary={result.dataset_summary as any} />
+                <StatsCards healthResult={result.health_result as any} profileResult={result.profile as any} summary={result.dataset_summary as any} />
 
                 {/* Executive Panel — above insights */}
                 {!!result.executive_panel && (

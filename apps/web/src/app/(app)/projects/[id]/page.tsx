@@ -37,10 +37,6 @@ function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
   const cr = stored.cleaning_result;
   const ir = stored.insight_results ?? [];
   const pr = stored.profile_result ?? [];
-  const ms = hr?.missingness_stats ?? {};
-
-  const numeric_cols = pr.filter((c: any) => c.type === "numeric").length;
-  const categorical_cols = pr.filter((c: any) => c.type === "categorical").length;
 
   // Canonical InsightResult has confidence 0.0–1.0; UI expects 0–100.
   const insights = ir.map((i: any) =>
@@ -52,14 +48,7 @@ function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
   return {
     run_id: stored.run_id,
     analysis_id: stored.run_id,
-    dataset_summary: {
-      rows: hr?.row_count ?? 0,
-      columns: hr?.column_count ?? 0,
-      numeric_cols,
-      categorical_cols,
-      missing_pct: ms.missing_cell_pct ?? 0,
-    },
-    // health_result passes the canonical block directly — HealthScore reads from it
+    // health_result passes the canonical block directly — HealthScore/StatsCards read from it
     health_result: hr ?? null,
     // cleaning_result passes the canonical block directly — CleaningSummaryCards/CleaningReview read from it
     cleaning_result: cr ?? null,

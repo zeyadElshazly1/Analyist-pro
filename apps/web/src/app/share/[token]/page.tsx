@@ -93,7 +93,7 @@ export default function SharePage() {
             </div>
 
             {/* Stats */}
-            <StatsCards summary={data.result.dataset_summary as any} />
+            <StatsCards healthResult={data.result.health_result as any} profileResult={data.result.profile as any} summary={data.result.dataset_summary as any} />
 
             {/* Health + Cleaning */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

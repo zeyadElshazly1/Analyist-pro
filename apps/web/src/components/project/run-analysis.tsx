@@ -129,13 +129,13 @@ function cleaningItemsFromCanonical(cr: Record<string, any> | null | undefined):
 
 export type AnalysisResult = {
   analysis_id?: number;
-  dataset_summary: {
-    rows: number;
-    columns: number;
-    numeric_cols: number;
-    categorical_cols: number;
-    missing_pct: number;
-  };
+  dataset_summary?: {
+    rows?: number;
+    columns?: number;
+    numeric_cols?: number;
+    categorical_cols?: number;
+    missing_pct?: number;
+  } | null;
   health_score?: {
     total?: number;
     score?: number;
@@ -490,7 +490,7 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
           {tab === "overview" && (
             <SafePanel label="Overview">
               <div className="space-y-4">
-                <StatsCards summary={result.dataset_summary} healthResult={result.health_result} />
+                <StatsCards healthResult={result.health_result} profileResult={result.profile} summary={result.dataset_summary} />
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                   <TabPanel><HealthScore healthResult={result.health_result} score={result.health_score} /></TabPanel>
                   <TabPanel>
