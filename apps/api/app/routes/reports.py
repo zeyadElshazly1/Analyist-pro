@@ -9,7 +9,7 @@ from typing import Optional
 from app.db import get_db
 from app.middleware.auth import get_current_user
 from app.middleware.plans import require_feature
-from app.models import AnalysisResult, Project, ReportDraft, User
+from app.models import AnalysisResult, AuditLog, Project, ReportDraft, User
 from app.services.file_loader import load_dataset
 from app.services.report_service import generate_excel_report, generate_html_report, generate_pdf_report
 from app.state import get_project_file_info
@@ -119,6 +119,131 @@ def preview_report(
     return result
 
 
+# ── Report Result builder ─────────────────────────────────────────────────────
+
+def _build_report_result(draft: ReportDraft, db: Session) -> dict:
+    """
+    Assemble a canonical ReportResult from a draft, linked analysis, and audit log.
+
+    All data already exists in the DB — this is a pure assembly step.
+    Fields without V1 persistence (user_edits, export_artifact_refs) are empty lists.
+    """
+    from app.schemas.report import (
+        ExportRecord,
+        IncludedInsight,
+        ReportResult,
+        ReportSection,
+    )
+
+    # Resolve selected insights from the linked analysis result
+    included_insights: list[IncludedInsight] = []
+    if draft.analysis_result_id:
+        analysis = (
+            db.query(AnalysisResult)
+            .filter(AnalysisResult.id == draft.analysis_result_id)
+            .first()
+        )
+        if analysis:
+            try:
+                result_data = json.loads(analysis.result_json)
+                raw = result_data.get("insight_results") or result_data.get("insights") or []
+                for idx in draft.selected_insights:
+                    if isinstance(idx, int) and 0 <= idx < len(raw):
+                        ins = raw[idx]
+                        included_insights.append(IncludedInsight(
+                            insight_id=ins.get("insight_id") or f"idx_{idx}",
+                            title=(
+                                ins.get("title") or ins.get("explanation")
+                                or ins.get("finding") or f"Finding {idx + 1}"
+                            ),
+                            severity=ins.get("severity") or "medium",
+                            index_in_run=idx,
+                        ))
+            except Exception:
+                pass
+
+    # Default section list — all included; compare_summary excluded unless compare ran
+    _SECTIONS = [
+        ("executive_summary", "Executive Summary",  True,  True),
+        ("data_quality",      "Data Quality",       True,  False),
+        ("cleaning_steps",    "Cleaning Steps",     True,  False),
+        ("top_insights",      "Top Insights",       True,  False),
+        ("column_profiles",   "Column Profiles",    True,  False),
+        ("chart_gallery",     "Chart Gallery",      True,  False),
+        ("compare_summary",   "Compare Summary",    False, False),
+    ]
+    included_sections = [
+        ReportSection(
+            section_id=sid,      # type: ignore[arg-type]
+            title=title,
+            included=included,
+            is_ai_generated=is_ai,
+        )
+        for sid, title, included, is_ai in _SECTIONS
+    ]
+
+    # Export history from audit log (most recent 10)
+    export_logs = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.action == "export_completed",
+            AuditLog.resource_type == "project",
+            AuditLog.resource_id == str(draft.project_id),
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    export_statuses: list[ExportRecord] = []
+    for log in export_logs:
+        try:
+            detail = json.loads(log.detail) if log.detail else {}
+        except Exception:
+            detail = {}
+        fmt = detail.get("format")
+        if fmt in ("html", "pdf", "xlsx"):
+            export_statuses.append(ExportRecord(
+                format=fmt,          # type: ignore[arg-type]
+                status="completed",
+                exported_at=log.created_at,
+            ))
+
+    result = ReportResult(
+        report_id=draft.id,
+        run_id=draft.analysis_result_id,
+        project_id=draft.project_id,
+        title=draft.title or "",
+        summary=draft.summary,
+        template=draft.template,     # type: ignore[arg-type]
+        included_sections=included_sections,
+        included_insights=included_insights,
+        included_charts=[],          # chart resolution deferred to V2
+        user_edits=[],               # edit history not persisted in V1
+        ai_generated_sections=["executive_summary"],
+        export_statuses=export_statuses,
+        export_artifact_refs=[],     # no artifact storage in V1
+        created_at=draft.created_at,
+        updated_at=draft.updated_at,
+    )
+    return result.model_dump()
+
+
+def _draft_response(draft: ReportDraft, db: Session) -> dict:
+    """Build the standard draft response dict with embedded canonical report_result."""
+    return {
+        "id": draft.id,
+        "project_id": draft.project_id,
+        "title": draft.title,
+        "summary": draft.summary,
+        "selected_insight_ids": draft.selected_insights,
+        "selected_chart_ids": draft.selected_charts,
+        "template": draft.template,
+        "created_at": draft.created_at.isoformat() if draft.created_at else None,
+        "updated_at": draft.updated_at.isoformat() if draft.updated_at else None,
+        "report_result": _build_report_result(draft, db),
+    }
+
+
 # ── Report Draft ──────────────────────────────────────────────────────────────
 
 class ReportDraftPayload(BaseModel):
@@ -209,17 +334,7 @@ def upsert_report_draft(
         category="activation",
     )
 
-    return {
-        "id": draft.id,
-        "project_id": draft.project_id,
-        "title": draft.title,
-        "summary": draft.summary,
-        "selected_insight_ids": draft.selected_insights,
-        "selected_chart_ids": draft.selected_charts,
-        "template": draft.template,
-        "created_at": draft.created_at.isoformat() if draft.created_at else None,
-        "updated_at": draft.updated_at.isoformat() if draft.updated_at else None,
-    }
+    return _draft_response(draft, db)
 
 
 @router.get("/draft/{project_id}")
@@ -244,14 +359,4 @@ def get_report_draft(
     if not draft:
         return None
 
-    return {
-        "id": draft.id,
-        "project_id": draft.project_id,
-        "title": draft.title,
-        "summary": draft.summary,
-        "selected_insight_ids": draft.selected_insights,
-        "selected_chart_ids": draft.selected_charts,
-        "template": draft.template,
-        "created_at": draft.created_at.isoformat() if draft.created_at else None,
-        "updated_at": draft.updated_at.isoformat() if draft.updated_at else None,
-    }
+    return _draft_response(draft, db)

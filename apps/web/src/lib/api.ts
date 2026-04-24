@@ -606,6 +606,81 @@ export function getAnalysisResult(analysisId: number) {
   }>(`/analysis/result/${analysisId}`);
 }
 
+// ── Canonical report result types ────────────────────────────────────────────
+
+export interface ReportSection {
+  section_id: string;
+  title: string;
+  included: boolean;
+  is_ai_generated: boolean;
+  custom_text: string | null;
+}
+
+export interface IncludedInsight {
+  insight_id: string;
+  title: string;
+  severity: string;
+  index_in_run: number | null;
+}
+
+export interface IncludedChart {
+  chart_id: string;
+  chart_type: string;
+  title: string;
+}
+
+export interface UserEdit {
+  field: string;
+  edited_at: string;
+}
+
+export interface ReportExportRecord {
+  format: "html" | "pdf" | "xlsx";
+  status: "completed" | "failed" | "pending";
+  exported_at: string | null;
+  error_message: string | null;
+}
+
+export interface ReportArtifactRef {
+  format: "html" | "pdf" | "xlsx";
+  stored_path: string | null;
+  file_size_bytes: number | null;
+  exported_at: string | null;
+  download_url: string | null;
+}
+
+export interface ReportResult {
+  report_id: number;
+  run_id: number | null;
+  project_id: number;
+  title: string;
+  summary: string | null;
+  template: string | null;
+  included_sections: ReportSection[];
+  included_insights: IncludedInsight[];
+  included_charts: IncludedChart[];
+  user_edits: UserEdit[];
+  ai_generated_sections: string[];
+  export_statuses: ReportExportRecord[];
+  export_artifact_refs: ReportArtifactRef[];
+  created_at: string;
+  updated_at: string;
+}
+
+// Draft API response — flat draft fields + embedded canonical report_result
+export interface DraftResponse {
+  id: number;
+  project_id: number;
+  title: string | null;
+  summary: string | null;
+  selected_insight_ids: number[];
+  selected_chart_ids: string[];
+  template: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  report_result: ReportResult | null;
+}
+
 // Mirrors RunResults schema from GET /analysis/run/{run_id}/results
 export interface RunResultsResponse {
   run_id: number;
@@ -623,8 +698,7 @@ export interface RunResultsResponse {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   executive_panel: Record<string, any> | null;
   narrative: string | null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  report_result: Record<string, any> | null;
+  story_result: DataStory | null;  // AI data story (story_result_json); was report_result
 }
 
 export function getRunResults(runId: number) {
@@ -853,6 +927,24 @@ export function sendChatMessage(
     message,
     history,
   });
+}
+
+// ── Report Draft ─────────────────────────────────────────────────────────────
+
+export interface SaveDraftPayload {
+  title?: string;
+  summary?: string;
+  selected_insight_ids?: number[];
+  selected_chart_ids?: string[];
+  template?: string | null;
+}
+
+export function getDraftReport(projectId: number) {
+  return get<DraftResponse | null>(`/reports/draft/${projectId}`);
+}
+
+export function saveDraftReport(projectId: number, payload: SaveDraftPayload) {
+  return post<DraftResponse>(`/reports/draft/${projectId}`, payload);
 }
 
 // ── Report Export ─────────────────────────────────────────────────────────────

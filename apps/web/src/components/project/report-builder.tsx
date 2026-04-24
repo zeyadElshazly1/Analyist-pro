@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FileText, Sparkles, Download, CheckCircle } from "lucide-react";
+import { FileText, Sparkles, Download, CheckCircle, Clock } from "lucide-react";
+import { getDraftReport, saveDraftReport, exportReport } from "@/lib/api";
+import type { ReportResult, ReportExportRecord } from "@/lib/api";
 
 const TEMPLATES = [
   {
@@ -30,6 +32,7 @@ type Insight = {
   type?: string;         // legacy
 };
 
+// Draft state — flat fields mirroring the API response
 type Draft = {
   id?: number;
   title?: string;
@@ -37,6 +40,7 @@ type Draft = {
   selected_insight_ids?: number[];
   selected_chart_ids?: string[];
   template?: string;
+  report_result?: ReportResult | null;
 };
 
 type Props = {
@@ -45,6 +49,17 @@ type Props = {
   projectName?: string;
 };
 
+function formatExportDate(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+  } catch {
+    return iso;
+  }
+}
+
+const FORMAT_LABEL: Record<string, string> = { pdf: "PDF", xlsx: "Excel", html: "HTML" };
+
 export function ReportBuilder({ projectId, insights, projectName }: Props) {
   const [draft, setDraft] = useState<Draft>({
     title: projectName ?? "",
@@ -52,16 +67,30 @@ export function ReportBuilder({ projectId, insights, projectName }: Props) {
     selected_insight_ids: [],
     selected_chart_ids: [],
     template: undefined,
+    report_result: null,
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/reports/draft/${projectId}`, { credentials: "include" })
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => { if (d) setDraft(d); })
+    getDraftReport(projectId)
+      .then((d) => {
+        if (!d) return;
+        // Canonical-first: use report_result fields when available
+        const rr = d.report_result;
+        setDraft({
+          id:                   d.id,
+          title:                rr?.title     ?? d.title     ?? projectName ?? "",
+          summary:              rr?.summary   ?? d.summary   ?? "",
+          selected_insight_ids: rr?.included_insights.map((i) => i.index_in_run ?? 0).filter((n) => n >= 0)
+                                ?? d.selected_insight_ids ?? [],
+          selected_chart_ids:   d.selected_chart_ids ?? [],
+          template:             rr?.template  ?? d.template  ?? undefined,
+          report_result:        rr ?? null,
+        });
+      })
       .catch(() => {});
-  }, [projectId]);
+  }, [projectId, projectName]);
 
   async function saveDraft(updates: Partial<Draft>) {
     const next = { ...draft, ...updates };
@@ -69,18 +98,15 @@ export function ReportBuilder({ projectId, insights, projectName }: Props) {
     setSaving(true);
     setSaved(false);
     try {
-      await fetch(`/api/reports/draft/${projectId}`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: next.title,
-          summary: next.summary,
-          selected_insight_ids: next.selected_insight_ids,
-          selected_chart_ids: next.selected_chart_ids,
-          template: next.template,
-        }),
+      const saved_draft = await saveDraftReport(projectId, {
+        title:                next.title,
+        summary:              next.summary,
+        selected_insight_ids: next.selected_insight_ids,
+        selected_chart_ids:   next.selected_chart_ids,
+        template:             next.template ?? null,
       });
+      // Update canonical report_result from response
+      setDraft((d) => ({ ...d, report_result: saved_draft.report_result ?? null }));
       setSaved(true);
     } catch {
       // silent — user can retry
@@ -97,7 +123,12 @@ export function ReportBuilder({ projectId, insights, projectName }: Props) {
     saveDraft({ selected_insight_ids: next });
   }
 
-  const selectedCount = draft.selected_insight_ids?.length ?? 0;
+  // Canonical-first: use report_result for display values
+  const rr = draft.report_result;
+  const selectedCount  = draft.selected_insight_ids?.length ?? 0;
+  const exportHistory: ReportExportRecord[] = rr?.export_statuses ?? [];
+  const aiSections     = rr?.ai_generated_sections ?? ["executive_summary"];
+  const summaryIsAI    = aiSections.includes("executive_summary");
 
   return (
     <div className="space-y-5">
@@ -142,9 +173,12 @@ export function ReportBuilder({ projectId, insights, projectName }: Props) {
       <div>
         <label className="mb-1.5 block text-xs font-semibold text-white/50 uppercase tracking-wider">
           Executive summary
-          <span className="ml-2 rounded-full bg-indigo-500/15 px-1.5 py-px text-[10px] font-medium text-indigo-400 normal-case">
-            AI-generated — edit freely
-          </span>
+          {summaryIsAI && (
+            <span className="ml-2 rounded-full bg-indigo-500/15 px-1.5 py-px text-[10px] font-medium text-indigo-400 normal-case">
+              <Sparkles className="mb-px mr-0.5 inline h-2.5 w-2.5" />
+              AI-generated — edit freely
+            </span>
+          )}
         </label>
         <textarea
           value={draft.summary ?? ""}
@@ -168,6 +202,10 @@ export function ReportBuilder({ projectId, insights, projectName }: Props) {
           <div className="space-y-1.5">
             {insights.slice(0, 10).map((ins, idx) => {
               const selected = draft.selected_insight_ids?.includes(idx);
+              // Prefer canonical insight in report_result, fallback to full list entry
+              const canonicalIns = rr?.included_insights.find((i) => i.index_in_run === idx);
+              const label = canonicalIns?.title ?? ins.explanation ?? ins.finding ?? ins.title ?? `Finding ${idx + 1}`;
+              const sev   = canonicalIns?.severity ?? ins.severity;
               return (
                 <button
                   key={idx}
@@ -188,11 +226,9 @@ export function ReportBuilder({ projectId, insights, projectName }: Props) {
                     {selected && <CheckCircle className="h-3 w-3 text-white" />}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium text-white/80">
-                      {ins.explanation ?? ins.finding ?? ins.title ?? `Finding ${idx + 1}`}
-                    </p>
-                    {ins.severity && (
-                      <span className="text-[10px] text-white/30">{ins.severity} severity</span>
+                    <p className="text-xs font-medium text-white/80">{label}</p>
+                    {sev && (
+                      <span className="text-[10px] text-white/30">{sev} severity</span>
                     )}
                   </div>
                 </button>
@@ -203,25 +239,21 @@ export function ReportBuilder({ projectId, insights, projectName }: Props) {
       )}
 
       {/* Actions */}
-      <div className="flex items-center gap-3 border-t border-white/[0.06] pt-4">
-        <a
-          href={`/api/reports/export/${projectId}?format=pdf`}
-          target="_blank"
-          rel="noreferrer"
+      <div className="flex flex-wrap items-center gap-3 border-t border-white/[0.06] pt-4">
+        <button
+          onClick={() => exportReport(projectId, "pdf").catch(() => {})}
           className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
         >
           <Download className="h-4 w-4" />
           Export PDF
-        </a>
-        <a
-          href={`/api/reports/export/${projectId}?format=xlsx`}
-          target="_blank"
-          rel="noreferrer"
+        </button>
+        <button
+          onClick={() => exportReport(projectId, "xlsx").catch(() => {})}
           className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/[0.07] hover:text-white"
         >
           <FileText className="h-4 w-4" />
           Export Excel
-        </a>
+        </button>
         {saving && (
           <span className="text-xs text-white/30">Saving…</span>
         )}
@@ -232,6 +264,32 @@ export function ReportBuilder({ projectId, insights, projectName }: Props) {
           </span>
         )}
       </div>
+
+      {/* Export history (canonical report_result.export_statuses) */}
+      {exportHistory.length > 0 && (
+        <div>
+          <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-white/30 flex items-center gap-1.5">
+            <Clock className="h-3 w-3" />
+            Export history
+          </p>
+          <div className="space-y-1">
+            {exportHistory.map((rec, i) => (
+              <div key={i} className="flex items-center justify-between rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${
+                    rec.status === "completed" ? "bg-emerald-400" :
+                    rec.status === "failed"    ? "bg-red-400" : "bg-amber-400"
+                  }`} />
+                  <span className="text-xs font-medium text-white/60">
+                    {FORMAT_LABEL[rec.format] ?? rec.format}
+                  </span>
+                </div>
+                <span className="text-[11px] text-white/30">{formatExportDate(rec.exported_at)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

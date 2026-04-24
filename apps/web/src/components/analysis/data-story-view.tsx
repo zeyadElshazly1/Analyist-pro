@@ -8,6 +8,7 @@ import { UpgradeWall } from "@/components/ui/upgrade-wall";
 
 interface Props {
   analysisId: number | null;
+  storedStory?: DataStory | null;
 }
 
 const SLIDE_COLORS = [
@@ -68,8 +69,8 @@ function SlideCard({ slide, index }: { slide: StorySlide; index: number }) {
   );
 }
 
-export function DataStoryView({ analysisId }: Props) {
-  const [story, setStory] = useState<DataStory | null>(null);
+export function DataStoryView({ analysisId, storedStory = null }: Props) {
+  const [story, setStory] = useState<DataStory | null>(storedStory);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [blocked, setBlocked] = useState<{ feature: string; message: string } | null>(null);

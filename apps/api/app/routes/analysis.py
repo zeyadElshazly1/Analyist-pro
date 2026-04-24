@@ -366,7 +366,7 @@ def get_run_results(
             profile_result=None,
             executive_panel=None,
             narrative=None,
-            report_result=None,
+            story_result=None,
         )
 
     # Parse result_json once; extract canonical blocks only.
@@ -375,10 +375,10 @@ def get_run_results(
     except (json.JSONDecodeError, TypeError):
         stored = {}
 
-    report_result = None
+    story_result = None
     if r.story_result_json:
         try:
-            report_result = json.loads(r.story_result_json)
+            story_result = json.loads(r.story_result_json)
         except (json.JSONDecodeError, TypeError):
             pass
 
@@ -398,7 +398,7 @@ def get_run_results(
         profile_result=_block("profile"),
         executive_panel=_block("executive_panel"),
         narrative=stored.get("narrative") or None,
-        report_result=report_result,
+        story_result=story_result,
     )
 
 
