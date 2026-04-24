@@ -30,39 +30,6 @@ import {
 
 type HistoryEntry = { id: number; project_id: number; created_at: string; file_hash: string | null };
 
-// ── Cleaning items from canonical CleaningResult ──────────────────────────────
-
-type CleaningItem = { step: string; detail: string; impact: "high" | "medium" | "low" };
-
-function cleaningItemsFromCanonical(cr: Record<string, any> | null): CleaningItem[] {
-  if (!cr) return [];
-  const items: CleaningItem[] = [];
-
-  for (const r of cr.renamed_columns ?? []) {
-    items.push({ step: `Rename: ${r.original} → ${r.cleaned}`, detail: "Column name normalised", impact: "low" as const });
-  }
-  for (const col of cr.dropped_columns ?? []) {
-    items.push({ step: `Drop column: ${col}`, detail: "Removed — high missingness or no content", impact: "medium" as const });
-  }
-  for (const fix of cr.type_fixes ?? []) {
-    const count = fix.n_values_converted > 0 ? ` (${fix.n_values_converted} values)` : "";
-    items.push({ step: `Type fix: ${fix.column}`, detail: `Converted to ${fix.to_dtype}${count}`, impact: "medium" as const });
-  }
-  for (const note of cr.missingness_notes ?? []) {
-    const isSuggestion = note.strategy_applied === "safe_suggestion";
-    const prefix = isSuggestion ? "[SUGGESTION] Impute missing" : "Impute missing";
-    items.push({ step: `${prefix}: ${note.column}`, detail: `${note.missing_count} missing (${note.missing_pct}%), mechanism: ${note.mechanism}`, impact: (isSuggestion ? "low" : "medium") as "low" | "medium" });
-  }
-  const dn = cr.duplicate_notes;
-  if (dn?.duplicate_rows_removed > 0) {
-    items.push({ step: "Remove duplicate rows", detail: `Removed ${dn.duplicate_rows_removed} of ${dn.duplicate_rows_found} duplicates`, impact: "medium" as const });
-  }
-  for (const susp of cr.suspicious_columns ?? []) {
-    items.push({ step: `[FLAG] ${susp.column}`, detail: susp.detail, impact: "medium" as const });
-  }
-  return items;
-}
-
 // ── Adapter: canonical RunResults → RunAnalysis shape ─────────────────────────
 
 function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
@@ -70,11 +37,6 @@ function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
   const cr = stored.cleaning_result;
   const ir = stored.insight_results ?? [];
   const pr = stored.profile_result ?? [];
-  const ms = hr?.missingness_stats ?? {};
-  const cs = cr?.cleaning_summary;
-
-  const numeric_cols = pr.filter((c: any) => c.type === "numeric").length;
-  const categorical_cols = pr.filter((c: any) => c.type === "categorical").length;
 
   // Canonical InsightResult has confidence 0.0–1.0; UI expects 0–100.
   const insights = ir.map((i: any) =>
@@ -86,37 +48,12 @@ function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
   return {
     run_id: stored.run_id,
     analysis_id: stored.run_id,
-    dataset_summary: {
-      rows: hr?.row_count ?? 0,
-      columns: hr?.column_count ?? 0,
-      numeric_cols,
-      categorical_cols,
-      missing_pct: ms.missing_cell_pct ?? 0,
-    },
-    // health_result passes the canonical block directly — HealthScore reads from it
+    // health_result passes the canonical block directly — HealthScore/StatsCards read from it
     health_result: hr ?? null,
-    // cleaning_result passes the canonical block directly — CleaningReview reads from it
+    // cleaning_result passes the canonical block directly — CleaningSummaryCards/CleaningReview read from it
     cleaning_result: cr ?? null,
-    // cleaning_summary mapped from canonical CleaningSummary for CleaningSummaryCards
-    cleaning_summary: cs ? {
-      original_rows: cs.original_rows,
-      original_cols: cs.original_cols,
-      final_rows: cs.final_rows,
-      final_cols: cs.final_cols,
-      rows_removed: cs.rows_removed,
-      steps: cs.steps_applied,          // canonical uses steps_applied, cards expect steps
-      confidence_score: cs.confidence_score,
-      time_saved_estimate: cs.time_saved_estimate,
-      suspicious_issues_remaining: (cr?.suspicious_columns ?? []).map((s: any) => ({
-        type: s.issue_type,
-        column: s.column,
-        detail: s.detail,
-      })),
-    } : null,
     insights,
     profile: pr,
-    // cleaning_report reconstructed from canonical sub-structures
-    cleaning_report: cleaningItemsFromCanonical(cr),
     narrative: stored.narrative ?? undefined,
     executive_panel: stored.executive_panel ?? undefined,
     // story_result: pre-populate DataStoryView so reopening shows stored story

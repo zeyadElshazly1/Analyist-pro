@@ -8,17 +8,40 @@ type CleaningItem = {
   impact?: "high" | "medium" | "low" | string;
 };
 
-type CleaningSummary = {
+type SummaryBar = {
   steps?: number;
   rows_removed?: number;
   columns_fixed?: number;
-  note?: string;
 };
 
 type Props = {
-  items: CleaningItem[];
-  summary?: CleaningSummary;
+  cleaningResult?: Record<string, unknown> | null;  // canonical — primary
+  items?: CleaningItem[];                           // legacy fallback
+  summary?: SummaryBar;                            // legacy fallback
 };
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function cleaningItemsFromCanonical(cr: Record<string, any>): CleaningItem[] {
+  const items: CleaningItem[] = [];
+  for (const r of cr.renamed_columns ?? [])
+    items.push({ step: `Rename: ${r.original} → ${r.cleaned}`, detail: "Column name normalised", impact: "low" });
+  for (const col of cr.dropped_columns ?? [])
+    items.push({ step: `Drop column: ${col}`, detail: "Removed — high missingness or no content", impact: "medium" });
+  for (const fix of cr.type_fixes ?? []) {
+    const count = fix.n_values_converted > 0 ? ` (${fix.n_values_converted} values)` : "";
+    items.push({ step: `Type fix: ${fix.column}`, detail: `Converted to ${fix.to_dtype}${count}`, impact: "medium" });
+  }
+  for (const note of cr.missingness_notes ?? []) {
+    const isSuggestion = note.strategy_applied === "safe_suggestion";
+    items.push({ step: `${isSuggestion ? "[SUGGESTION] Impute missing" : "Impute missing"}: ${note.column}`, detail: `${note.missing_count} missing (${note.missing_pct}%), mechanism: ${note.mechanism}`, impact: isSuggestion ? "low" : "medium" });
+  }
+  const dn = cr.duplicate_notes;
+  if (dn?.duplicate_rows_removed > 0)
+    items.push({ step: "Remove duplicate rows", detail: `Removed ${dn.duplicate_rows_removed} of ${dn.duplicate_rows_found} duplicates`, impact: "medium" });
+  for (const susp of cr.suspicious_columns ?? [])
+    items.push({ step: `[FLAG] ${susp.column}`, detail: susp.detail, impact: "medium" });
+  return items;
+}
 
 const FLAGGED_KEYWORDS = ["outlier", "suspicious", "zero", "anomal", "unusual", "manual"];
 
@@ -27,7 +50,20 @@ function isAutoApplied(item: CleaningItem): boolean {
   return !FLAGGED_KEYWORDS.some((kw) => step.includes(kw));
 }
 
-export function CleaningReview({ items, summary }: Props) {
+export function CleaningReview({ cleaningResult, items: legacyItems, summary: legacySummary }: Props) {
+  // Canonical-first: derive items from cleaningResult, else use legacy items.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const items: CleaningItem[] = cleaningResult
+    ? cleaningItemsFromCanonical(cleaningResult as Record<string, any>)
+    : (legacyItems ?? []);
+
+  // Derive summary bar from canonical cleaning_summary, else use legacy.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cs = (cleaningResult as any)?.cleaning_summary;
+  const summary: SummaryBar | undefined = cs
+    ? { steps: cs.steps_applied ?? cs.steps, rows_removed: cs.rows_removed, columns_fixed: cs.cols_removed }
+    : legacySummary;
+
   if (!items || items.length === 0) {
     return (
       <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 flex items-center gap-3">
@@ -116,7 +152,7 @@ type SectionProps = {
   collapsed?: boolean;
 };
 
-function Section({ icon, title, subtitle, items, chipColor, collapsed = false }: SectionProps) {
+function Section({ icon, title, subtitle, items, chipColor }: SectionProps) {
   const chipClass =
     chipColor === "emerald"
       ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
