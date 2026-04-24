@@ -17,7 +17,7 @@ from app.models import AnalysisResult, Project, ProjectFile, User
 from app.schemas.analysis_schema import AnalysisRequest
 from app.schemas.run_summary import RunDetail, RunResults, RunSummary
 from app.services.run_resolver import build_run_detail, resolve_latest_run
-from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
+from app.services.analyzer import analyze_dataset, generate_executive_panel
 from app.services.cache import get_cached_analysis, set_cached_analysis
 from app.services.cleaner import clean_dataset
 from app.services.file_loader import load_dataset
@@ -113,7 +113,6 @@ def run_analysis(
 
         insights, narrative = analyze_dataset(df_clean)
         insight_results = [r.model_dump() for r in build_insight_results(insights)]
-        dataset_summary = get_dataset_summary(df_clean)
         executive_panel = generate_executive_panel(insights)
 
         set_run_status(db, run, "insights_complete")
@@ -121,10 +120,8 @@ def run_analysis(
         result = {
             "project_id": project_id,
             "run_id": run.id if run else None,
-            "dataset_summary": to_jsonable(dataset_summary),
-            "cleaning_summary": to_jsonable(cleaning_summary),   # backward compat — CleaningSummaryCards
+            "cleaning_summary": to_jsonable(cleaning_summary),   # backward compat — CleaningSummaryCards legacy fallback
             "cleaning_result": cleaning_result,                  # canonical V1
-            "health_score": to_jsonable(health_score),           # backward compat — HealthScore prop
             "profile": to_jsonable(profile),                     # backward compat — ProfileView
             "health_result": health_result,                      # canonical V1
             "insight_results": insight_results,                  # canonical V1 (replaces insights)

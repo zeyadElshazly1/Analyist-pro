@@ -40,8 +40,7 @@ def test_run_analysis(client, uploaded_project, auth_headers):
     assert r.status_code == 200
     body = r.json()
     assert body["project_id"] == pid
-    assert "dataset_summary" in body
-    assert "health_score" in body
+    assert "health_result" in body
     assert "insight_results" in body
     assert "profile" in body
     assert "cleaning_result" in body
@@ -85,7 +84,7 @@ def test_get_analysis_result(client, uploaded_project, auth_headers):
     assert body["id"] == analysis_id
     assert body["project_id"] == pid
     assert "result" in body
-    assert "dataset_summary" in body["result"]
+    assert "health_result" in body["result"]
 
 
 def test_get_analysis_result_not_found(client, auth_headers):
@@ -128,7 +127,7 @@ def test_get_shared_analysis(client, uploaded_project, auth_headers):
     body = r.json()
     assert body["project_id"] == pid
     assert "result" in body
-    assert "dataset_summary" in body["result"]
+    assert "health_result" in body["result"]
 
 
 def test_get_shared_analysis_invalid_token(client):
