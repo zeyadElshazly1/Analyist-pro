@@ -1,12 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronUp, ArrowRight } from "lucide-react";
+import { ChevronDown, ChevronUp, ArrowRight, Check } from "lucide-react";
+
+export type StepStatus = "unavailable" | "available" | "attention" | "complete";
+
+export function getStepForTab(tabId: string): string {
+  return TAB_TO_STEP[tabId] ?? "intake";
+}
 
 type Props = {
   value: string;
   onChange: (v: string) => void;
   compareAvailable?: boolean;
+  stepStatuses?: Record<string, StepStatus>;
 };
 
 const STEPS = [
@@ -97,7 +104,7 @@ for (const step of STEPS) {
   }
 }
 
-export function ProjectTabs({ value, onChange, compareAvailable }: Props) {
+export function ProjectTabs({ value, onChange, compareAvailable, stepStatuses }: Props) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const activeStepId  = TAB_TO_STEP[value] ?? STEPS[0].id;
@@ -113,40 +120,59 @@ export function ProjectTabs({ value, onChange, compareAvailable }: Props) {
       <div className="overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         <div className="flex items-center gap-0.5 min-w-max">
           {STEPS.map((step, idx) => {
-            const isActive   = step.id === activeStepId && !isAdvanced;
-            const isDone     = !isAdvanced && activeStepIdx > idx;
-            const isCompare  = step.id === "compare";
+            const status: StepStatus = stepStatuses?.[step.id] ?? "available";
+            const isActive    = step.id === activeStepId && !isAdvanced;
+            const isComplete  = !isActive && status === "complete";
+            const isAttention = !isActive && status === "attention";
+            const isUnavail   = !isActive && status === "unavailable";
+            const isCompare   = step.id === "compare";
+
+            const btnClass = isActive
+              ? "bg-indigo-600 text-white"
+              : isComplete
+              ? "bg-indigo-600/15 text-indigo-300 hover:bg-indigo-600/25"
+              : isAttention
+              ? "text-amber-400/80 hover:text-amber-300 hover:bg-amber-500/[0.06]"
+              : isUnavail
+              ? "text-white/20 hover:text-white/30 hover:bg-white/[0.03]"
+              : "text-white/40 hover:text-white/70 hover:bg-white/[0.05]";
+
+            const badgeClass = isActive
+              ? "bg-white/20 text-white"
+              : isComplete
+              ? "bg-indigo-500/25 text-indigo-200"
+              : isAttention
+              ? "bg-amber-500/15 text-amber-400"
+              : isUnavail
+              ? "bg-white/[0.04] text-white/15"
+              : "bg-white/10 text-white/35";
 
             return (
               <div key={step.id} className="flex items-center gap-0.5">
                 <button
                   onClick={() => onChange(step.primaryTab)}
-                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
-                    isActive
-                      ? "bg-indigo-600 text-white"
-                      : isDone
-                      ? "bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30"
-                      : "text-white/35 hover:text-white/70 hover:bg-white/[0.05]"
-                  }`}
+                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${btnClass}`}
                 >
-                  <span
-                    className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-[9px] font-bold ${
-                      isActive
-                        ? "bg-white/20 text-white"
-                        : isDone
-                        ? "bg-indigo-500/40 text-indigo-200"
-                        : "bg-white/10 text-white/35"
-                    }`}
-                  >
-                    {step.number}
+                  {/* Number / check badge */}
+                  <span className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-[9px] font-bold ${badgeClass}`}>
+                    {isComplete
+                      ? <Check className="h-2.5 w-2.5" />
+                      : step.number}
                   </span>
+
                   {step.label}
-                  {isCompare && compareAvailable && (
+
+                  {/* Compare available dot (emerald when data present, no attention) */}
+                  {isCompare && compareAvailable && !isAttention && (
                     <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-400" title="Compare data available" />
+                  )}
+                  {/* Attention dot */}
+                  {isAttention && (
+                    <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-amber-400" title="Needs attention" />
                   )}
                 </button>
                 {idx < STEPS.length - 1 && (
-                  <div className="h-px w-3 flex-shrink-0 bg-white/[0.07]" />
+                  <div className={`h-px w-3 flex-shrink-0 ${isComplete ? "bg-indigo-500/20" : "bg-white/[0.07]"}`} />
                 )}
               </div>
             );
