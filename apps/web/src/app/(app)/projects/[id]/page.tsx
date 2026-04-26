@@ -147,11 +147,13 @@ function RunStateBanner({
         <div className="flex items-start gap-3">
           <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-400" strokeWidth={1.75} />
           <div>
-            <p className="text-sm font-medium text-white">Previous analysis ready</p>
+            <p className="text-sm font-medium text-white">Saved analysis available</p>
             <p className="mt-0.5 text-xs text-white/40">
               {run.filename && <span className="text-white/60">{run.filename}</span>}
               {run.filename && finishedAt && <span className="mx-1.5 text-white/20">·</span>}
               {finishedAt && <span>{finishedAt}</span>}
+              <span className="mx-1.5 text-white/20">·</span>
+              <span className="text-white/35">Opens at Intake Review</span>
             </p>
           </div>
         </div>
@@ -160,8 +162,8 @@ function RunStateBanner({
           disabled={loadingPrevious}
           className="flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600/20 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-600/30 disabled:opacity-60 transition-colors"
         >
-          {loadingPrevious && <Loader2 className="h-3 w-3 animate-spin" />}
-          Open previous analysis
+          {loadingPrevious ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
+          Resume analysis
         </button>
       </div>
     );
@@ -303,30 +305,36 @@ export default function ProjectPage() {
                 <Database className="h-3.5 w-3.5 text-white/60" strokeWidth={1.75} />
               </div>
               <div>
-                <h2 className="text-sm font-semibold text-white">Dataset</h2>
+                <h2 className="text-sm font-semibold text-white">
+                  {project?.latest_run ? "Upload new file" : "Step 1 — Upload your file"}
+                </h2>
                 <p className="text-xs text-white/40">
                   {project?.latest_run
-                    ? "Upload a new file to run fresh analysis."
-                    : "Upload a CSV or Excel file to begin."}
+                    ? "Upload a new client file to refresh the analysis."
+                    : "Drop a client CSV or Excel file to start the workflow."}
                 </p>
               </div>
             </div>
             <UploadDataset projectId={projectId} />
           </section>
 
-          {/* Analysis — receives stored result when user clicks "Open previous analysis" */}
+          {/* Analysis workflow */}
           <section className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
-            <div className="mb-5 flex items-center gap-2.5">
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600/15">
-                <Zap className="h-3.5 w-3.5 text-indigo-400" strokeWidth={1.75} />
-              </div>
-              <div>
-                <h2 className="text-sm font-semibold text-white">Analysis</h2>
-                <p className="text-xs text-white/40">
-                  {project?.latest_run?.has_result
-                    ? "Run again to refresh with the latest file."
-                    : "Run the full pipeline — insights, charts, and data quality report."}
-                </p>
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600/15">
+                  <Zap className="h-3.5 w-3.5 text-indigo-400" strokeWidth={1.75} />
+                </div>
+                <div>
+                  <h2 className="text-sm font-semibold text-white">Analysis workflow</h2>
+                  <p className="text-xs text-white/40">
+                    {storedResult
+                      ? "Viewing saved analysis — you can re-run at any time."
+                      : project?.latest_run?.has_result
+                      ? "Intake → Cleaning → Health → Findings → Report"
+                      : "Run the pipeline to walk through each step."}
+                  </p>
+                </div>
               </div>
             </div>
             <RunAnalysis

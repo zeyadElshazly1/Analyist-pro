@@ -1,17 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, ArrowRight } from "lucide-react";
 
 type Props = {
   value: string;
   onChange: (v: string) => void;
+  compareAvailable?: boolean;
 };
 
 const STEPS = [
   {
     id: "intake",
-    label: "Intake",
+    label: "Intake Review",
+    description: "Check how your file was parsed and structured",
     number: 1,
     primaryTab: "overview",
     tabs: [
@@ -20,19 +22,30 @@ const STEPS = [
     ],
   },
   {
-    id: "health",
-    label: "Health",
+    id: "cleaning",
+    label: "Cleaning Review",
+    description: "See what was fixed or flagged automatically",
     number: 2,
-    primaryTab: "profile",
+    primaryTab: "cleaning",
     tabs: [
-      { id: "profile", label: "Column profiles" },
       { id: "cleaning", label: "Cleaning log" },
     ],
   },
   {
-    id: "insights",
-    label: "Insights",
+    id: "health",
+    label: "Health Check",
+    description: "Column-by-column data quality profile",
     number: 3,
+    primaryTab: "profile",
+    tabs: [
+      { id: "profile", label: "Column profiles" },
+    ],
+  },
+  {
+    id: "insights",
+    label: "Findings",
+    description: "Key patterns, anomalies, and correlations",
+    number: 4,
     primaryTab: "insights",
     tabs: [
       { id: "insights", label: "Top findings" },
@@ -45,8 +58,9 @@ const STEPS = [
   },
   {
     id: "compare",
-    label: "Compare",
-    number: 4,
+    label: "Compare Changes",
+    description: "Compare this file against another version or run",
+    number: 5,
     primaryTab: "compare-files",
     tabs: [
       { id: "compare-files", label: "Compare files" },
@@ -56,8 +70,9 @@ const STEPS = [
   },
   {
     id: "report",
-    label: "Report",
-    number: 5,
+    label: "Build Report",
+    description: "Assemble findings and export for your client",
+    number: 6,
     primaryTab: "ask-ai",
     tabs: [
       { id: "ask-ai", label: "Ask AI / Copilot" },
@@ -82,54 +97,56 @@ for (const step of STEPS) {
   }
 }
 
-export function ProjectTabs({ value, onChange }: Props) {
+export function ProjectTabs({ value, onChange, compareAvailable }: Props) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
-  const activeStepId = TAB_TO_STEP[value] ?? STEPS[0].id;
-  const activeStep = STEPS.find((s) => s.id === activeStepId) ?? STEPS[0];
-  const isAdvanced = ADVANCED_TABS.some((t) => t.id === value);
-
-  function handleStepClick(step: typeof STEPS[number]) {
-    onChange(step.primaryTab);
-  }
+  const activeStepId  = TAB_TO_STEP[value] ?? STEPS[0].id;
+  const activeStep    = STEPS.find((s) => s.id === activeStepId) ?? STEPS[0];
+  const activeStepIdx = STEPS.findIndex((s) => s.id === activeStepId);
+  const nextStep      = activeStepIdx < STEPS.length - 1 ? STEPS[activeStepIdx + 1] : null;
+  const isAdvanced    = ADVANCED_TABS.some((t) => t.id === value);
 
   return (
     <div className="space-y-2">
-      {/* ── Step progress bar ───────────────────────────────────────────── */}
+
+      {/* ── Step progress bar ────────────────────────────────────────────── */}
       <div className="overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-        <div className="flex items-center gap-1 min-w-max">
+        <div className="flex items-center gap-0.5 min-w-max">
           {STEPS.map((step, idx) => {
-            const isActive = step.id === activeStepId && !isAdvanced;
-            const isDone =
-              !isAdvanced &&
-              STEPS.findIndex((s) => s.id === activeStepId) > idx;
+            const isActive   = step.id === activeStepId && !isAdvanced;
+            const isDone     = !isAdvanced && activeStepIdx > idx;
+            const isCompare  = step.id === "compare";
+
             return (
-              <div key={step.id} className="flex items-center gap-1">
+              <div key={step.id} className="flex items-center gap-0.5">
                 <button
-                  onClick={() => handleStepClick(step)}
-                  className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
+                  onClick={() => onChange(step.primaryTab)}
+                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
                     isActive
                       ? "bg-indigo-600 text-white"
                       : isDone
                       ? "bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/30"
-                      : "text-white/40 hover:text-white hover:bg-white/[0.05]"
+                      : "text-white/35 hover:text-white/70 hover:bg-white/[0.05]"
                   }`}
                 >
                   <span
-                    className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                    className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-[9px] font-bold ${
                       isActive
                         ? "bg-white/20 text-white"
                         : isDone
                         ? "bg-indigo-500/40 text-indigo-200"
-                        : "bg-white/10 text-white/40"
+                        : "bg-white/10 text-white/35"
                     }`}
                   >
                     {step.number}
                   </span>
                   {step.label}
+                  {isCompare && compareAvailable && (
+                    <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-400" title="Compare data available" />
+                  )}
                 </button>
                 {idx < STEPS.length - 1 && (
-                  <div className="h-px w-4 bg-white/[0.08] flex-shrink-0" />
+                  <div className="h-px w-3 flex-shrink-0 bg-white/[0.07]" />
                 )}
               </div>
             );
@@ -137,7 +154,23 @@ export function ProjectTabs({ value, onChange }: Props) {
         </div>
       </div>
 
-      {/* ── Sub-tabs for active step ────────────────────────────────────── */}
+      {/* ── Step context: description + next-step nudge ──────────────────── */}
+      {!isAdvanced && (
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-[11px] text-white/30 leading-none">{activeStep.description}</p>
+          {nextStep && (
+            <button
+              onClick={() => onChange(nextStep.primaryTab)}
+              className="flex flex-shrink-0 items-center gap-1 text-[11px] text-white/25 transition-colors hover:text-white/50"
+            >
+              Next: {nextStep.label}
+              <ArrowRight className="h-2.5 w-2.5" />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── Sub-tabs for current step ────────────────────────────────────── */}
       {!isAdvanced && activeStep.tabs.length > 1 && (
         <div className="overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           <div className="flex gap-1 border-b border-white/[0.07] pb-2 min-w-max">
@@ -158,17 +191,13 @@ export function ProjectTabs({ value, onChange }: Props) {
         </div>
       )}
 
-      {/* ── Advanced drawer ─────────────────────────────────────────────── */}
+      {/* ── Advanced drawer ──────────────────────────────────────────────── */}
       <div>
         <button
           onClick={() => setAdvancedOpen((o) => !o)}
-          className="flex items-center gap-1.5 text-xs text-white/25 hover:text-white/50 transition-colors"
+          className="flex items-center gap-1.5 text-xs text-white/20 transition-colors hover:text-white/45"
         >
-          {advancedOpen ? (
-            <ChevronUp className="h-3 w-3" />
-          ) : (
-            <ChevronDown className="h-3 w-3" />
-          )}
+          {advancedOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
           Advanced tools
         </button>
 

@@ -480,7 +480,7 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
 
       {result ? (
         <div className="space-y-4">
-          <ProjectTabs value={tab} onChange={handleTabChange} />
+          <ProjectTabs value={tab} onChange={handleTabChange} compareAvailable={!!compareResult} />
 
           {/* ── Data Table ───────────────────────────────────────────── */}
           {tab === "data-table" && (
@@ -698,22 +698,24 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
       ) : (
         !loading && (
           <div className="space-y-3">
-            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-10 text-center">
+            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] px-8 py-8 text-center">
               <div className="mx-auto mb-4 h-12 w-12 rounded-xl bg-indigo-500/10 flex items-center justify-center">
                 <Play className="h-5 w-5 text-indigo-400" />
               </div>
               <p className="text-white/70 text-sm font-medium mb-1">Ready to analyze</p>
               <p className="text-white/35 text-xs">
                 Upload a client file above, then click{" "}
-                <span className="text-white/60">Analyze File</span> to begin
+                <span className="text-white/60">Analyze File</span> to run the full pipeline
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {[
-                { step: "1", label: "Intake", desc: "Parse & structure review" },
-                { step: "2", label: "Health", desc: "Data quality check" },
-                { step: "3", label: "Insights", desc: "Key patterns & findings" },
-                { step: "4", label: "Export", desc: "PDF, Excel or share link" },
+                { step: "1", label: "Intake Review",    desc: "Check file parsing & structure" },
+                { step: "2", label: "Cleaning Review",  desc: "See what was fixed automatically" },
+                { step: "3", label: "Health Check",     desc: "Column-by-column data quality" },
+                { step: "4", label: "Findings",         desc: "Key patterns & anomalies" },
+                { step: "5", label: "Compare Changes",  desc: "Compare file versions (optional)" },
+                { step: "6", label: "Build Report",     desc: "Export client-ready PDF or Excel" },
               ].map((s) => (
                 <div
                   key={s.step}
