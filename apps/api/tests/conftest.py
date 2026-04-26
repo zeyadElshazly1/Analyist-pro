@@ -123,9 +123,9 @@ def auth_headers(client):
 
 
 @pytest.fixture
-def pro_auth_headers(client, auth_headers):
+def consultant_auth_headers(client, auth_headers):
     """
-    Same JWT as auth_headers but the test user is upgraded to 'pro' plan.
+    Same JWT as auth_headers but the test user is upgraded to the consultant plan.
     Ensures the user exists in the DB before upgrading.
     """
     # Trigger user creation via any authenticated call

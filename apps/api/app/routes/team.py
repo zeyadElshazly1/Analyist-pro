@@ -1,6 +1,6 @@
 """
 Team management endpoints — invite members, list team, remove members.
-Only available to Team-plan subscribers (max 5 seats total).
+Only available to Studio-plan subscribers (max 5 seats total).
 """
 import logging
 import uuid

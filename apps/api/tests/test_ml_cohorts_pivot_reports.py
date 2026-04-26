@@ -284,49 +284,49 @@ class TestPivot:
 # ── Reports ───────────────────────────────────────────────────────────────────
 
 class TestReports:
-    def _setup(self, client, uploaded_project, pro_auth_headers):
+    def _setup(self, client, uploaded_project, consultant_auth_headers):
         """Run analysis so a stored result exists for export."""
         pid = uploaded_project["id"]
-        _run_analysis(client, pid, pro_auth_headers)
+        _run_analysis(client, pid, consultant_auth_headers)
         return pid
 
-    def test_export_no_analysis(self, client, uploaded_project, pro_auth_headers):
+    def test_export_no_analysis(self, client, uploaded_project, consultant_auth_headers):
         """Exporting before running analysis returns 404."""
         pid = uploaded_project["id"]
-        r = client.get(f"/reports/export/{pid}?format=html", headers=pro_auth_headers)
+        r = client.get(f"/reports/export/{pid}?format=html", headers=consultant_auth_headers)
         assert r.status_code == 404
 
-    def test_export_html(self, client, uploaded_project, pro_auth_headers):
-        pid = self._setup(client, uploaded_project, pro_auth_headers)
-        r = client.get(f"/reports/export/{pid}?format=html", headers=pro_auth_headers)
+    def test_export_html(self, client, uploaded_project, consultant_auth_headers):
+        pid = self._setup(client, uploaded_project, consultant_auth_headers)
+        r = client.get(f"/reports/export/{pid}?format=html", headers=consultant_auth_headers)
         assert r.status_code == 200
         assert r.headers["content-type"].startswith("text/html")
         assert len(r.content) > 100
 
-    def test_export_xlsx(self, client, uploaded_project, pro_auth_headers):
-        pid = self._setup(client, uploaded_project, pro_auth_headers)
-        r = client.get(f"/reports/export/{pid}?format=xlsx", headers=pro_auth_headers)
+    def test_export_xlsx(self, client, uploaded_project, consultant_auth_headers):
+        pid = self._setup(client, uploaded_project, consultant_auth_headers)
+        r = client.get(f"/reports/export/{pid}?format=xlsx", headers=consultant_auth_headers)
         assert r.status_code == 200
         # XLSX files start with PK (ZIP magic bytes)
         assert r.content[:2] == b"PK"
 
-    def test_export_pdf_fallback(self, client, uploaded_project, pro_auth_headers):
+    def test_export_pdf_fallback(self, client, uploaded_project, consultant_auth_headers):
         """PDF export returns 501 when no PDF renderer is installed."""
-        pid = self._setup(client, uploaded_project, pro_auth_headers)
-        r = client.get(f"/reports/export/{pid}?format=pdf", headers=pro_auth_headers)
+        pid = self._setup(client, uploaded_project, consultant_auth_headers)
+        r = client.get(f"/reports/export/{pid}?format=pdf", headers=consultant_auth_headers)
         assert r.status_code in (200, 501)
 
-    def test_export_invalid_format(self, client, uploaded_project, pro_auth_headers):
-        pid = self._setup(client, uploaded_project, pro_auth_headers)
-        r = client.get(f"/reports/export/{pid}?format=docx", headers=pro_auth_headers)
+    def test_export_invalid_format(self, client, uploaded_project, consultant_auth_headers):
+        pid = self._setup(client, uploaded_project, consultant_auth_headers)
+        r = client.get(f"/reports/export/{pid}?format=docx", headers=consultant_auth_headers)
         assert r.status_code == 422
 
-    def test_export_requires_auth(self, client, uploaded_project, pro_auth_headers):
-        pid = self._setup(client, uploaded_project, pro_auth_headers)
+    def test_export_requires_auth(self, client, uploaded_project, consultant_auth_headers):
+        pid = self._setup(client, uploaded_project, consultant_auth_headers)
         r = client.get(f"/reports/export/{pid}?format=html")
         assert r.status_code == 401
 
-    def test_export_wrong_user(self, client, uploaded_project, pro_auth_headers):
+    def test_export_wrong_user(self, client, uploaded_project, consultant_auth_headers):
         """A second user cannot export another user's project."""
         import base64
         import hashlib
@@ -335,7 +335,7 @@ class TestReports:
         import os
         from tests.conftest import TEST_JWT_SECRET
 
-        pid = self._setup(client, uploaded_project, pro_auth_headers)
+        pid = self._setup(client, uploaded_project, consultant_auth_headers)
 
         # Build a JWT for a different user
         secret = TEST_JWT_SECRET.encode()
