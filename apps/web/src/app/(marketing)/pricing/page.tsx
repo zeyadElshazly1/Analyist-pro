@@ -90,7 +90,7 @@ export default function PricingPage() {
         <div className="mt-16 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-8 text-center">
           <h3 className="text-lg font-semibold text-white">Have questions?</h3>
           <p className="mt-2 text-sm text-white/50">
-            All plans include a 14-day Pro trial. No credit card required to start.
+            All plans include a 14-day free trial. No credit card required to start.
           </p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-8 text-sm text-white/50">
             {[

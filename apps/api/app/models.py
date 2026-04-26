@@ -30,7 +30,7 @@ class User(Base):
     # UUID string from Supabase auth.users — not auto-incremented
     id = Column(String(36), primary_key=True)
     email = Column(String(255), unique=True, index=True, nullable=False)
-    plan = Column(String(50), default="free")  # free | pro | team
+    plan = Column(String(50), default="free")  # free | consultant | studio
     notification_prefs_json = Column(Text, nullable=True)  # JSON: notification preference flags
     created_at = Column(DateTime(timezone=True), default=_utcnow)
 

@@ -1,194 +1,428 @@
 "use client";
 
-import { CheckCircle, AlertTriangle, Info, Minus } from "lucide-react";
+import { CheckCircle2, AlertTriangle, ArrowRight, Info } from "lucide-react";
 
-type CleaningItem = {
-  step: string;
-  detail: string;
-  impact?: "high" | "medium" | "low" | string;
+// ── Canonical CleaningResult types (mirrors app/schemas/cleaning.py) ───────
+type ColumnRename     = { original: string; cleaned: string };
+type TypeFix         = { column: string; to_dtype: string; n_values_converted: number };
+type MissingnessNote = {
+  column: string; missing_count: number; missing_pct: number;
+  mechanism: string; strategy_applied: string;
+};
+type DuplicateNote   = {
+  duplicate_rows_found: number; duplicate_rows_removed: number;
+  duplicate_columns: string[];
+};
+type SuspiciousColumn = { column: string; issue_type: string; detail: string };
+type CleaningSummary = {
+  original_rows?: number; original_cols?: number;
+  final_rows?: number;    final_cols?: number;
+  rows_removed?: number;  cols_removed?: number;
+  steps_applied?: number;
+  confidence_score?: number; confidence_grade?: string;
+  time_saved_estimate?: string; mode?: string;
+};
+type CanonicalCR = {
+  renamed_columns?:    ColumnRename[];
+  dropped_columns?:    string[];
+  type_fixes?:         TypeFix[];
+  missingness_notes?:  MissingnessNote[];
+  duplicate_notes?:    DuplicateNote;
+  suspicious_columns?: SuspiciousColumn[];
+  assumptions_made?:   string[];
+  cleaning_summary?:   CleaningSummary;
 };
 
-type SummaryBar = {
-  steps?: number;
-  rows_removed?: number;
-  columns_fixed?: number;
-};
+// Legacy items — kept so run-analysis.tsx callers don't need updating
+type LegacyItem = { step: string; detail: string; impact?: string };
 
 type Props = {
-  cleaningResult?: Record<string, unknown> | null;  // canonical — primary
-  items?: CleaningItem[];                           // legacy fallback
-  summary?: SummaryBar;                            // legacy fallback
+  cleaningResult?: Record<string, unknown> | null;
+  items?: LegacyItem[];
+  summary?: { steps?: number; rows_removed?: number; columns_fixed?: number };
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function cleaningItemsFromCanonical(cr: Record<string, any>): CleaningItem[] {
-  const items: CleaningItem[] = [];
-  for (const r of cr.renamed_columns ?? [])
-    items.push({ step: `Rename: ${r.original} → ${r.cleaned}`, detail: "Column name normalised", impact: "low" });
-  for (const col of cr.dropped_columns ?? [])
-    items.push({ step: `Drop column: ${col}`, detail: "Removed — high missingness or no content", impact: "medium" });
-  for (const fix of cr.type_fixes ?? []) {
-    const count = fix.n_values_converted > 0 ? ` (${fix.n_values_converted} values)` : "";
-    items.push({ step: `Type fix: ${fix.column}`, detail: `Converted to ${fix.to_dtype}${count}`, impact: "medium" });
-  }
-  for (const note of cr.missingness_notes ?? []) {
-    const isSuggestion = note.strategy_applied === "safe_suggestion";
-    items.push({ step: `${isSuggestion ? "[SUGGESTION] Impute missing" : "Impute missing"}: ${note.column}`, detail: `${note.missing_count} missing (${note.missing_pct}%), mechanism: ${note.mechanism}`, impact: isSuggestion ? "low" : "medium" });
-  }
-  const dn = cr.duplicate_notes;
-  if (dn?.duplicate_rows_removed > 0)
-    items.push({ step: "Remove duplicate rows", detail: `Removed ${dn.duplicate_rows_removed} of ${dn.duplicate_rows_found} duplicates`, impact: "medium" });
-  for (const susp of cr.suspicious_columns ?? [])
-    items.push({ step: `[FLAG] ${susp.column}`, detail: susp.detail, impact: "medium" });
-  return items;
+// ── Display helpers ──────────────────────────────────────────────────────────
+const DTYPE_LABELS: Record<string, string> = {
+  numeric:    "number",
+  datetime:   "date / time",
+  boolean:    "true / false",
+  currency:   "currency",
+  percentage: "percentage",
+};
+
+const STRATEGY_LABELS: Record<string, string> = {
+  mean:          "filled with column mean",
+  median:        "filled with column median",
+  mode:          "filled with most common value",
+  knn:           "filled using KNN",
+  mice:          "filled using MICE",
+  flag_and_fill: "flagged (MNAR) and filled",
+  dropped:       "column dropped",
+};
+
+const MECHANISM_LABELS: Record<string, string> = {
+  MCAR:    "missing at random",
+  MAR:     "correlated with other columns",
+  MNAR:    "value-dependent missingness",
+  unknown: "unknown mechanism",
+};
+
+const ISSUE_LABELS: Record<string, string> = {
+  suspicious_zeros:   "Suspicious zeros",
+  outliers_preserved: "Outliers preserved",
+  high_missing:       "High missing rate",
+};
+
+function issueLabel(type: string) {
+  return ISSUE_LABELS[type] ?? "Flagged for review";
 }
 
-const FLAGGED_KEYWORDS = ["outlier", "suspicious", "zero", "anomal", "unusual", "manual"];
-
-function isAutoApplied(item: CleaningItem): boolean {
-  const step = (item.step ?? "").toLowerCase();
-  return !FLAGGED_KEYWORDS.some((kw) => step.includes(kw));
+function gradeColor(score: number | undefined) {
+  if (score == null) return { banner: "border-white/[0.07] bg-white/[0.02]", text: "text-white/60", badge: "bg-white/5 text-white/50 border-white/10" };
+  if (score >= 80) return { banner: "border-emerald-500/20 bg-emerald-500/5", text: "text-emerald-300", badge: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25" };
+  if (score >= 60) return { banner: "border-amber-500/20 bg-amber-500/5",   text: "text-amber-300",  badge: "bg-amber-500/15 text-amber-400 border-amber-500/25" };
+  return { banner: "border-red-500/20 bg-red-500/5", text: "text-red-300", badge: "bg-red-500/15 text-red-400 border-red-500/25" };
 }
 
-export function CleaningReview({ cleaningResult, items: legacyItems, summary: legacySummary }: Props) {
-  // Canonical-first: derive items from cleaningResult, else use legacy items.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const items: CleaningItem[] = cleaningResult
-    ? cleaningItemsFromCanonical(cleaningResult as Record<string, any>)
-    : (legacyItems ?? []);
+// ── Pill component ───────────────────────────────────────────────────────────
+function Pill({ label, color = "default" }: { label: string; color?: "green" | "amber" | "red" | "default" }) {
+  const cls =
+    color === "green"  ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-300" :
+    color === "amber"  ? "border-amber-500/25 bg-amber-500/10 text-amber-300" :
+    color === "red"    ? "border-red-500/25 bg-red-500/10 text-red-300" :
+                         "border-white/[0.08] bg-white/[0.03] text-white/55";
+  return (
+    <span className={`inline-block rounded-full border px-2 py-px text-[10px] font-medium ${cls}`}>
+      {label}
+    </span>
+  );
+}
 
-  // Derive summary bar from canonical cleaning_summary, else use legacy.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const cs = (cleaningResult as any)?.cleaning_summary;
-  const summary: SummaryBar | undefined = cs
-    ? { steps: cs.steps_applied ?? cs.steps, rows_removed: cs.rows_removed, columns_fixed: cs.cols_removed }
-    : legacySummary;
+// ── Auto-applied section sub-group ───────────────────────────────────────────
+function AutoGroup({
+  label, count, children,
+}: {
+  label: string; count: number; children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-white/25">
+        {label} <span className="text-white/20">· {count}</span>
+      </p>
+      <div className="space-y-1">{children}</div>
+    </div>
+  );
+}
 
-  if (!items || items.length === 0) {
+function AutoRow({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+      <span className="mt-0.5 flex-shrink-0 text-emerald-400/50">·</span>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  );
+}
+
+// ── Main component ───────────────────────────────────────────────────────────
+export function CleaningReview({ cleaningResult, items: legacyItems }: Props) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cr = cleaningResult as CanonicalCR | null | undefined;
+  const cs = cr?.cleaning_summary;
+
+  // ── Extract canonical fields ─────────────────────────────────────────────
+  const renames       = cr?.renamed_columns    ?? [];
+  const dropped       = cr?.dropped_columns    ?? [];
+  const typeFixes     = cr?.type_fixes         ?? [];
+  const missingNotes  = cr?.missingness_notes  ?? [];
+  const dupNotes      = cr?.duplicate_notes;
+  const suspicious    = cr?.suspicious_columns ?? [];
+  const assumptions   = cr?.assumptions_made   ?? [];
+
+  // Split missingness notes into applied vs. suggestions
+  const imputedNotes  = missingNotes.filter(
+    (n) => n.strategy_applied !== "safe_suggestion" && n.strategy_applied !== "dropped"
+  );
+  const suggestions   = missingNotes.filter((n) => n.strategy_applied === "safe_suggestion");
+
+  // Duplicate findings
+  const dupRowsRemoved  = dupNotes?.duplicate_rows_removed ?? 0;
+  const dupRowsFound    = dupNotes?.duplicate_rows_found   ?? 0;
+  const dupColsRemoved  = dupNotes?.duplicate_columns      ?? [];
+  const dupFoundNotRemoved = dupRowsFound > 0 && dupRowsRemoved === 0;
+
+  // Section presence flags
+  const hasAutoApplied = (
+    renames.length > 0 || typeFixes.length > 0 || imputedNotes.length > 0 ||
+    dropped.length > 0 || dupRowsRemoved > 0 || dupColsRemoved.length > 0
+  );
+  const hasFlagged = suspicious.length > 0 || suggestions.length > 0 || dupFoundNotRemoved;
+  const hasAssumptions = assumptions.length > 0;
+
+  // ── No canonical data — render legacy fallback ───────────────────────────
+  if (!cr && legacyItems && legacyItems.length > 0) {
+    return (
+      <div className="space-y-2">
+        {legacyItems.map((item, i) => (
+          <div key={i} className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-2.5">
+            <p className="text-xs font-medium text-white/75">{item.step}</p>
+            {item.detail && <p className="mt-0.5 text-[11px] text-white/40">{item.detail}</p>}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // ── Empty state — nothing was changed and nothing flagged ────────────────
+  if (!hasAutoApplied && !hasFlagged) {
     return (
       <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 flex items-center gap-3">
-        <CheckCircle className="h-4 w-4 text-emerald-400 flex-shrink-0" />
+        <CheckCircle2 className="h-4 w-4 text-emerald-400 flex-shrink-0" />
         <div>
-          <p className="text-sm font-medium text-white">No cleaning needed</p>
-          <p className="text-xs text-white/40">Dataset was already clean — no changes applied.</p>
+          <p className="text-sm font-semibold text-white">No cleaning needed</p>
+          <p className="text-xs text-white/40 mt-0.5">
+            Dataset was already clean — no changes were applied and nothing was flagged.
+          </p>
         </div>
       </div>
     );
   }
 
-  const highImpact = items.filter((i) => i.impact === "high");
-  const mediumImpact = items.filter((i) => i.impact === "medium" && isAutoApplied(i));
-  const flagged = items.filter((i) => i.impact === "medium" && !isAutoApplied(i));
-  const lowImpact = items.filter((i) => i.impact === "low" || (!i.impact && isAutoApplied(i)));
-
-  const autoApplied = [...highImpact, ...mediumImpact];
-  const forReview = flagged;
-  const minor = lowImpact;
+  const { banner, text, badge } = gradeColor(cs?.confidence_score);
+  const modeLabel = cs?.mode === "safe" ? "Safe mode" : cs?.mode === "aggressive" ? "Full cleaning" : null;
 
   return (
-    <div className="space-y-4">
-      {/* Summary bar */}
-      {summary && (
-        <div className="grid grid-cols-3 gap-2">
-          {[
-            { label: "Steps applied", value: summary.steps ?? items.length },
-            { label: "Rows removed", value: summary.rows_removed ?? "—" },
-            { label: "Columns fixed", value: summary.columns_fixed ?? "—" },
-          ].map((s) => (
-            <div
-              key={s.label}
-              className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-center"
-            >
-              <p className="text-lg font-bold text-white">{s.value}</p>
-              <p className="text-[10px] text-white/35">{s.label}</p>
+    <div className="space-y-5">
+
+      {/* ── Confidence banner ──────────────────────────────────────────────── */}
+      {cs && (
+        <div className={`flex items-center justify-between rounded-xl border px-4 py-3.5 ${banner}`}>
+          <div>
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className={`h-4 w-4 flex-shrink-0 ${text}`} />
+              <p className={`text-sm font-semibold ${text}`}>
+                Grade {cs.confidence_grade ?? "—"} · {Math.round(cs.confidence_score ?? 0)}/100 data quality score
+              </p>
             </div>
-          ))}
+            <p className="mt-0.5 pl-6 text-xs text-white/35">
+              {[
+                modeLabel,
+                cs.steps_applied != null ? `${cs.steps_applied} steps applied` : null,
+                cs.time_saved_estimate ? `saved ${cs.time_saved_estimate}` : null,
+              ].filter(Boolean).join(" · ")}
+            </p>
+          </div>
+          <span className={`flex-shrink-0 rounded-full border px-2.5 py-0.5 text-sm font-bold ${badge}`}>
+            {cs.confidence_grade ?? "—"}
+          </span>
         </div>
       )}
 
-      {/* Section: Applied automatically */}
-      {autoApplied.length > 0 && (
-        <Section
-          icon={<CheckCircle className="h-4 w-4 text-emerald-400" />}
-          title="Applied automatically"
-          subtitle={`${autoApplied.length} change${autoApplied.length > 1 ? "s" : ""} made — safe to proceed`}
-          items={autoApplied}
-          chipColor="emerald"
-        />
-      )}
-
-      {/* Section: Worth reviewing */}
-      {forReview.length > 0 && (
-        <Section
-          icon={<AlertTriangle className="h-4 w-4 text-amber-400" />}
-          title="Worth reviewing"
-          subtitle={`${forReview.length} item${forReview.length > 1 ? "s" : ""} flagged — check before exporting`}
-          items={forReview}
-          chipColor="amber"
-        />
-      )}
-
-      {/* Section: Minor / informational */}
-      {minor.length > 0 && (
-        <Section
-          icon={<Info className="h-4 w-4 text-white/30" />}
-          title="Minor adjustments"
-          subtitle={`${minor.length} low-impact item${minor.length > 1 ? "s" : ""}`}
-          items={minor}
-          chipColor="slate"
-          collapsed
-        />
-      )}
-    </div>
-  );
-}
-
-type SectionProps = {
-  icon: React.ReactNode;
-  title: string;
-  subtitle: string;
-  items: CleaningItem[];
-  chipColor: "emerald" | "amber" | "slate";
-  collapsed?: boolean;
-};
-
-function Section({ icon, title, subtitle, items, chipColor }: SectionProps) {
-  const chipClass =
-    chipColor === "emerald"
-      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-      : chipColor === "amber"
-      ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-      : "bg-white/[0.05] text-white/35 border-white/10";
-
-  return (
-    <div className="rounded-xl border border-white/[0.07] bg-white/[0.015] overflow-hidden">
-      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-white/[0.06]">
-        {icon}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-white">{title}</p>
-          <p className="text-[11px] text-white/35">{subtitle}</p>
-        </div>
-      </div>
-      <div className="divide-y divide-white/[0.04]">
-        {items.map((item, i) => (
-          <div key={i} className="flex items-start gap-3 px-4 py-2.5">
-            <Minus className="mt-1 h-3 w-3 flex-shrink-0 text-white/20" />
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-xs font-medium text-white/80">{item.step}</p>
-                {item.impact && (
-                  <span className={`rounded-full border px-1.5 py-px text-[10px] font-medium ${chipClass}`}>
-                    {item.impact}
-                  </span>
-                )}
-              </div>
-              {item.detail && (
-                <p className="mt-0.5 text-[11px] text-white/40">{item.detail}</p>
-              )}
+      {/* ── Applied automatically ─────────────────────────────────────────── */}
+      {hasAutoApplied && (
+        <div className="rounded-xl border border-white/[0.07] bg-white/[0.015] overflow-hidden">
+          <div className="flex items-center gap-2.5 border-b border-white/[0.06] px-4 py-3">
+            <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+            <div>
+              <p className="text-sm font-semibold text-white">Applied automatically</p>
+              <p className="text-[11px] text-white/35">
+                These changes were made safely — you don&apos;t need to act on them.
+              </p>
             </div>
           </div>
-        ))}
-      </div>
+          <div className="px-4 py-3 space-y-4">
+
+            {/* Column renames */}
+            {renames.length > 0 && (
+              <AutoGroup label="Column names normalised" count={renames.length}>
+                <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+                  {renames.map((r, i) => (
+                    <div key={i} className="flex items-center gap-1.5 rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-1.5">
+                      <span className="text-xs font-mono text-white/50 truncate max-w-[100px]">{r.original}</span>
+                      <ArrowRight className="h-3 w-3 flex-shrink-0 text-white/20" />
+                      <span className="text-xs font-mono text-white/75 truncate max-w-[100px]">{r.cleaned}</span>
+                    </div>
+                  ))}
+                </div>
+              </AutoGroup>
+            )}
+
+            {/* Type conversions */}
+            {typeFixes.length > 0 && (
+              <AutoGroup label="Data type conversions" count={typeFixes.length}>
+                {typeFixes.map((fix, i) => (
+                  <AutoRow key={i}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-medium text-white/80">{fix.column}</span>
+                      <span className="text-[10px] text-white/30">→</span>
+                      <Pill label={DTYPE_LABELS[fix.to_dtype] ?? fix.to_dtype} color="green" />
+                      {fix.n_values_converted > 0 && (
+                        <span className="text-[11px] text-white/35">
+                          {fix.n_values_converted.toLocaleString()} values converted
+                        </span>
+                      )}
+                    </div>
+                  </AutoRow>
+                ))}
+              </AutoGroup>
+            )}
+
+            {/* Duplicate cleanup */}
+            {(dupRowsRemoved > 0 || dupColsRemoved.length > 0) && (
+              <AutoGroup
+                label="Duplicate cleanup"
+                count={dupRowsRemoved + dupColsRemoved.length}
+              >
+                {dupRowsRemoved > 0 && (
+                  <AutoRow>
+                    <p className="text-xs text-white/70">
+                      <span className="font-medium">{dupRowsRemoved.toLocaleString()}</span> duplicate{" "}
+                      {dupRowsRemoved === 1 ? "row" : "rows"} removed
+                      {dupRowsFound > dupRowsRemoved && (
+                        <span className="text-white/35"> ({dupRowsFound.toLocaleString()} found)</span>
+                      )}
+                    </p>
+                  </AutoRow>
+                )}
+                {dupColsRemoved.length > 0 && (
+                  <AutoRow>
+                    <p className="text-xs text-white/70 mb-1">
+                      {dupColsRemoved.length} duplicate {dupColsRemoved.length === 1 ? "column" : "columns"} removed
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {dupColsRemoved.map((col) => (
+                        <Pill key={col} label={col} />
+                      ))}
+                    </div>
+                  </AutoRow>
+                )}
+              </AutoGroup>
+            )}
+
+            {/* Missing value imputation */}
+            {imputedNotes.length > 0 && (
+              <AutoGroup label="Missing values filled" count={imputedNotes.length}>
+                {imputedNotes.map((note, i) => (
+                  <AutoRow key={i}>
+                    <div className="flex items-start justify-between gap-2 flex-wrap">
+                      <div>
+                        <span className="text-xs font-medium text-white/80">{note.column}</span>
+                        <span className="ml-2 text-[11px] text-white/35">
+                          {note.missing_count.toLocaleString()} missing ({note.missing_pct.toFixed(1)}%)
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Pill label={STRATEGY_LABELS[note.strategy_applied] ?? note.strategy_applied} color="green" />
+                        <Pill label={MECHANISM_LABELS[note.mechanism] ?? note.mechanism} />
+                      </div>
+                    </div>
+                  </AutoRow>
+                ))}
+              </AutoGroup>
+            )}
+
+            {/* Dropped columns */}
+            {dropped.length > 0 && (
+              <AutoGroup label="Columns dropped — too many missing values" count={dropped.length}>
+                <AutoRow>
+                  <div className="flex flex-wrap gap-1">
+                    {dropped.map((col) => (
+                      <Pill key={col} label={col} color="amber" />
+                    ))}
+                  </div>
+                </AutoRow>
+              </AutoGroup>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {/* ── Needs your attention ─────────────────────────────────────────── */}
+      {hasFlagged && (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] overflow-hidden">
+          <div className="flex items-center gap-2.5 border-b border-amber-500/15 px-4 py-3">
+            <AlertTriangle className="h-4 w-4 text-amber-400" />
+            <div>
+              <p className="text-sm font-semibold text-amber-200">Needs your attention</p>
+              <p className="text-[11px] text-amber-200/50">
+                These were not auto-fixed — review before exporting.
+              </p>
+            </div>
+          </div>
+          <div className="px-4 py-3 space-y-3">
+
+            {/* Suspicious columns */}
+            {suspicious.map((sc, i) => (
+              <div key={i} className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2.5">
+                <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                  <span className="text-xs font-semibold text-white/85">{sc.column}</span>
+                  <Pill label={issueLabel(sc.issue_type)} color="amber" />
+                </div>
+                <p className="text-[11px] leading-relaxed text-white/50">{sc.detail}</p>
+              </div>
+            ))}
+
+            {/* Safe-mode suggestions — imputation was suggested but not applied */}
+            {suggestions.length > 0 && (
+              <div className="rounded-lg border border-amber-500/15 bg-amber-500/5 px-3 py-2.5">
+                <p className="text-xs font-semibold text-amber-200/80 mb-1.5">
+                  Not filled — safe mode left these as-is
+                </p>
+                <div className="space-y-1.5">
+                  {suggestions.map((note, i) => (
+                    <div key={i} className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-medium text-white/70">{note.column}</span>
+                      <span className="text-[11px] text-white/35">
+                        {note.missing_count.toLocaleString()} missing ({note.missing_pct.toFixed(1)}%)
+                      </span>
+                      <Pill label={MECHANISM_LABELS[note.mechanism] ?? note.mechanism} color="amber" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Duplicates found but not removed */}
+            {dupFoundNotRemoved && (
+              <div className="rounded-lg border border-amber-500/15 bg-amber-500/5 px-3 py-2.5">
+                <p className="text-xs font-semibold text-amber-200/80">
+                  {dupRowsFound.toLocaleString()} duplicate rows found — not removed
+                </p>
+                <p className="mt-0.5 text-[11px] text-white/45">
+                  Safe mode preserved them. Review and decide whether to exclude them from your analysis.
+                </p>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {/* ── Assumptions (only if the pipeline emits them) ─────────────────── */}
+      {hasAssumptions && (
+        <div className="rounded-xl border border-indigo-500/15 bg-indigo-500/[0.04] px-4 py-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Info className="h-3.5 w-3.5 text-indigo-400/70" />
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-indigo-400/60">
+              Inferences made automatically
+            </p>
+          </div>
+          <div className="space-y-1">
+            {assumptions.map((a, i) => (
+              <p key={i} className="text-[11px] text-white/50 leading-relaxed">· {a}</p>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Footer nudge ─────────────────────────────────────────────────── */}
+      <p className="text-[11px] text-white/25">
+        {hasFlagged
+          ? "Review the flagged items above before drawing conclusions — they may affect your analysis."
+          : "All changes were safe and automatic. Continue to Health to see the quality score."}
+      </p>
+
     </div>
   );
 }

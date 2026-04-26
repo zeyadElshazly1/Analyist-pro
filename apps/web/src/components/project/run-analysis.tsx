@@ -33,6 +33,7 @@ import { DataStoryView } from "@/components/analysis/data-story-view";
 import { DataTableView } from "@/components/analysis/data-table-view";
 import { DiffView } from "@/components/analysis/diff-view";
 import { ApiError, getFreshToken, shareAnalysis, downloadCleanedData } from "@/lib/api";
+import type { CompareResult } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 import { SafePanel } from "@/components/ui/error-boundary";
 
@@ -156,6 +157,8 @@ export type AnalysisResult = {
   health_result?: Record<string, unknown> | null;    // canonical HealthResult block
   profile_result?: ColProfile[] | null;              // canonical ProfileResult block
   profile?: ColProfile[] | null;                     // legacy fallback
+  insight_results?: unknown[] | null;                // canonical InsightResult[]
+  executive_panel?: Record<string, unknown> | null;  // canonical executive panel
   insights: Insight[];
   cleaning_report?: CleaningItem[] | null;
   narrative?: string;
@@ -220,6 +223,7 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
   }, [initialResult, initialRunId]);
   const [useCleaned, setUseCleaned] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
 
   // Sync tab ↔ URL hash for shareable deep-links
   useEffect(() => {
@@ -598,7 +602,7 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
           {/* ── Compare Files ────────────────────────────────────────── */}
           {tab === "compare-files" && (
             <SafePanel label="File Comparison">
-              <TabPanel><MultifileCompare currentProjectId={projectId} /></TabPanel>
+              <TabPanel><MultifileCompare currentProjectId={projectId} onCompareResult={setCompareResult} /></TabPanel>
             </SafePanel>
           )}
 
@@ -630,11 +634,17 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
                 <div className="space-y-6">
                   <div>
                     <h2 className="mb-1 font-semibold text-white">Build your report</h2>
-                    <p className="text-xs text-white/40">Select insights, edit the summary, and export a client-ready PDF or Excel file.</p>
+                    <p className="text-xs text-white/40">
+                      Select findings, edit the summary, preview the assembled report, then export a client-ready PDF or Excel file.
+                    </p>
                   </div>
                   <ReportBuilder
                     projectId={projectId}
                     insights={result.insights ?? []}
+                    insightResults={(result.insight_results as any[]) ?? undefined}
+                    narrative={result.narrative}
+                    executivePanel={result.executive_panel as any ?? undefined}
+                    compareResult={compareResult}
                   />
                   <div className="border-t border-white/[0.06] pt-4">
                     <h3 className="mb-3 text-sm font-semibold text-white/60">Ask AI copilot</h3>

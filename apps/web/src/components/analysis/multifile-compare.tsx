@@ -16,7 +16,7 @@ import {
   Legend,
 } from "recharts";
 
-type Props = { currentProjectId: number };
+type Props = { currentProjectId: number; onCompareResult?: (cr: CompareResult) => void };
 
 const DARK_TOOLTIP = {
   contentStyle: {
@@ -48,7 +48,7 @@ function classifyDelta(pct: number | null): CompareMetricDelta["change_flag"] {
   return "stable";
 }
 
-export function MultifileCompare({ currentProjectId }: Props) {
+export function MultifileCompare({ currentProjectId, onCompareResult }: Props) {
   const [otherProjectId, setOtherProjectId] = useState("");
   const [result, setResult] = useState<(Record<string, any> & { compare_result?: CompareResult }) | null>(null);
   const [loading, setLoading] = useState(false);
@@ -65,6 +65,7 @@ export function MultifileCompare({ currentProjectId }: Props) {
     try {
       const data = await runMultifileCompare(currentProjectId, otherId);
       setResult(data);
+      if (data.compare_result) onCompareResult?.(data.compare_result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Comparison failed.");
     } finally {
