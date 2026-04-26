@@ -16,6 +16,7 @@ import {
   BarChart2,
 } from "lucide-react";
 import { getDraftReport, saveDraftReport, exportReport } from "@/lib/api";
+import type { CompareResult } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -38,14 +39,6 @@ type ExecutivePanel = {
   action_plan?:   Array<{ title?: string; action?: string; priority?: string; reason?: string }>;
 };
 
-type CompareResult = {
-  file_a?: { file_name?: string };
-  file_b?: { file_name?: string };
-  row_volume_changes?: { count_a?: number; count_b?: number; diff?: number; diff_pct?: number };
-  health_changes?: { score_a?: number; grade_a?: string; score_b?: number; grade_b?: string; direction?: string };
-  summary_draft?: string;
-  caution_flags?: Array<{ message: string; severity: string }>;
-};
 
 type Props = {
   projectId: number;
@@ -407,18 +400,21 @@ export function ReportBuilder({
               )}
             </PreviewSection>
 
-            {/* Comparison Summary — only if compare data exists */}
+            {/* Comparison Summary — only rendered when compare data is available */}
             {hasCompare && (
               <PreviewSection icon={TrendingUp} title="Comparison Summary" accent="emerald">
-                <div className="space-y-2">
+                <div className="space-y-3">
+                  {/* AI summary draft */}
                   {compareResult?.summary_draft && (
-                    <p className="text-sm text-white/70">{compareResult.summary_draft}</p>
+                    <p className="text-sm leading-relaxed text-white/70">{compareResult.summary_draft}</p>
                   )}
+
+                  {/* Health score change */}
                   {compareResult?.health_changes && (
                     <div className="grid grid-cols-2 gap-2">
                       {[
-                        { label: compareResult.file_a?.file_name ?? "File A", score: compareResult.health_changes.score_a, grade: compareResult.health_changes.grade_a },
-                        { label: compareResult.file_b?.file_name ?? "File B", score: compareResult.health_changes.score_b, grade: compareResult.health_changes.grade_b },
+                        { label: compareResult.file_a.file_name, score: compareResult.health_changes.score_a, grade: compareResult.health_changes.grade_a },
+                        { label: compareResult.file_b.file_name, score: compareResult.health_changes.score_b, grade: compareResult.health_changes.grade_b },
                       ].map(({ label, score, grade }) => (
                         <div key={label} className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2">
                           <p className="truncate text-[10px] text-white/35">{label}</p>
@@ -430,6 +426,81 @@ export function ReportBuilder({
                       ))}
                     </div>
                   )}
+
+                  {/* Row volume change */}
+                  {compareResult?.row_volume_changes && (() => {
+                    const rv = compareResult.row_volume_changes;
+                    const diff = rv.diff;
+                    const pct  = rv.diff_pct;
+                    if (diff === 0) return null;
+                    const sign = diff > 0 ? "+" : "";
+                    return (
+                      <p className="text-xs text-white/50">
+                        Row count changed: {rv.count_a.toLocaleString()} → {rv.count_b.toLocaleString()}
+                        {" "}
+                        <span className={diff > 0 ? "text-emerald-400" : "text-red-400"}>
+                          ({sign}{diff.toLocaleString()}{pct != null ? `, ${sign}${pct.toFixed(1)}%` : ""})
+                        </span>
+                      </p>
+                    );
+                  })()}
+
+                  {/* Schema changes */}
+                  {compareResult?.schema_changes && (() => {
+                    const sc = compareResult.schema_changes;
+                    const added   = sc.added_columns.length;
+                    const removed = sc.removed_columns.length;
+                    if (added === 0 && removed === 0) return null;
+                    return (
+                      <div className="flex flex-wrap gap-1.5">
+                        {sc.added_columns.slice(0, 4).map((col) => (
+                          <span key={col} className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-px text-[10px] text-emerald-300">
+                            + {col}
+                          </span>
+                        ))}
+                        {sc.removed_columns.slice(0, 4).map((col) => (
+                          <span key={col} className="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-px text-[10px] text-red-300">
+                            − {col}
+                          </span>
+                        ))}
+                        {(added > 4 || removed > 4) && (
+                          <span className="text-[10px] text-white/30 self-center">
+                            +{Math.max(0, added - 4) + Math.max(0, removed - 4)} more
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Top significant metric deltas */}
+                  {compareResult?.metric_deltas && (() => {
+                    const significant = compareResult.metric_deltas
+                      .filter((d) => d.change_flag === "significant" || d.change_flag === "notable")
+                      .slice(0, 3);
+                    if (significant.length === 0) return null;
+                    return (
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-medium uppercase tracking-wider text-white/25">
+                          Key metric shifts
+                        </p>
+                        {significant.map((d) => {
+                          const pct = d.mean_delta_pct;
+                          const sign = pct != null && pct > 0 ? "+" : "";
+                          const color = d.change_flag === "significant" ? "text-red-400" : "text-amber-400";
+                          return (
+                            <div key={d.column} className="flex items-center justify-between text-xs">
+                              <span className="text-white/60 font-medium">{d.column}</span>
+                              <span className={`font-mono ${color}`}>
+                                {pct != null ? `${sign}${pct.toFixed(1)}%` : "—"}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Caution flags */}
                   {compareResult?.caution_flags?.slice(0, 3).map((f, i) => (
                     <div key={i} className="flex items-start gap-2 text-xs text-white/50">
                       <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0 text-amber-400/70" />

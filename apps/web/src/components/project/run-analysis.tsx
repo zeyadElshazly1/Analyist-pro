@@ -33,6 +33,7 @@ import { DataStoryView } from "@/components/analysis/data-story-view";
 import { DataTableView } from "@/components/analysis/data-table-view";
 import { DiffView } from "@/components/analysis/diff-view";
 import { ApiError, getFreshToken, shareAnalysis, downloadCleanedData } from "@/lib/api";
+import type { CompareResult } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 import { SafePanel } from "@/components/ui/error-boundary";
 
@@ -222,6 +223,7 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
   }, [initialResult, initialRunId]);
   const [useCleaned, setUseCleaned] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
 
   // Sync tab ↔ URL hash for shareable deep-links
   useEffect(() => {
@@ -600,7 +602,7 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
           {/* ── Compare Files ────────────────────────────────────────── */}
           {tab === "compare-files" && (
             <SafePanel label="File Comparison">
-              <TabPanel><MultifileCompare currentProjectId={projectId} /></TabPanel>
+              <TabPanel><MultifileCompare currentProjectId={projectId} onCompareResult={setCompareResult} /></TabPanel>
             </SafePanel>
           )}
 
@@ -642,6 +644,7 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
                     insightResults={(result.insight_results as any[]) ?? undefined}
                     narrative={result.narrative}
                     executivePanel={result.executive_panel as any ?? undefined}
+                    compareResult={compareResult}
                   />
                   <div className="border-t border-white/[0.06] pt-4">
                     <h3 className="mb-3 text-sm font-semibold text-white/60">Ask AI copilot</h3>
