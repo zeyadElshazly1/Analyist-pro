@@ -14,8 +14,9 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart2,
+  Info,
 } from "lucide-react";
-import { getDraftReport, saveDraftReport, exportReport } from "@/lib/api";
+import { getDraftReport, saveDraftReport, exportReport, ApiError } from "@/lib/api";
 import type { CompareResult } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -95,6 +96,7 @@ export function ReportBuilder({
   const [saved,     setSaved]     = useState(false);
   const [exporting, setExporting] = useState<string | null>(null);
   const [exportErr, setExportErr] = useState<string | null>(null);
+  const [pdfUnavailable, setPdfUnavailable] = useState(false);
   const [loaded,    setLoaded]    = useState(false);
   const [previewOpen, setPreviewOpen] = useState(true);
 
@@ -187,11 +189,16 @@ export function ReportBuilder({
 
   async function handleExport(format: "pdf" | "xlsx" | "html") {
     setExportErr(null);
+    setPdfUnavailable(false);
     setExporting(format);
     try {
       await exportReport(projectId, format);
     } catch (e) {
-      setExportErr(e instanceof Error ? e.message : "Export failed — please try again.");
+      if (e instanceof ApiError && e.status === 501 && format === "pdf") {
+        setPdfUnavailable(true);
+      } else {
+        setExportErr(e instanceof Error ? e.message : "Export failed — please try again.");
+      }
     } finally {
       setExporting(null);
     }
@@ -532,6 +539,29 @@ export function ReportBuilder({
               </PreviewSection>
             )}
 
+            {/* Report footer metadata */}
+            <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] px-4 py-3 space-y-1.5">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Info className="h-3 w-3 text-white/20" />
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-white/20">
+                  Included in every export
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-white/35">
+                <span>Source file name</span>
+                <span>Rows &amp; columns analyzed</span>
+                <span>Cleaning steps applied</span>
+                <span>Generated timestamp</span>
+              </div>
+              <p className="text-[10px] text-white/20 pt-0.5">
+                Full export also includes: data quality breakdown, column profiles, cleaning history.
+              </p>
+              <span className="inline-flex items-center gap-1 rounded-full border border-indigo-500/20 bg-indigo-500/[0.07] px-2 py-px text-[10px] text-indigo-400/70">
+                <Sparkles className="h-2.5 w-2.5" />
+                AI-assisted draft — review before sharing
+              </span>
+            </div>
+
           </div>
         )}
       </div>
@@ -554,6 +584,14 @@ export function ReportBuilder({
           {exporting === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
           Export Excel
         </button>
+        <button
+          onClick={() => handleExport("html")}
+          disabled={!!exporting}
+          className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/[0.07] hover:text-white disabled:opacity-60"
+        >
+          {exporting === "html" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+          Export HTML
+        </button>
         <div className="ml-auto flex items-center gap-1.5 text-xs">
           {saving && <span className="text-white/30">Saving…</span>}
           {saved && !saving && (
@@ -565,10 +603,43 @@ export function ReportBuilder({
         </div>
       </div>
 
+      {pdfUnavailable && (
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.05] px-4 py-3 space-y-2">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-400" />
+            <div>
+              <p className="text-sm font-medium text-amber-300">PDF export not available on this server</p>
+              <p className="mt-0.5 text-xs text-white/50">
+                The PDF renderer (WeasyPrint / wkhtmltopdf) is not installed. Export as HTML or Excel instead — HTML can be printed to PDF from any browser.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2 pl-6">
+            <button
+              onClick={() => { setPdfUnavailable(false); handleExport("html"); }}
+              disabled={!!exporting}
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-white/70 hover:bg-white/[0.07] hover:text-white disabled:opacity-60"
+            >
+              {exporting === "html" ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />}
+              Export HTML instead
+            </button>
+            <button
+              onClick={() => { setPdfUnavailable(false); handleExport("xlsx"); }}
+              disabled={!!exporting}
+              className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-white/70 hover:bg-white/[0.07] hover:text-white disabled:opacity-60"
+            >
+              {exporting === "xlsx" ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />}
+              Export Excel instead
+            </button>
+          </div>
+        </div>
+      )}
+
       {exportErr && (
-        <p className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-2.5 text-sm text-red-400">
-          {exportErr}
-        </p>
+        <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-2.5">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-400" />
+          <p className="text-sm text-red-400">{exportErr}</p>
+        </div>
       )}
     </div>
   );

@@ -124,6 +124,7 @@ def build_context(
         "columns_analyzed": n_cols,
         "cleaning_steps": cleaning_steps,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M UTC"),
+        "project_name": project_name,
     }
 
     return {
