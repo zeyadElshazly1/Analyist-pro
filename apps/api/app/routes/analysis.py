@@ -122,7 +122,8 @@ def run_analysis(
             "run_id": run.id if run else None,
             "cleaning_summary": to_jsonable(cleaning_summary),   # backward compat — CleaningSummaryCards legacy fallback
             "cleaning_result": cleaning_result,                  # canonical V1
-            "profile": to_jsonable(profile),                     # backward compat — ProfileView
+            "profile_result": to_jsonable(profile),              # canonical V1
+            "profile": to_jsonable(profile),                     # backward compat — old stored-result reads
             "health_result": health_result,                      # canonical V1
             "insight_results": insight_results,                  # canonical V1 (replaces insights)
             "narrative": narrative,
@@ -390,7 +391,7 @@ def get_run_results(
         cleaning_result=_block("cleaning_result"),
         health_result=_block("health_result"),
         insight_results=_block("insight_results"),
-        profile_result=_block("profile"),
+        profile_result=_block("profile_result") or _block("profile"),
         executive_panel=_block("executive_panel"),
         narrative=stored.get("narrative") or None,
         story_result=story_result,
@@ -680,7 +681,7 @@ def get_analysis_diff(
 
     # ── Column profile diff ───────────────────────────────────────────────────
     def _col_map(result: dict) -> dict[str, dict]:
-        cols = result.get("profile", [])
+        cols = result.get("profile_result") or result.get("profile", [])
         if isinstance(cols, list):
             return {c.get("name", ""): c for c in cols if isinstance(c, dict)}
         return {}
