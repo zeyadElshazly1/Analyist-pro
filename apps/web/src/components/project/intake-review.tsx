@@ -2,7 +2,21 @@
 
 import { CheckCircle, AlertTriangle, Info } from "lucide-react";
 
-type ParseReport = {
+// Canonical IntakeResult shape from POST /upload → intake_result
+type IntakeResult = {
+  parse_status?: string;
+  confidence?: number;
+  file_kind?: string;
+  detected_header_row?: number | null;
+  preamble_rows?: number[];
+  footer_rows?: number[];
+  warnings?: string[];
+  parsing_decisions?: string[];
+  file_metadata?: Record<string, string>;
+};
+
+// Legacy ParseReport — kept only as fallback for old callers
+type LegacyParseReport = {
   file_kind?: string;
   status?: string;
   confidence?: number;
@@ -17,20 +31,23 @@ type ParseReport = {
 
 type Props = {
   filename: string;
-  parseReport: ParseReport;
+  intakeResult?: IntakeResult | null;        // canonical — primary
+  parseReport?: LegacyParseReport | null;    // legacy fallback
 };
 
-export function IntakeReview({ filename, parseReport }: Props) {
-  const {
-    file_kind = "flat_table",
-    status = "ok",
-    confidence = 1,
-    header_row,
-    preamble_rows_skipped = 0,
-    footer_start_row,
-    warnings = [],
-    metadata = {},
-  } = parseReport;
+export function IntakeReview({ filename, intakeResult, parseReport }: Props) {
+  // Canonical-first field resolution
+  const ir = intakeResult;
+  const pr = parseReport;
+
+  const file_kind      = ir?.file_kind   ?? pr?.file_kind   ?? "flat_table";
+  const status         = ir?.parse_status ?? pr?.status      ?? "ok";
+  const confidence     = ir?.confidence  ?? pr?.confidence  ?? 1;
+  const header_row     = ir?.detected_header_row ?? pr?.header_row ?? null;
+  const preamble_count = ir ? (ir.preamble_rows?.length ?? 0) : (pr?.preamble_rows_skipped ?? 0);
+  const footer_row     = ir ? (ir.footer_rows?.[0] ?? null)    : (pr?.footer_start_row ?? null);
+  const warnings       = ir?.warnings    ?? pr?.warnings    ?? [];
+  const metadata       = ir?.file_metadata ?? pr?.metadata  ?? {};
 
   const hasIssues = status !== "ok" || warnings.length > 0;
   const confidencePct = Math.round(confidence * 100);
@@ -73,16 +90,15 @@ export function IntakeReview({ filename, parseReport }: Props) {
           },
           {
             label: "Preamble skipped",
-            value:
-              preamble_rows_skipped > 0
-                ? `${preamble_rows_skipped} row${preamble_rows_skipped > 1 ? "s" : ""}`
-                : "None",
-            highlight: preamble_rows_skipped > 0,
+            value: preamble_count > 0
+              ? `${preamble_count} row${preamble_count > 1 ? "s" : ""}`
+              : "None",
+            highlight: preamble_count > 0,
           },
           {
             label: "Footer trimmed",
-            value: footer_start_row != null ? `From row ${footer_start_row}` : "None",
-            highlight: footer_start_row != null,
+            value: footer_row != null ? `From row ${footer_row}` : "None",
+            highlight: footer_row != null,
           },
         ].map((item) => (
           <div

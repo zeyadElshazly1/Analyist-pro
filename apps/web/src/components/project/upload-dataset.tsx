@@ -20,7 +20,7 @@ type Preview = {
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ParseReport = Record<string, any>;
+type IntakeResult = Record<string, any>;
 
 export function UploadDataset({ projectId, onUploaded }: Props) {
   const [file, setFile] = useState<File | null>(null);
@@ -28,7 +28,7 @@ export function UploadDataset({ projectId, onUploaded }: Props) {
   const [message, setMessage] = useState("");
   const [dragging, setDragging] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [parseReport, setParseReport] = useState<ParseReport | null>(null);
+  const [intakeResult, setIntakeResult] = useState<IntakeResult | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   function selectFile(f: File) {
@@ -36,7 +36,7 @@ export function UploadDataset({ projectId, onUploaded }: Props) {
     setStatus("idle");
     setMessage("");
     setPreview(null);
-    setParseReport(null);
+    setIntakeResult(null);
   }
 
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -53,8 +53,10 @@ export function UploadDataset({ projectId, onUploaded }: Props) {
       const result = await uploadFile(projectId, file);
       setStatus("success");
       setMessage(`${file.name} uploaded successfully.`);
-      if (result?.parse_report && Object.keys(result.parse_report).length > 0) {
-        setParseReport(result.parse_report);
+      // Canonical-first: intake_result is the current backend field; parse_report is legacy fallback.
+      const ir = result?.intake_result ?? result?.parse_report ?? null;
+      if (ir && Object.keys(ir).length > 0) {
+        setIntakeResult(ir);
       }
       onUploaded?.();
       // fetch preview in background — non-blocking, failure is not critical
@@ -146,8 +148,8 @@ export function UploadDataset({ projectId, onUploaded }: Props) {
         </p>
       )}
 
-      {status === "success" && parseReport && file && (
-        <IntakeReview filename={file.name} parseReport={parseReport} />
+      {status === "success" && intakeResult && file && (
+        <IntakeReview filename={file.name} intakeResult={intakeResult} />
       )}
 
       {status === "error" && (

@@ -70,13 +70,16 @@ def run_analysis_task(self, project_id: int, run_key: str) -> None:
 # ── Pipeline (mirrors analysis_stream._run_analysis_stream) ──────────────────
 
 def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
-    """Full analysis pipeline extracted from the SSE generator."""
+    """Full analysis pipeline — emits the same canonical result as analysis.py."""
     from app.state import get_project_file_info
     from app.services.cache import get_cached_analysis, set_cached_analysis
     from app.services.file_loader import load_dataset
     from app.services.cleaner import clean_dataset
     from app.services.profiler import profile_dataset, calculate_health_score
-    from app.services.analyzer import analyze_dataset, get_dataset_summary
+    from app.services.analyzer import analyze_dataset, generate_executive_panel
+    from app.services.cleaning_adapter import build_cleaning_result
+    from app.services.health_adapter import build_health_result
+    from app.services.insight_adapter import build_insight_results
     from app.services.serializers import to_jsonable
 
     # ── Step 0: resolve file ──────────────────────────────────────────────────
@@ -115,6 +118,7 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
     emit("Dataset loaded", 10, f"{len(df):,} rows × {len(df.columns)} columns")
 
     # ── Step 2: clean ─────────────────────────────────────────────────────────
+    original_cols = df.columns.tolist()
     try:
         df_clean, cleaning_report, cleaning_summary = clean_dataset(df)
     except Exception as e:
@@ -130,12 +134,16 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
         })
         return
 
+    cleaning_result = build_cleaning_result(
+        original_cols, df_clean.columns.tolist(), cleaning_report, cleaning_summary
+    ).model_dump()
     emit("Data cleaned", 35, f"{cleaning_summary.get('steps', 0)} cleaning operations applied")
 
     # ── Step 3: profile ───────────────────────────────────────────────────────
     try:
         profile = profile_dataset(df_clean)
         health_score = calculate_health_score(df_clean)
+        health_result = build_health_result(df_clean, health_score, profile).model_dump()
     except Exception as e:
         logger.error(f"Column profiling failed for project {project_id}: {e}", exc_info=True)
         _publish(r, run_key, {
@@ -144,12 +152,13 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
         return
 
     grade = health_score.get("grade", "?")
-    emit("Profile complete", 60, f"Data health grade: {grade}")
+    emit("Finding key patterns", 60, f"Data quality grade: {grade}")
 
     # ── Step 4: insights ──────────────────────────────────────────────────────
     try:
         insights, narrative = analyze_dataset(df_clean)
-        dataset_summary = get_dataset_summary(df_clean)
+        insight_results = [ir.model_dump() for ir in build_insight_results(insights)]
+        executive_panel = generate_executive_panel(insights)
     except Exception as e:
         logger.error(f"Insight generation failed for project {project_id}: {e}", exc_info=True)
         _publish(r, run_key, {
@@ -157,18 +166,18 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
         })
         return
 
-    emit("Insights ready", 90, f"{len(insights)} insights found")
+    emit("Building your brief", 90, f"{len(insights)} findings ready for review")
 
-    # ── Build result ──────────────────────────────────────────────────────────
+    # ── Build canonical result ────────────────────────────────────────────────
     result = {
         "project_id": project_id,
-        "dataset_summary": to_jsonable(dataset_summary),
-        "cleaning_summary": to_jsonable(cleaning_summary),
-        "cleaning_report": to_jsonable(cleaning_report),
-        "health_score": to_jsonable(health_score),
-        "profile": to_jsonable(profile),
-        "insights": to_jsonable(insights),
+        "cleaning_summary": to_jsonable(cleaning_summary),   # backward compat — CleaningSummaryCards legacy fallback
+        "cleaning_result": cleaning_result,                  # canonical V1
+        "profile_result": to_jsonable(profile),              # canonical V1
+        "health_result": health_result,                      # canonical V1
+        "insight_results": insight_results,                  # canonical V1 (replaces insights)
         "narrative": narrative,
+        "executive_panel": to_jsonable(executive_panel),
     }
 
     # ── Persist to DB ─────────────────────────────────────────────────────────
@@ -191,11 +200,12 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
         proj = db.query(ProjectModel).filter(ProjectModel.id == project_id).first()
         log_event(
             db,
-            action="analysis",
+            action="analysis_completed",
             user_id=proj.user_id if proj else None,
-            resource_type="analysis",
-            resource_id=str(analysis_id),
+            resource_type="project",
+            resource_id=str(project_id),
             detail={"project_id": project_id, "insight_count": len(insights)},
+            category="activation",
         )
     except Exception as e:
         logger.error(
@@ -205,17 +215,16 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
     finally:
         db.close()
 
-    # ── Cache result ──────────────────────────────────────────────────────────
+    # ── Cache and finalise ────────────────────────────────────────────────────
     set_cached_analysis(project_id, file_hash, result)
 
-    # Update in-memory last_insights for AI chat context
     from app.state import PROJECT_FILES
     PROJECT_FILES.setdefault(project_id, {})["last_insights"] = [
         i.get("finding", "") for i in insights[:5]
     ]
 
     if analysis_id:
-        result["analysis_id"] = analysis_id
+        result["run_id"] = analysis_id
 
     emit("Complete", 100, "Analysis finished")
     _publish(r, run_key, {"__done__": True, "result": result})
