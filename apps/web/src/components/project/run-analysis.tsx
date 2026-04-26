@@ -7,7 +7,8 @@ import { Clock, Loader2, Play, CheckCircle2, Share2, Copy, Check, Download } fro
 import { StatsCards } from "@/components/analysis/stats-cards";
 import { InsightsList } from "@/components/analysis/insights-list";
 import { HealthScore } from "@/components/analysis/health-score";
-import { ProjectTabs } from "./project-tabs";
+import { ProjectTabs, getStepForTab } from "./project-tabs";
+import type { StepStatus } from "./project-tabs";
 import { CleaningReport } from "@/components/analysis/cleaning-report";
 import { CleaningReview } from "./cleaning-review";
 import { CleaningSummaryCards } from "@/components/analysis/cleaning-summary-cards";
@@ -178,6 +179,82 @@ type ProgressState = {
   detail: string;
 };
 
+// ── Step completion derivation ────────────────────────────────────────────────
+
+function deriveStepStatuses(
+  result: AnalysisResult | null,
+  visited: Set<string>,
+  compare: CompareResult | null,
+): Record<string, StepStatus> {
+  function slot(stepId: string, hasData: boolean, needsAttention: boolean): StepStatus {
+    if (!hasData) return "unavailable";
+    if (needsAttention) return "attention";
+    return visited.has(stepId) ? "complete" : "available";
+  }
+
+  if (!result) {
+    return {
+      intake: "unavailable", cleaning: "unavailable", health: "unavailable",
+      insights: "unavailable", compare: "unavailable", report: "unavailable",
+    };
+  }
+
+  // Health score — handle both top-level legacy field and canonical health_result block
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hs = result.health_score as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hr = result.health_result as any;
+  const rawScore: number = hs?.total ?? hs?.score ?? hr?.health_score?.total_score ?? 0;
+  const grade: string =
+    hs?.grade ?? hr?.health_score?.grade
+    ?? (rawScore >= 80 ? "A" : rawScore >= 60 ? "B" : rawScore >= 40 ? "C" : "D");
+
+  // Cleaning — attention if suspicious columns or unremoved duplicate rows
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cr = result.cleaning_result as any;
+  const cleaningAttention = Boolean(
+    (cr?.suspicious_columns?.length ?? 0) > 0 ||
+    ((cr?.duplicate_notes?.duplicate_rows_found ?? 0) > 0 && !cr?.duplicate_notes?.removed),
+  );
+
+  // Health — attention if grade C/D or any high-severity warning
+  const healthWarnings: Array<{ severity: string }> = (hr?.health_warnings ?? []) as Array<{ severity: string }>;
+  const highWarningCount = healthWarnings.filter((w) => w.severity === "high").length;
+  const healthAttention = grade === "C" || grade === "D" || highWarningCount > 0;
+
+  // Findings — attention if fewer than half of insights are report-safe
+  const insights = result.insights ?? [];
+  const safeCount = insights.filter((i) => {
+    if (typeof i.report_safe === "boolean") return i.report_safe;
+    const conf =
+      typeof i.confidence === "number"
+        ? i.confidence <= 1 ? i.confidence * 100 : i.confidence
+        : 0;
+    const cat = (i.category ?? i.type ?? "") as string;
+    return (
+      (i.severity === "high" || i.severity === "medium") &&
+      conf >= 60 &&
+      cat !== "data_quality" && cat !== "missing_pattern"
+    );
+  }).length;
+  const findingsAttention = insights.length > 0 && safeCount < Math.ceil(insights.length / 2);
+
+  // Compare — attention if any high-severity caution flag
+  const compareAttention = (compare?.caution_flags ?? []).some((f) => f.severity === "high");
+
+  // Report — attention if insights exist but none are report-safe
+  const reportAttention = insights.length > 0 && safeCount === 0;
+
+  return {
+    intake:   slot("intake",   true,                grade === "D"),
+    cleaning: slot("cleaning", !!cr,                cleaningAttention),
+    health:   slot("health",   !!hr,                healthAttention),
+    insights: slot("insights", insights.length > 0, findingsAttention),
+    compare:  slot("compare",  !!compare,           compareAttention),
+    report:   slot("report",   true,                reportAttention),
+  };
+}
+
 function TabPanel({ children }: { children: React.ReactNode }) {
   return (
     <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
@@ -210,6 +287,8 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
   const [analysisId, setAnalysisId] = useState<number | null>(null);
   const [isStoredResult, setIsStoredResult] = useState(false);
   const [tab, setTab] = useState("overview");
+  // Ephemeral in-session step visitation — reset whenever a new result loads
+  const [visitedSteps, setVisitedSteps] = useState<Set<string>>(new Set<string>(["intake"]));
 
   // Hydrate from a stored run passed by the parent page.
   // Runs when initialResult changes (e.g. after parent fetches /run/{id}/results).
@@ -219,6 +298,8 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
       setAnalysisId(initialRunId ?? null);
       setTab("overview");
       setIsStoredResult(true);
+      // Reset visitation — user is now viewing the overview (intake step)
+      setVisitedSteps(new Set<string>(["intake"]));
     }
   }, [initialResult, initialRunId]);
   const [useCleaned, setUseCleaned] = useState(true);
@@ -234,6 +315,13 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
   const handleTabChange = useCallback((newTab: string) => {
     setTab(newTab);
     window.history.replaceState(null, "", `#${newTab}`);
+    setVisitedSteps((prev) => {
+      const stepId = getStepForTab(newTab);
+      if (prev.has(stepId)) return prev;
+      const next = new Set(prev);
+      next.add(stepId);
+      return next;
+    });
   }, []);
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<ProgressState | null>(null);
@@ -251,6 +339,7 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
     setLoading(true);
     setError("");
     setProgress({ step: "Reading your file", progress: 0, detail: "Preparing analysis…" });
+    setVisitedSteps(new Set<string>());
 
     // Get a fresh token (not stale localStorage) before opening the SSE stream
     const token = await getFreshToken();
@@ -291,6 +380,8 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
           // run_id is the stable identifier for this analysis run
           if (raw.run_id) setAnalysisId(raw.run_id as number);
           setTab("overview");
+          // Overview is the Intake Review step — auto-mark as visited on first view
+          setVisitedSteps(new Set<string>(["intake"]));
           setLoading(false);
           setProgress(null);
           es.close();
@@ -480,7 +571,12 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
 
       {result ? (
         <div className="space-y-4">
-          <ProjectTabs value={tab} onChange={handleTabChange} compareAvailable={!!compareResult} />
+          <ProjectTabs
+            value={tab}
+            onChange={handleTabChange}
+            compareAvailable={!!compareResult}
+            stepStatuses={deriveStepStatuses(result, visitedSteps, compareResult)}
+          />
 
           {/* ── Data Table ───────────────────────────────────────────── */}
           {tab === "data-table" && (
