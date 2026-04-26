@@ -159,8 +159,8 @@ export function UploadDataset({ projectId, onUploaded }: Props) {
         </p>
       )}
 
-      {/* ── Data preview ────────────────────────────────────────────────────── */}
-      {preview && (
+      {/* ── Fallback data preview — only shown when intake_result has no preview_sample ── */}
+      {preview && !(Array.isArray(intakeResult?.preview_sample) && intakeResult.preview_sample.length > 0) && (
         <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
           <div className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
             <TableIcon className="h-3.5 w-3.5 text-white/40" />
