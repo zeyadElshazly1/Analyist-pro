@@ -53,7 +53,7 @@ function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
     // cleaning_result passes the canonical block directly — CleaningSummaryCards/CleaningReview read from it
     cleaning_result: cr ?? null,
     insights,
-    profile: pr,
+    profile_result: pr,
     narrative: stored.narrative ?? undefined,
     executive_panel: stored.executive_panel ?? undefined,
     // story_result: pre-populate DataStoryView so reopening shows stored story

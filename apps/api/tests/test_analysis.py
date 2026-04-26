@@ -42,7 +42,7 @@ def test_run_analysis(client, uploaded_project, auth_headers):
     assert body["project_id"] == pid
     assert "health_result" in body
     assert "insight_results" in body
-    assert "profile" in body
+    assert "profile_result" in body
     assert "cleaning_result" in body
     assert "cleaning_summary" in body
 

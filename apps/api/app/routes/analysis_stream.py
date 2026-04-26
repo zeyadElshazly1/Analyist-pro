@@ -291,7 +291,8 @@ async def _run_analysis_stream(
             "run_id": run.id if run else None,
             "cleaning_summary": to_jsonable(cleaning_summary),   # backward compat — CleaningSummaryCards legacy fallback
             "cleaning_result": cleaning_result,                  # canonical V1
-            "profile": to_jsonable(profile),                     # backward compat — ProfileView
+            "profile_result": to_jsonable(profile),              # canonical V1
+            "profile": to_jsonable(profile),                     # backward compat — old stored-result reads
             "health_result": health_result,                      # canonical V1
             "insight_results": insight_results,                  # canonical V1 (replaces insights)
             "narrative": narrative,

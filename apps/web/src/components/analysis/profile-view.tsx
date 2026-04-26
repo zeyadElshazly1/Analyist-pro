@@ -42,7 +42,8 @@ type ColProfile = {
 };
 
 type Props = {
-  profile: ColProfile[];
+  profileResult?: ColProfile[] | null;  // canonical — primary
+  profile?: ColProfile[] | null;        // legacy fallback
   projectId?: number;
 };
 
@@ -321,7 +322,8 @@ function ColRow({
   );
 }
 
-export function ProfileView({ profile, projectId }: Props) {
+export function ProfileView({ profileResult, profile: legacyProfile, projectId }: Props) {
+  const profile = profileResult ?? legacyProfile ?? [];
   const [annotations, setAnnotations] = useState<Record<string, string>>({});
 
   useEffect(() => {

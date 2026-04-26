@@ -222,7 +222,7 @@ export default function ReportDetailPage() {
             return (
               <div className="space-y-6">
                 {/* Stats */}
-                <StatsCards healthResult={result.health_result as any} profileResult={result.profile as any} summary={result.dataset_summary as any} />
+                <StatsCards healthResult={result.health_result as any} profileResult={(result.profile_result ?? result.profile) as any} summary={result.dataset_summary as any} />
 
                 {/* Executive Panel — above insights */}
                 {!!result.executive_panel && (
@@ -254,7 +254,7 @@ export default function ReportDetailPage() {
                 {/* Column profile */}
                 <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
                   <h2 className="mb-4 font-semibold text-white">Column Profiles</h2>
-                  <ProfileView profile={result.profile as any} />
+                  <ProfileView profileResult={(result.profile_result ?? result.profile) as any} />
                 </div>
 
                 {/* All insights */}

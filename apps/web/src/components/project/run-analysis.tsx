@@ -154,8 +154,9 @@ export type AnalysisResult = {
   cleaning_summary?: Record<string, unknown> | null;
   cleaning_result?: Record<string, unknown> | null;  // canonical CleaningResult block
   health_result?: Record<string, unknown> | null;    // canonical HealthResult block
+  profile_result?: ColProfile[] | null;              // canonical ProfileResult block
+  profile?: ColProfile[] | null;                     // legacy fallback
   insights: Insight[];
-  profile: ColProfile[];
   cleaning_report?: CleaningItem[] | null;
   narrative?: string;
   story_result?: import("@/lib/api").DataStory | null;  // stored AI data story
@@ -278,6 +279,7 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
           const raw = data.result;
           const adapted: AnalysisResult = {
             ...raw,
+            profile_result: raw.profile_result ?? raw.profile,
             cleaning_report: raw.cleaning_report ?? cleaningItemsFromCanonical(raw.cleaning_result),
             insights: raw.insights ?? raw.insight_results ?? [],
           } as AnalysisResult;
@@ -490,7 +492,7 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
           {tab === "overview" && (
             <SafePanel label="Overview">
               <div className="space-y-4">
-                <StatsCards healthResult={result.health_result} profileResult={result.profile} summary={result.dataset_summary} />
+                <StatsCards healthResult={result.health_result} profileResult={result.profile_result ?? result.profile} summary={result.dataset_summary} />
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                   <TabPanel><HealthScore healthResult={result.health_result} score={result.health_score} /></TabPanel>
                   <TabPanel>
@@ -512,7 +514,7 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
             <SafePanel label="Column Profiles">
               <TabPanel>
                 <h2 className="mb-4 font-semibold text-white">Column Profiles</h2>
-                <ProfileView profile={result.profile} projectId={projectId} />
+                <ProfileView profileResult={result.profile_result} profile={result.profile} projectId={projectId} />
               </TabPanel>
             </SafePanel>
           )}
