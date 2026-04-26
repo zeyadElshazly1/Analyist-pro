@@ -156,6 +156,8 @@ export type AnalysisResult = {
   health_result?: Record<string, unknown> | null;    // canonical HealthResult block
   profile_result?: ColProfile[] | null;              // canonical ProfileResult block
   profile?: ColProfile[] | null;                     // legacy fallback
+  insight_results?: unknown[] | null;                // canonical InsightResult[]
+  executive_panel?: Record<string, unknown> | null;  // canonical executive panel
   insights: Insight[];
   cleaning_report?: CleaningItem[] | null;
   narrative?: string;
@@ -630,11 +632,16 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
                 <div className="space-y-6">
                   <div>
                     <h2 className="mb-1 font-semibold text-white">Build your report</h2>
-                    <p className="text-xs text-white/40">Select insights, edit the summary, and export a client-ready PDF or Excel file.</p>
+                    <p className="text-xs text-white/40">
+                      Select findings, edit the summary, preview the assembled report, then export a client-ready PDF or Excel file.
+                    </p>
                   </div>
                   <ReportBuilder
                     projectId={projectId}
                     insights={result.insights ?? []}
+                    insightResults={(result.insight_results as any[]) ?? undefined}
+                    narrative={result.narrative}
+                    executivePanel={result.executive_panel as any ?? undefined}
                   />
                   <div className="border-t border-white/[0.06] pt-4">
                     <h3 className="mb-3 text-sm font-semibold text-white/60">Ask AI copilot</h3>
