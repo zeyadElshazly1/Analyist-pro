@@ -640,12 +640,11 @@ def get_analysis_diff(
 
     metrics = []
     for label, path in [
-        ("Health Score",    ("health_score", "score")),
-        ("Rows",            ("dataset_summary", "rows")),
-        ("Columns",         ("dataset_summary", "columns")),
-        ("Missing %",       ("dataset_summary", "missing_pct")),
-        ("Numeric Columns", ("dataset_summary", "numeric_cols")),
-        ("Cleaning Steps",  ("cleaning_summary", "steps")),
+        ("Health Score",   ("health_result", "health_score", "total_score")),
+        ("Rows",           ("health_result", "row_count")),
+        ("Columns",        ("health_result", "column_count")),
+        ("Missing %",      ("health_result", "missingness_stats", "missing_cell_pct")),
+        ("Cleaning Steps", ("cleaning_summary", "steps")),
     ]:
         va = _num(a, *path)
         vb = _num(b, *path)
@@ -662,11 +661,11 @@ def get_analysis_diff(
 
     # ── Insight diff ──────────────────────────────────────────────────────────
     def _insight_keys(result: dict) -> dict[str, dict]:
-        """Map finding text → insight dict for quick lookup."""
+        """Map explanation text → insight dict for quick lookup."""
         out = {}
-        for ins in result.get("insights", []):
+        for ins in result.get("insight_results", result.get("insights", [])):
             if isinstance(ins, dict):
-                key = str(ins.get("finding", "")).strip().lower()
+                key = str(ins.get("explanation", ins.get("finding", ""))).strip().lower()
                 if key:
                     out[key] = ins
         return out
