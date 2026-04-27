@@ -13,26 +13,84 @@ from app.models import AnalysisResult, AuditLog, Project, ReportDraft, User
 from app.services.access_guards import get_project_for_user
 from app.services.file_loader import load_dataset
 from app.services.report_service import generate_excel_report, generate_html_report, generate_pdf_report
+from app.services.reporting import apply_draft_to_result
 from app.state import get_project_file_info
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
 def _get_stored_analysis(project_id: int, current_user: User, db: Session) -> tuple:
-    """Fetch the latest stored analysis for a project, scoped to the current user."""
+    """Resolve the analysis result that the saved Report Builder draft is
+    pinned to (or the latest run if there is no draft), with the draft's
+    edits applied.
+
+    Behaviour:
+      1. Verify the project belongs to the current user (404 otherwise).
+      2. Load the most recent ``ReportDraft`` for the project.
+      3. If the draft is linked to a specific ``analysis_result_id``, use that
+         exact run — *and* verify it belongs to this project so a tampered
+         draft can never pull data from another project's analysis.
+      4. Otherwise fall back to the project's latest analysis run.
+      5. Apply the draft's selected findings + edited summary so the returned
+         result is what export / preview should render.
+
+    Returns ``(result_dict, report_title)`` where ``report_title`` is the
+    draft's title when set (preferred for the report header), else the
+    project name.
+    """
     project = get_project_for_user(db, project_id, current_user)
 
-    analysis = (
-        db.query(AnalysisResult)
-        .filter(AnalysisResult.project_id == project_id)
-        .order_by(AnalysisResult.created_at.desc())
+    draft = (
+        db.query(ReportDraft)
+        .filter(ReportDraft.project_id == project_id)
+        .order_by(ReportDraft.created_at.desc())
         .first()
     )
+
+    analysis: AnalysisResult | None = None
+
+    # Prefer the analysis the consultant actually built the draft against —
+    # an export should never silently switch to a newer run if the draft is
+    # pinned to an older one.
+    if draft and draft.analysis_result_id:
+        analysis = (
+            db.query(AnalysisResult)
+            .filter(
+                AnalysisResult.id == draft.analysis_result_id,
+                AnalysisResult.project_id == project_id,  # defence-in-depth
+            )
+            .first()
+        )
+
+    if analysis is None:
+        analysis = (
+            db.query(AnalysisResult)
+            .filter(AnalysisResult.project_id == project_id)
+            .order_by(AnalysisResult.created_at.desc())
+            .first()
+        )
+
     if not analysis:
         raise HTTPException(status_code=404, detail="No analysis found. Run analysis first.")
 
     result = json.loads(analysis.result_json)
-    return result, project.name
+
+    if draft is not None:
+        result = apply_draft_to_result(
+            result,
+            draft_summary=draft.summary,
+            draft_title=draft.title,
+            # Only apply the selection when the draft actually recorded one;
+            # a freshly created draft (no edits) keeps the full insight list.
+            selected_indices=(
+                draft.selected_insights
+                if draft.selected_insight_ids_json is not None
+                else None
+            ),
+        )
+
+    title = (draft.title.strip() if draft and draft.title else "") or project.name
+    return result, title
 
 
 def _load_df(project_id: int):

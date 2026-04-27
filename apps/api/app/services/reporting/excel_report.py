@@ -60,6 +60,21 @@ def generate_excel_report(
     ws1["A2"] = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     ws1["A2"].font = Font(color="64748B", size=10, italic=True)
 
+    # Executive Summary — surface the consultant's edited summary so the
+    # workbook reflects what was saved in the Report Builder draft.  Falls
+    # back to the analysis pipeline's narrative when no draft edits exist.
+    narrative = (analysis_result.get("narrative") or "").strip()
+    if narrative:
+        ws1.append([])
+        ws1.append(["Executive Summary"])
+        header_row = ws1.max_row
+        ws1.cell(row=header_row, column=1).font = Font(bold=True, color="F8FAFC", size=12)
+        ws1.append([narrative])
+        narrative_row = ws1.max_row
+        narrative_cell = ws1.cell(row=narrative_row, column=1)
+        narrative_cell.alignment = Alignment(wrap_text=True, vertical="top")
+        ws1.row_dimensions[narrative_row].height = max(60, min(15 * (narrative.count("\n") + 3), 240))
+
     summary = analysis_result.get("dataset_summary", {})
     health  = analysis_result.get("health_score", {})
     ws1.append([])
@@ -76,7 +91,6 @@ def generate_excel_report(
     ]:
         ws1.append([label, val])
 
-    ws1.freeze_panes = "A5"
     _auto_width(ws1)
 
     # ── Sheet 2: Insights ─────────────────────────────────────────────────────
@@ -88,14 +102,22 @@ def generate_excel_report(
     _style_header(ws2, 1, len(headers2))
     ws2.freeze_panes = "A2"
 
-    for i, ins in enumerate(analysis_result.get("insights", []), 1):
+    # Prefer legacy ``insights`` when populated (older saved runs); fall back
+    # to canonical V1 ``insight_results``.  Already filtered by draft when
+    # apply_draft_to_result has been applied upstream.
+    legacy_ins   = analysis_result.get("insights")
+    canon_ins    = analysis_result.get("insight_results")
+    insight_rows = legacy_ins if isinstance(legacy_ins, list) and legacy_ins else (
+        canon_ins if isinstance(canon_ins, list) else []
+    )
+    for i, ins in enumerate(insight_rows, 1):
         ws2.append([
             i,
-            ins.get("type", ""),
+            ins.get("type") or ins.get("category", ""),
             ins.get("severity", ""),
-            ins.get("finding", ins.get("title", "")),
+            ins.get("finding") or ins.get("title") or ins.get("explanation", ""),
             ins.get("evidence", ""),
-            ins.get("action", ""),
+            ins.get("action") or ins.get("recommendation", ""),
         ])
     _auto_width(ws2, max_w=60)
 
