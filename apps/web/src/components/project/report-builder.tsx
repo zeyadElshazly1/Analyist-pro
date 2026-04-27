@@ -40,6 +40,20 @@ type ExecutivePanel = {
   action_plan?:   Array<{ title?: string; action?: string; priority?: string; reason?: string }>;
 };
 
+type HealthBlock = {
+  health_score?: { total_score?: number; grade?: string };
+  health_warnings?: Array<{ severity: string; message: string }>;
+};
+
+type CleaningBlock = {
+  renamed_columns?: unknown[];
+  dropped_columns?: unknown[];
+  type_fixes?: unknown[];
+  missingness_notes?: Array<{ strategy_applied?: string }>;
+  duplicate_notes?: { removed?: boolean };
+  suspicious_columns?: Array<{ column: string; issue_type: string }>;
+  cleaning_summary?: { steps_applied?: number };
+};
 
 type Props = {
   projectId: number;
@@ -49,6 +63,8 @@ type Props = {
   executivePanel?: ExecutivePanel | null;
   compareResult?: CompareResult | null;
   projectName?: string;
+  healthResult?: HealthBlock | null;
+  cleaningResult?: CleaningBlock | null;
 };
 
 type Draft = {
@@ -72,6 +88,156 @@ function severityBadge(sev: string | undefined) {
   return "border-white/10 bg-white/5 text-white/40";
 }
 
+// ── ReportBrief helpers ───────────────────────────────────────────────────────
+
+function insightReportSafe(i: InsightItem): boolean {
+  if (typeof i.report_safe === "boolean") return i.report_safe;
+  const conf =
+    typeof i.confidence === "number"
+      ? i.confidence <= 1 ? i.confidence * 100 : i.confidence
+      : 0;
+  const cat = i.category ?? "";
+  return (
+    (i.severity === "high" || i.severity === "medium") &&
+    conf >= 60 &&
+    cat !== "data_quality" && cat !== "missing_pattern"
+  );
+}
+
+const GRADE_CFG: Record<string, { card: string; text: string; verdict: string }> = {
+  A: { card: "border-emerald-500/15 bg-emerald-500/[0.04]", text: "text-emerald-400", verdict: "Clean data — strong foundation" },
+  B: { card: "border-indigo-500/15 bg-indigo-500/[0.04]",  text: "text-indigo-400",  verdict: "Good quality — minor issues" },
+  C: { card: "border-amber-500/15 bg-amber-500/[0.04]",    text: "text-amber-400",   verdict: "Fair quality — review before sharing" },
+  D: { card: "border-red-500/15 bg-red-500/[0.04]",        text: "text-red-400",     verdict: "Poor quality — needs attention" },
+};
+const GRADE_FALLBACK = { card: "border-white/[0.07] bg-white/[0.02]", text: "text-white/40", verdict: "No health data yet" };
+
+// ── ReportBrief ───────────────────────────────────────────────────────────────
+
+function ReportBrief({
+  allInsights,
+  healthResult,
+  cleaningResult,
+  compareResult,
+}: {
+  allInsights: InsightItem[];
+  healthResult?: HealthBlock | null;
+  cleaningResult?: CleaningBlock | null;
+  compareResult?: CompareResult | null;
+}) {
+  // Health
+  const grade = healthResult?.health_score?.grade ?? null;
+  const gradeCfg = grade ? (GRADE_CFG[grade] ?? GRADE_FALLBACK) : GRADE_FALLBACK;
+  const highWarnings = (healthResult?.health_warnings ?? []).filter((w) => w.severity === "high").length;
+
+  // Cleaning
+  const cr = cleaningResult;
+  const stepsApplied =
+    cr?.cleaning_summary?.steps_applied ??
+    (
+      (cr?.renamed_columns?.length ?? 0) +
+      (cr?.dropped_columns?.length ?? 0) +
+      (cr?.type_fixes?.length ?? 0) +
+      (cr?.missingness_notes?.filter((n) => n.strategy_applied !== "safe_suggestion").length ?? 0) +
+      (cr?.duplicate_notes?.removed ? 1 : 0)
+    );
+  const suspiciousCount = cr?.suspicious_columns?.length ?? 0;
+
+  // Findings
+  const reportReadyCount  = allInsights.filter(insightReportSafe).length;
+  const reviewNeededCount = allInsights.filter(
+    (i) => !insightReportSafe(i) && (i.severity === "high" || i.severity === "medium"),
+  ).length;
+
+  // Compare
+  const rowDiff        = compareResult?.row_volume_changes?.diff ?? 0;
+  const highCautionCt  = (compareResult?.caution_flags ?? []).filter((f) => f.severity === "high").length;
+  const compareSummary = compareResult?.summary_draft;
+
+  return (
+    <div className="rounded-xl border border-white/[0.07] bg-white/[0.015] p-4 space-y-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-white/25">
+        Before you write — workflow recap
+      </p>
+
+      <div className={`grid gap-2 ${compareResult ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"}`}>
+
+        {/* Health */}
+        <div className={`rounded-lg border px-3 py-2.5 space-y-0.5 ${gradeCfg.card}`}>
+          <p className="text-[10px] font-medium uppercase tracking-wider text-white/30">Data Health</p>
+          <p className={`text-2xl font-black leading-tight ${gradeCfg.text}`}>
+            {grade ?? "—"}
+          </p>
+          <p className="text-[10px] leading-snug text-white/45">{gradeCfg.verdict}</p>
+          {highWarnings > 0 && (
+            <p className="text-[10px] text-red-400/80">
+              {highWarnings} high-priority warning{highWarnings !== 1 ? "s" : ""}
+            </p>
+          )}
+        </div>
+
+        {/* Cleaning */}
+        <div className="rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2.5 space-y-0.5">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-white/30">Cleaning</p>
+          <p className="text-2xl font-black leading-tight text-white/80">{stepsApplied}</p>
+          <p className="text-[10px] leading-snug text-white/45">
+            {stepsApplied === 1 ? "action applied" : "actions applied"}
+          </p>
+          {suspiciousCount > 0 && (
+            <p className="text-[10px] text-amber-400/80">
+              {suspiciousCount} column{suspiciousCount !== 1 ? "s" : ""} flagged
+            </p>
+          )}
+        </div>
+
+        {/* Findings */}
+        <div className={`rounded-lg border px-3 py-2.5 space-y-0.5 ${
+          reportReadyCount > 0
+            ? "border-emerald-500/15 bg-emerald-500/[0.04]"
+            : "border-white/[0.07] bg-white/[0.02]"
+        }`}>
+          <p className="text-[10px] font-medium uppercase tracking-wider text-white/30">Findings</p>
+          <p className={`text-2xl font-black leading-tight ${reportReadyCount > 0 ? "text-emerald-400" : "text-white/50"}`}>
+            {reportReadyCount}
+          </p>
+          <p className="text-[10px] leading-snug text-white/45">
+            {reportReadyCount === 1 ? "report-ready" : "report-ready"} of {allInsights.length} total
+          </p>
+          {reviewNeededCount > 0 && (
+            <p className="text-[10px] text-amber-400/80">
+              {reviewNeededCount} need{reviewNeededCount === 1 ? "s" : ""} review
+            </p>
+          )}
+        </div>
+
+        {/* Compare — only when compare data exists */}
+        {compareResult && (
+          <div className="rounded-lg border border-indigo-500/15 bg-indigo-500/[0.04] px-3 py-2.5 space-y-0.5">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-white/30">Comparison</p>
+            <p className={`text-2xl font-black leading-tight ${
+              rowDiff > 0 ? "text-emerald-400" : rowDiff < 0 ? "text-red-400" : "text-white/40"
+            }`}>
+              {rowDiff > 0 ? "+" : ""}{rowDiff !== 0 ? rowDiff.toLocaleString() : "±0"}
+            </p>
+            <p className="text-[10px] leading-snug text-white/45">row delta</p>
+            {highCautionCt > 0 && (
+              <p className="text-[10px] text-amber-400/80">
+                {highCautionCt} high-severity flag{highCautionCt !== 1 ? "s" : ""}
+              </p>
+            )}
+            {compareSummary && (
+              <p className="mt-1 text-[10px] leading-relaxed text-white/35 line-clamp-2">
+                {compareSummary}
+              </p>
+            )}
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function ReportBuilder({
@@ -82,6 +248,8 @@ export function ReportBuilder({
   executivePanel,
   compareResult,
   projectName,
+  healthResult,
+  cleaningResult,
 }: Props) {
   // Canonical-first: prefer insightResults, fall back to insights
   const allInsights: InsightItem[] = insightResults?.length ? insightResults : insights;
@@ -237,6 +405,14 @@ export function ReportBuilder({
 
   return (
     <div className="space-y-6">
+
+      {/* ── Pre-write brief ───────────────────────────────────────────────── */}
+      <ReportBrief
+        allInsights={allInsights}
+        healthResult={healthResult}
+        cleaningResult={cleaningResult}
+        compareResult={compareResult}
+      />
 
       {/* ── Configure ─────────────────────────────────────────────────────── */}
       <div className="space-y-5">
