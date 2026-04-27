@@ -1,10 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 import logging
 
+from app.db import get_db
 from app.middleware.auth import get_current_user
 from app.models import User
+from app.services.access_guards import get_project_for_user
 from app.state import get_project_file_info
 from app.services.file_loader import load_dataset
 from app.services.cleaner import clean_dataset
@@ -19,8 +22,13 @@ class ChartRequest(BaseModel):
 
 
 @router.post("/suggest")
-def suggest_chart(payload: ChartRequest, current_user: User = Depends(get_current_user)):
+def suggest_chart(
+    payload: ChartRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     project_id = payload.project_id
+    get_project_for_user(db, project_id, current_user)
 
     info = get_project_file_info(project_id)
     if not info:

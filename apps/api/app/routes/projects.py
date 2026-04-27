@@ -11,6 +11,7 @@ from app.middleware.auth import get_current_user
 from app.middleware.plans import check_project_limit
 from app.models import AnalysisResult, Project, ProjectFile, User
 from app.schemas.project import ProjectCreate, ProjectResponse
+from app.services.access_guards import get_project_for_user
 from app.services.run_resolver import build_run_detail, resolve_latest_run
 from app.state import PROJECT_FILES
 
@@ -145,13 +146,7 @@ def get_project(
       - "See last failure"       (status == failed)
       - "Run again"              (always available)
     """
-    project = (
-        db.query(Project)
-        .filter(Project.id == project_id, Project.user_id == current_user.id)
-        .first()
-    )
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    project = get_project_for_user(db, project_id, current_user)
 
     run = resolve_latest_run(db, project_id)
     result = project.to_dict()
@@ -165,13 +160,7 @@ def delete_project(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    project = (
-        db.query(Project)
-        .filter(Project.id == project_id, Project.user_id == current_user.id)
-        .first()
-    )
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    project = get_project_for_user(db, project_id, current_user)
 
     try:
         db.delete(project)
@@ -197,13 +186,7 @@ def get_annotations(
     db: Session = Depends(get_db),
 ):
     """Return column annotations for a project (dict of column→note)."""
-    project = (
-        db.query(Project)
-        .filter(Project.id == project_id, Project.user_id == current_user.id)
-        .first()
-    )
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    project = get_project_for_user(db, project_id, current_user)
     return {"annotations": project.column_annotations}
 
 
@@ -220,13 +203,7 @@ def set_annotation(
     db: Session = Depends(get_db),
 ):
     """Set or clear an annotation for a single column."""
-    project = (
-        db.query(Project)
-        .filter(Project.id == project_id, Project.user_id == current_user.id)
-        .first()
-    )
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    project = get_project_for_user(db, project_id, current_user)
     annotations = dict(project.column_annotations)
     if body.note.strip():
         annotations[column] = body.note.strip()
@@ -244,13 +221,7 @@ def get_latest_insights(
     db: Session = Depends(get_db),
 ):
     """Return the top insights from the most recent analysis run for a project."""
-    project = (
-        db.query(Project)
-        .filter(Project.id == project_id, Project.user_id == current_user.id)
-        .first()
-    )
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    project = get_project_for_user(db, project_id, current_user)
 
     analysis = (
         db.query(AnalysisResult)

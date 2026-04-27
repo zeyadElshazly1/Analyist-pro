@@ -10,6 +10,7 @@ from app.db import get_db
 from app.middleware.auth import get_current_user
 from app.middleware.plans import require_feature
 from app.models import AnalysisResult, AuditLog, Project, ReportDraft, User
+from app.services.access_guards import get_project_for_user
 from app.services.file_loader import load_dataset
 from app.services.report_service import generate_excel_report, generate_html_report, generate_pdf_report
 from app.state import get_project_file_info
@@ -17,25 +18,21 @@ from app.state import get_project_file_info
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
-def _get_stored_analysis(project_id: int, user_id: str, db: Session) -> tuple:
+def _get_stored_analysis(project_id: int, current_user: User, db: Session) -> tuple:
     """Fetch the latest stored analysis for a project, scoped to the current user."""
+    project = get_project_for_user(db, project_id, current_user)
+
     analysis = (
         db.query(AnalysisResult)
-        .join(Project)
-        .filter(
-            AnalysisResult.project_id == project_id,
-            Project.user_id == user_id,
-        )
+        .filter(AnalysisResult.project_id == project_id)
         .order_by(AnalysisResult.created_at.desc())
         .first()
     )
     if not analysis:
         raise HTTPException(status_code=404, detail="No analysis found. Run analysis first.")
 
-    project = db.query(Project).filter(Project.id == project_id).first()
-    project_name = project.name if project else f"Project {project_id}"
     result = json.loads(analysis.result_json)
-    return result, project_name
+    return result, project.name
 
 
 def _load_df(project_id: int):
@@ -58,7 +55,7 @@ def export_report(
     db: Session = Depends(get_db),
     _plan: None = Depends(require_feature("report_export")),
 ):
-    result, project_name = _get_stored_analysis(project_id, current_user.id, db)
+    result, project_name = _get_stored_analysis(project_id, current_user, db)
 
     def _log_export(fmt: str):
         try:
@@ -115,7 +112,7 @@ def preview_report(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    result, _ = _get_stored_analysis(project_id, current_user.id, db)
+    result, _ = _get_stored_analysis(project_id, current_user, db)
     return result
 
 
@@ -135,12 +132,18 @@ def _build_report_result(draft: ReportDraft, db: Session) -> dict:
         ReportSection,
     )
 
-    # Resolve selected insights from the linked analysis result
+    # Resolve selected insights from the linked analysis result.
+    # Defensive: only consider the linked analysis if it actually belongs to
+    # the draft's project, so a tampered draft can never pull data from an
+    # analysis owned by a different project.
     included_insights: list[IncludedInsight] = []
     if draft.analysis_result_id:
         analysis = (
             db.query(AnalysisResult)
-            .filter(AnalysisResult.id == draft.analysis_result_id)
+            .filter(
+                AnalysisResult.id == draft.analysis_result_id,
+                AnalysisResult.project_id == draft.project_id,
+            )
             .first()
         )
         if analysis:
@@ -262,11 +265,7 @@ def upsert_report_draft(
     db: Session = Depends(get_db),
 ):
     """Create or update a report draft for a project."""
-    project = db.query(Project).filter(
-        Project.id == project_id, Project.user_id == current_user.id
-    ).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    project = get_project_for_user(db, project_id, current_user)
 
     draft = (
         db.query(ReportDraft)
@@ -344,11 +343,7 @@ def get_report_draft(
     db: Session = Depends(get_db),
 ):
     """Fetch the current report draft for a project."""
-    project = db.query(Project).filter(
-        Project.id == project_id, Project.user_id == current_user.id
-    ).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    get_project_for_user(db, project_id, current_user)
 
     draft = (
         db.query(ReportDraft)

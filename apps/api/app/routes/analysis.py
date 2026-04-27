@@ -16,6 +16,11 @@ from app.middleware.plans import require_feature
 from app.models import AnalysisResult, Project, ProjectFile, User
 from app.schemas.analysis_schema import AnalysisRequest
 from app.schemas.run_summary import RunDetail, RunResults, RunSummary
+from app.services.access_guards import (
+    get_analysis_for_user,
+    get_project_for_user,
+    get_run_for_user,
+)
 from app.services.run_resolver import build_run_detail, resolve_latest_run
 from app.services.analyzer import analyze_dataset, generate_executive_panel
 from app.services.cache import get_cached_analysis, set_cached_analysis
@@ -54,6 +59,7 @@ def run_analysis(
     db: Session = Depends(get_db),
 ):
     project_id = payload.project_id
+    get_project_for_user(db, project_id, current_user)
     file_path = _get_file_path(project_id)
 
     # ── Cache check ───────────────────────────────────────────────────────────
@@ -206,12 +212,7 @@ def get_analysis_history(
     db: Session = Depends(get_db),
 ):
     """Return the N most recent analysis runs for a project (scoped to current user)."""
-    # Verify project belongs to the current user before returning history
-    project = db.query(Project).filter(
-        Project.id == project_id, Project.user_id == current_user.id
-    ).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    get_project_for_user(db, project_id, current_user)
     results = (
         db.query(AnalysisResult)
         .filter(AnalysisResult.project_id == project_id)
@@ -246,11 +247,7 @@ def list_runs(
     """
     from sqlalchemy.orm import joinedload
 
-    project = db.query(Project).filter(
-        Project.id == project_id, Project.user_id == current_user.id
-    ).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    get_project_for_user(db, project_id, current_user)
 
     q = (
         db.query(AnalysisResult)
@@ -303,15 +300,12 @@ def get_run(
     """
     from sqlalchemy.orm import joinedload
 
-    r = (
-        db.query(AnalysisResult)
-        .options(joinedload(AnalysisResult.source_file))
-        .join(Project, AnalysisResult.project_id == Project.id)
-        .filter(AnalysisResult.id == run_id, Project.user_id == current_user.id)
-        .first()
+    r = get_run_for_user(
+        db,
+        run_id,
+        current_user,
+        options=[joinedload(AnalysisResult.source_file)],
     )
-    if not r:
-        raise HTTPException(status_code=404, detail="Run not found.")
     return build_run_detail(r)
 
 
@@ -339,14 +333,7 @@ def get_run_results(
     Legacy fields (health_score, insights, cleaning_report) are
     intentionally excluded; use canonical blocks above instead.
     """
-    r = (
-        db.query(AnalysisResult)
-        .join(Project, AnalysisResult.project_id == Project.id)
-        .filter(AnalysisResult.id == run_id, Project.user_id == current_user.id)
-        .first()
-    )
-    if not r:
-        raise HTTPException(status_code=404, detail="Run not found.")
+    r = get_run_for_user(db, run_id, current_user)
 
     # Runs that haven't completed return status context with all blocks null.
     if r.status != "report_ready":
@@ -413,11 +400,7 @@ def get_latest_run(
 
     Returns 404 when the project has no runs at all.
     """
-    project = db.query(Project).filter(
-        Project.id == project_id, Project.user_id == current_user.id
-    ).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    get_project_for_user(db, project_id, current_user)
 
     r = resolve_latest_run(db, project_id)
     if not r:
@@ -432,14 +415,7 @@ def get_analysis_result(
     db: Session = Depends(get_db),
 ):
     """Return the full result JSON for a specific stored analysis run (scoped to current user)."""
-    analysis = (
-        db.query(AnalysisResult)
-        .join(Project)
-        .filter(AnalysisResult.id == analysis_id, Project.user_id == current_user.id)
-        .first()
-    )
-    if not analysis:
-        raise HTTPException(status_code=404, detail="Analysis result not found.")
+    analysis = get_analysis_for_user(db, analysis_id, current_user)
     return {
         "id": analysis.id,
         "project_id": analysis.project_id,
@@ -454,11 +430,13 @@ def preview_dataset(
     project_id: int,
     rows: int = Query(10, ge=1, le=100),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Return the first N rows of the raw uploaded dataset (before cleaning).
     Returns columns as a list and rows as a list-of-lists (frontend-friendly).
     """
+    get_project_for_user(db, project_id, current_user)
     file_path = _get_file_path(project_id)
 
     try:
@@ -488,6 +466,7 @@ def create_share_link(
 ):
     """Generate (or refresh) a public share token for the latest analysis. Expires in 30 days."""
     from datetime import datetime, timezone
+    get_project_for_user(db, project_id, current_user)
     analysis = (
         db.query(AnalysisResult)
         .filter(AnalysisResult.project_id == project_id)
@@ -518,6 +497,7 @@ def revoke_share_link(
     db: Session = Depends(get_db),
 ):
     """Revoke the share link for the latest analysis of a project."""
+    get_project_for_user(db, project_id, current_user)
     analysis = (
         db.query(AnalysisResult)
         .filter(AnalysisResult.project_id == project_id)
@@ -572,14 +552,7 @@ def generate_story(
     db: Session = Depends(get_db),
 ):
     """Use Claude to generate a 5-slide data story from a stored analysis result."""
-    analysis = (
-        db.query(AnalysisResult)
-        .join(Project)
-        .filter(AnalysisResult.id == analysis_id, Project.user_id == current_user.id)
-        .first()
-    )
-    if not analysis:
-        raise HTTPException(status_code=404, detail="Analysis result not found.")
+    analysis = get_analysis_for_user(db, analysis_id, current_user)
 
     try:
         result = json.loads(analysis.result_json)
@@ -603,19 +576,8 @@ def get_analysis_diff(
     Returns changed metrics, new/resolved insights, and column-level changes.
     Both runs must belong to projects owned by the current user.
     """
-    def _fetch(run_id: int) -> AnalysisResult:
-        r = (
-            db.query(AnalysisResult)
-            .join(Project)
-            .filter(AnalysisResult.id == run_id, Project.user_id == current_user.id)
-            .first()
-        )
-        if not r:
-            raise HTTPException(status_code=404, detail=f"Analysis run {run_id} not found.")
-        return r
-
-    a_row = _fetch(run_a)
-    b_row = _fetch(run_b)
+    a_row = get_run_for_user(db, run_a, current_user)
+    b_row = get_run_for_user(db, run_b, current_user)
 
     if a_row.project_id != b_row.project_id:
         raise HTTPException(
@@ -748,12 +710,7 @@ def get_data_table(
     - column_filters: JSON array of filter objects, each with:
         { "col": str, "op": "eq"|"neq"|"contains"|"gt"|"gte"|"lt"|"lte"|"is_null"|"not_null", "value": str }
     """
-    # Verify project ownership
-    project = db.query(Project).filter(
-        Project.id == project_id, Project.user_id == current_user.id
-    ).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    get_project_for_user(db, project_id, current_user)
 
     file_path = _get_file_path(project_id)
     try:
@@ -906,12 +863,7 @@ def download_cleaned_dataset(
     import io
     from fastapi.responses import StreamingResponse as _StreamingResponse
 
-    # Verify project ownership
-    project = db.query(Project).filter(
-        Project.id == project_id, Project.user_id == current_user.id
-    ).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
+    get_project_for_user(db, project_id, current_user)
 
     file_path = _get_file_path(project_id)
     try:
