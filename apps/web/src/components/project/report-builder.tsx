@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Check,
   CheckCircle,
   ChevronDown,
   ChevronUp,
@@ -15,6 +16,7 @@ import {
   ArrowRight,
   BarChart2,
   Info,
+  X,
 } from "lucide-react";
 import { getDraftReport, saveDraftReport, exportReport, ApiError } from "@/lib/api";
 import type { CompareResult } from "@/lib/api";
@@ -40,6 +42,20 @@ type ExecutivePanel = {
   action_plan?:   Array<{ title?: string; action?: string; priority?: string; reason?: string }>;
 };
 
+type HealthBlock = {
+  health_score?: { total_score?: number; grade?: string };
+  health_warnings?: Array<{ severity: string; message: string }>;
+};
+
+type CleaningBlock = {
+  renamed_columns?: unknown[];
+  dropped_columns?: unknown[];
+  type_fixes?: unknown[];
+  missingness_notes?: Array<{ strategy_applied?: string }>;
+  duplicate_notes?: { removed?: boolean };
+  suspicious_columns?: Array<{ column: string; issue_type: string }>;
+  cleaning_summary?: { steps_applied?: number };
+};
 
 type Props = {
   projectId: number;
@@ -49,6 +65,8 @@ type Props = {
   executivePanel?: ExecutivePanel | null;
   compareResult?: CompareResult | null;
   projectName?: string;
+  healthResult?: HealthBlock | null;
+  cleaningResult?: CleaningBlock | null;
 };
 
 type Draft = {
@@ -57,6 +75,24 @@ type Draft = {
   selectedIndices: number[];
   template: string | undefined;
 };
+
+type ExportRecord = {
+  format: "pdf" | "xlsx" | "html";
+  status: "success" | "failed" | "unavailable";
+  at: Date;
+  message?: string;
+};
+
+const FORMAT_LABEL: Record<string, string> = { pdf: "PDF", xlsx: "Excel", html: "HTML" };
+
+function relativeTime(date: Date): string {
+  const secs = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (secs < 10) return "just now";
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins} min ago`;
+  return `${Math.floor(mins / 60)}h ago`;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -72,6 +108,156 @@ function severityBadge(sev: string | undefined) {
   return "border-white/10 bg-white/5 text-white/40";
 }
 
+// ── ReportBrief helpers ───────────────────────────────────────────────────────
+
+function insightReportSafe(i: InsightItem): boolean {
+  if (typeof i.report_safe === "boolean") return i.report_safe;
+  const conf =
+    typeof i.confidence === "number"
+      ? i.confidence <= 1 ? i.confidence * 100 : i.confidence
+      : 0;
+  const cat = i.category ?? "";
+  return (
+    (i.severity === "high" || i.severity === "medium") &&
+    conf >= 60 &&
+    cat !== "data_quality" && cat !== "missing_pattern"
+  );
+}
+
+const GRADE_CFG: Record<string, { card: string; text: string; verdict: string }> = {
+  A: { card: "border-emerald-500/15 bg-emerald-500/[0.04]", text: "text-emerald-400", verdict: "Clean data — strong foundation" },
+  B: { card: "border-indigo-500/15 bg-indigo-500/[0.04]",  text: "text-indigo-400",  verdict: "Good quality — minor issues" },
+  C: { card: "border-amber-500/15 bg-amber-500/[0.04]",    text: "text-amber-400",   verdict: "Fair quality — review before sharing" },
+  D: { card: "border-red-500/15 bg-red-500/[0.04]",        text: "text-red-400",     verdict: "Poor quality — needs attention" },
+};
+const GRADE_FALLBACK = { card: "border-white/[0.07] bg-white/[0.02]", text: "text-white/40", verdict: "No health data yet" };
+
+// ── ReportBrief ───────────────────────────────────────────────────────────────
+
+function ReportBrief({
+  allInsights,
+  healthResult,
+  cleaningResult,
+  compareResult,
+}: {
+  allInsights: InsightItem[];
+  healthResult?: HealthBlock | null;
+  cleaningResult?: CleaningBlock | null;
+  compareResult?: CompareResult | null;
+}) {
+  // Health
+  const grade = healthResult?.health_score?.grade ?? null;
+  const gradeCfg = grade ? (GRADE_CFG[grade] ?? GRADE_FALLBACK) : GRADE_FALLBACK;
+  const highWarnings = (healthResult?.health_warnings ?? []).filter((w) => w.severity === "high").length;
+
+  // Cleaning
+  const cr = cleaningResult;
+  const stepsApplied =
+    cr?.cleaning_summary?.steps_applied ??
+    (
+      (cr?.renamed_columns?.length ?? 0) +
+      (cr?.dropped_columns?.length ?? 0) +
+      (cr?.type_fixes?.length ?? 0) +
+      (cr?.missingness_notes?.filter((n) => n.strategy_applied !== "safe_suggestion").length ?? 0) +
+      (cr?.duplicate_notes?.removed ? 1 : 0)
+    );
+  const suspiciousCount = cr?.suspicious_columns?.length ?? 0;
+
+  // Findings
+  const reportReadyCount  = allInsights.filter(insightReportSafe).length;
+  const reviewNeededCount = allInsights.filter(
+    (i) => !insightReportSafe(i) && (i.severity === "high" || i.severity === "medium"),
+  ).length;
+
+  // Compare
+  const rowDiff        = compareResult?.row_volume_changes?.diff ?? 0;
+  const highCautionCt  = (compareResult?.caution_flags ?? []).filter((f) => f.severity === "high").length;
+  const compareSummary = compareResult?.summary_draft;
+
+  return (
+    <div className="rounded-xl border border-white/[0.07] bg-white/[0.015] p-4 space-y-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-white/25">
+        Before you write — workflow recap
+      </p>
+
+      <div className={`grid gap-2 ${compareResult ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"}`}>
+
+        {/* Health */}
+        <div className={`rounded-lg border px-3 py-2.5 space-y-0.5 ${gradeCfg.card}`}>
+          <p className="text-[10px] font-medium uppercase tracking-wider text-white/30">Data Health</p>
+          <p className={`text-2xl font-black leading-tight ${gradeCfg.text}`}>
+            {grade ?? "—"}
+          </p>
+          <p className="text-[10px] leading-snug text-white/45">{gradeCfg.verdict}</p>
+          {highWarnings > 0 && (
+            <p className="text-[10px] text-red-400/80">
+              {highWarnings} high-priority warning{highWarnings !== 1 ? "s" : ""}
+            </p>
+          )}
+        </div>
+
+        {/* Cleaning */}
+        <div className="rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2.5 space-y-0.5">
+          <p className="text-[10px] font-medium uppercase tracking-wider text-white/30">Cleaning</p>
+          <p className="text-2xl font-black leading-tight text-white/80">{stepsApplied}</p>
+          <p className="text-[10px] leading-snug text-white/45">
+            {stepsApplied === 1 ? "action applied" : "actions applied"}
+          </p>
+          {suspiciousCount > 0 && (
+            <p className="text-[10px] text-amber-400/80">
+              {suspiciousCount} column{suspiciousCount !== 1 ? "s" : ""} flagged
+            </p>
+          )}
+        </div>
+
+        {/* Findings */}
+        <div className={`rounded-lg border px-3 py-2.5 space-y-0.5 ${
+          reportReadyCount > 0
+            ? "border-emerald-500/15 bg-emerald-500/[0.04]"
+            : "border-white/[0.07] bg-white/[0.02]"
+        }`}>
+          <p className="text-[10px] font-medium uppercase tracking-wider text-white/30">Findings</p>
+          <p className={`text-2xl font-black leading-tight ${reportReadyCount > 0 ? "text-emerald-400" : "text-white/50"}`}>
+            {reportReadyCount}
+          </p>
+          <p className="text-[10px] leading-snug text-white/45">
+            {reportReadyCount === 1 ? "report-ready" : "report-ready"} of {allInsights.length} total
+          </p>
+          {reviewNeededCount > 0 && (
+            <p className="text-[10px] text-amber-400/80">
+              {reviewNeededCount} need{reviewNeededCount === 1 ? "s" : ""} review
+            </p>
+          )}
+        </div>
+
+        {/* Compare — only when compare data exists */}
+        {compareResult && (
+          <div className="rounded-lg border border-indigo-500/15 bg-indigo-500/[0.04] px-3 py-2.5 space-y-0.5">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-white/30">Comparison</p>
+            <p className={`text-2xl font-black leading-tight ${
+              rowDiff > 0 ? "text-emerald-400" : rowDiff < 0 ? "text-red-400" : "text-white/40"
+            }`}>
+              {rowDiff > 0 ? "+" : ""}{rowDiff !== 0 ? rowDiff.toLocaleString() : "±0"}
+            </p>
+            <p className="text-[10px] leading-snug text-white/45">row delta</p>
+            {highCautionCt > 0 && (
+              <p className="text-[10px] text-amber-400/80">
+                {highCautionCt} high-severity flag{highCautionCt !== 1 ? "s" : ""}
+              </p>
+            )}
+            {compareSummary && (
+              <p className="mt-1 text-[10px] leading-relaxed text-white/35 line-clamp-2">
+                {compareSummary}
+              </p>
+            )}
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function ReportBuilder({
@@ -82,6 +268,8 @@ export function ReportBuilder({
   executivePanel,
   compareResult,
   projectName,
+  healthResult,
+  cleaningResult,
 }: Props) {
   // Canonical-first: prefer insightResults, fall back to insights
   const allInsights: InsightItem[] = insightResults?.length ? insightResults : insights;
@@ -97,6 +285,7 @@ export function ReportBuilder({
   const [exporting, setExporting] = useState<string | null>(null);
   const [exportErr, setExportErr] = useState<string | null>(null);
   const [pdfUnavailable, setPdfUnavailable] = useState(false);
+  const [exportHistory, setExportHistory] = useState<ExportRecord[]>([]);
   const [loaded,    setLoaded]    = useState(false);
   const [previewOpen, setPreviewOpen] = useState(true);
 
@@ -187,17 +376,25 @@ export function ReportBuilder({
     });
   }
 
+  function pushExportRecord(rec: ExportRecord) {
+    setExportHistory((prev) => [rec, ...prev].slice(0, 6));
+  }
+
   async function handleExport(format: "pdf" | "xlsx" | "html") {
     setExportErr(null);
     setPdfUnavailable(false);
     setExporting(format);
     try {
       await exportReport(projectId, format);
+      pushExportRecord({ format, status: "success", at: new Date() });
     } catch (e) {
       if (e instanceof ApiError && e.status === 501 && format === "pdf") {
         setPdfUnavailable(true);
+        pushExportRecord({ format: "pdf", status: "unavailable", at: new Date() });
       } else {
-        setExportErr(e instanceof Error ? e.message : "Export failed — please try again.");
+        const msg = e instanceof ApiError ? e.userMessage : "Export failed — please try again.";
+        setExportErr(msg);
+        pushExportRecord({ format, status: "failed", at: new Date(), message: msg });
       }
     } finally {
       setExporting(null);
@@ -237,6 +434,14 @@ export function ReportBuilder({
 
   return (
     <div className="space-y-6">
+
+      {/* ── Pre-write brief ───────────────────────────────────────────────── */}
+      <ReportBrief
+        allInsights={allInsights}
+        healthResult={healthResult}
+        cleaningResult={cleaningResult}
+        compareResult={compareResult}
+      />
 
       {/* ── Configure ─────────────────────────────────────────────────────── */}
       <div className="space-y-5">
@@ -567,80 +772,197 @@ export function ReportBuilder({
       </div>
 
       {/* ── Export ────────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3 border-t border-white/[0.06] pt-4">
-        <button
-          onClick={() => handleExport("pdf")}
-          disabled={!!exporting}
-          className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-60"
-        >
-          {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-          Export PDF
-        </button>
-        <button
-          onClick={() => handleExport("xlsx")}
-          disabled={!!exporting}
-          className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/[0.07] hover:text-white disabled:opacity-60"
-        >
-          {exporting === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-          Export Excel
-        </button>
-        <button
-          onClick={() => handleExport("html")}
-          disabled={!!exporting}
-          className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/[0.07] hover:text-white disabled:opacity-60"
-        >
-          {exporting === "html" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-          Export HTML
-        </button>
-        <div className="ml-auto flex items-center gap-1.5 text-xs">
-          {saving && <span className="text-white/30">Saving…</span>}
-          {saved && !saving && (
-            <span className="flex items-center gap-1 text-emerald-400">
-              <CheckCircle className="h-3.5 w-3.5" />
-              Draft saved
-            </span>
-          )}
-        </div>
-      </div>
+      <div className="space-y-3 border-t border-white/[0.06] pt-4">
 
-      {pdfUnavailable && (
-        <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.05] px-4 py-3 space-y-2">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-400" />
-            <div>
-              <p className="text-sm font-medium text-amber-300">PDF export not available on this server</p>
-              <p className="mt-0.5 text-xs text-white/50">
-                The PDF renderer (WeasyPrint / wkhtmltopdf) is not installed. Export as HTML or Excel instead — HTML can be printed to PDF from any browser.
-              </p>
+        {/* Buttons row */}
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => handleExport("pdf")}
+            disabled={!!exporting}
+            className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-60"
+          >
+            {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Export PDF
+          </button>
+          <button
+            onClick={() => handleExport("xlsx")}
+            disabled={!!exporting}
+            className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/[0.07] hover:text-white disabled:opacity-60"
+          >
+            {exporting === "xlsx" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            Export Excel
+          </button>
+          <button
+            onClick={() => handleExport("html")}
+            disabled={!!exporting}
+            className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-white/70 transition hover:bg-white/[0.07] hover:text-white disabled:opacity-60"
+          >
+            {exporting === "html" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            Export HTML
+          </button>
+          <div className="ml-auto flex items-center gap-1.5 text-xs">
+            {saving && <span className="text-white/30">Saving…</span>}
+            {saved && !saving && (
+              <span className="flex items-center gap-1 text-emerald-400">
+                <CheckCircle className="h-3.5 w-3.5" />
+                Draft saved
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* PDF unavailable — actionable fallback */}
+        {pdfUnavailable && (
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.05] px-4 py-3 space-y-2">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-400" />
+              <div>
+                <p className="text-sm font-medium text-amber-300">PDF export not available on this server</p>
+                <p className="mt-0.5 text-xs text-white/50">
+                  The PDF renderer is not installed. Export as HTML or Excel instead — HTML can be printed to PDF from any browser.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 pl-6">
+              <button
+                onClick={() => { setPdfUnavailable(false); handleExport("html"); }}
+                disabled={!!exporting}
+                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-white/70 hover:bg-white/[0.07] hover:text-white disabled:opacity-60"
+              >
+                {exporting === "html" ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />}
+                Export HTML instead
+              </button>
+              <button
+                onClick={() => { setPdfUnavailable(false); handleExport("xlsx"); }}
+                disabled={!!exporting}
+                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-white/70 hover:bg-white/[0.07] hover:text-white disabled:opacity-60"
+              >
+                {exporting === "xlsx" ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />}
+                Export Excel instead
+              </button>
             </div>
           </div>
-          <div className="flex gap-2 pl-6">
-            <button
-              onClick={() => { setPdfUnavailable(false); handleExport("html"); }}
-              disabled={!!exporting}
-              className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-white/70 hover:bg-white/[0.07] hover:text-white disabled:opacity-60"
-            >
-              {exporting === "html" ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />}
-              Export HTML instead
-            </button>
-            <button
-              onClick={() => { setPdfUnavailable(false); handleExport("xlsx"); }}
-              disabled={!!exporting}
-              className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-white/70 hover:bg-white/[0.07] hover:text-white disabled:opacity-60"
-            >
-              {exporting === "xlsx" ? <Loader2 className="h-3 w-3 animate-spin" /> : <FileText className="h-3 w-3" />}
-              Export Excel instead
-            </button>
-          </div>
-        </div>
-      )}
+        )}
 
-      {exportErr && (
-        <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-2.5">
-          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-400" />
-          <p className="text-sm text-red-400">{exportErr}</p>
-        </div>
-      )}
+        {/* Generic error */}
+        {exportErr && (
+          <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-2.5">
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-400" />
+            <p className="text-sm text-red-400">{exportErr}</p>
+          </div>
+        )}
+
+        {/* Export history strip */}
+        {exportHistory.length > 0 && (
+          <ExportHistoryStrip history={exportHistory} onRetry={handleExport} exporting={exporting} />
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+// ── ExportHistoryStrip ────────────────────────────────────────────────────────
+
+function ExportHistoryStrip({
+  history,
+  onRetry,
+  exporting,
+}: {
+  history: ExportRecord[];
+  onRetry: (format: "pdf" | "xlsx" | "html") => void;
+  exporting: string | null;
+}) {
+  const lastSuccess = history.find((r) => r.status === "success");
+
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3 space-y-2.5">
+      {/* Summary line */}
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-white/25">
+          Export history
+        </p>
+        {lastSuccess && (
+          <span className="flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/[0.07] px-2 py-px text-[10px] font-medium text-emerald-400">
+            <Check className="h-2.5 w-2.5" />
+            Last success: {FORMAT_LABEL[lastSuccess.format]} · {relativeTime(lastSuccess.at)}
+          </span>
+        )}
+      </div>
+
+      {/* Row per attempt */}
+      <div className="space-y-1.5">
+        {history.map((rec, i) => {
+          const isSuccess     = rec.status === "success";
+          const isUnavailable = rec.status === "unavailable";
+          const isFailed      = rec.status === "failed";
+
+          return (
+            <div key={i} className="flex items-center gap-2.5">
+              {/* Status icon */}
+              <span className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full ${
+                isSuccess     ? "bg-emerald-500/15"
+                : isUnavailable ? "bg-amber-500/15"
+                : "bg-red-500/15"
+              }`}>
+                {isSuccess     && <Check          className="h-2.5 w-2.5 text-emerald-400" />}
+                {isUnavailable && <AlertTriangle  className="h-2.5 w-2.5 text-amber-400" />}
+                {isFailed      && <X              className="h-2.5 w-2.5 text-red-400" />}
+              </span>
+
+              {/* Format badge */}
+              <span className={`rounded border px-1.5 py-px text-[10px] font-medium ${
+                isSuccess
+                  ? "border-emerald-500/20 text-emerald-300"
+                  : isUnavailable
+                  ? "border-amber-500/20 text-amber-300/70"
+                  : "border-red-500/20 text-red-300/70"
+              }`}>
+                {FORMAT_LABEL[rec.format]}
+              </span>
+
+              {/* Status text */}
+              <p className={`flex-1 text-[11px] leading-snug ${
+                isSuccess ? "text-white/55" : isUnavailable ? "text-amber-400/70" : "text-red-400/70"
+              }`}>
+                {isSuccess
+                  ? "Downloaded successfully"
+                  : isUnavailable
+                  ? "Not available on this server — use HTML or Excel"
+                  : (rec.message ?? "Export failed")}
+              </p>
+
+              {/* Timestamp */}
+              <span className="flex-shrink-0 text-[10px] text-white/20">
+                {relativeTime(rec.at)}
+              </span>
+
+              {/* Retry for failures */}
+              {isFailed && (
+                <button
+                  onClick={() => onRetry(rec.format)}
+                  disabled={!!exporting}
+                  className="flex-shrink-0 rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-white/35 hover:border-white/20 hover:text-white/60 disabled:opacity-40 transition-colors"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Sendable formats note — only when at least one success exists */}
+      {lastSuccess && (() => {
+        const successFormats = [...new Set(
+          history.filter((r) => r.status === "success").map((r) => FORMAT_LABEL[r.format])
+        )];
+        return (
+          <p className="text-[10px] text-white/30 border-t border-white/[0.05] pt-2">
+            Ready to send: {successFormats.join(", ")}
+          </p>
+        );
+      })()}
     </div>
   );
 }

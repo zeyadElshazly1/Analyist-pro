@@ -741,6 +741,8 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
                     narrative={result.narrative}
                     executivePanel={result.executive_panel as any ?? undefined}
                     compareResult={compareResult}
+                    healthResult={result.health_result as any ?? undefined}
+                    cleaningResult={result.cleaning_result as any ?? undefined}
                   />
                   <div className="border-t border-white/[0.06] pt-4">
                     <h3 className="mb-3 text-sm font-semibold text-white/60">Ask AI copilot</h3>
