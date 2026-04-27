@@ -7,10 +7,11 @@ import { Clock, Loader2, Play, CheckCircle2, Share2, Copy, Check, Download } fro
 import { StatsCards } from "@/components/analysis/stats-cards";
 import { InsightsList } from "@/components/analysis/insights-list";
 import { HealthScore } from "@/components/analysis/health-score";
-import { ProjectTabs, getStepForTab } from "./project-tabs";
+import { ProjectTabs, getStepForTab, DEFAULT_LANDING_TAB } from "./project-tabs";
 import type { StepStatus } from "./project-tabs";
 import { CleaningReport } from "@/components/analysis/cleaning-report";
 import { CleaningReview } from "./cleaning-review";
+import { IntakeReview, type IntakeResult } from "./intake-review";
 import { CleaningSummaryCards } from "@/components/analysis/cleaning-summary-cards";
 import { InsightHighlights } from "@/components/analysis/insight-highlights";
 import { RecommendedAction } from "@/components/analysis/recommended-action";
@@ -153,6 +154,7 @@ export type AnalysisResult = {
     };
     deductions?: string[];
   } | null;
+  intake_result?: Record<string, unknown> | null;    // canonical IntakeResult block
   cleaning_summary?: Record<string, unknown> | null;
   cleaning_result?: Record<string, unknown> | null;  // canonical CleaningResult block
   health_result?: Record<string, unknown> | null;    // canonical HealthResult block
@@ -164,6 +166,9 @@ export type AnalysisResult = {
   cleaning_report?: CleaningItem[] | null;
   narrative?: string;
   story_result?: import("@/lib/api").DataStory | null;  // stored AI data story
+  // Compare block — populated when the user has run /explore/multifile against
+  // this project; pinned to the active run via run_tracker.persist_compare_result.
+  compare_result?: CompareResult | null;
   [key: string]: unknown;
 };
 
@@ -222,13 +227,15 @@ function deriveStepStatuses(
   const highWarningCount = healthWarnings.filter((w) => w.severity === "high").length;
   const healthAttention = grade === "C" || grade === "D" || highWarningCount > 0;
 
-  // Findings — attention if fewer than half of insights are report-safe
+  // Findings — attention if fewer than half of insights are report-safe.
+  // Canonical insight confidence is 0.0–1.0 (see app/schemas/insight.py and
+  // the adapter in projects/[id]/page.tsx).  Multiply for the threshold only.
   const insights = result.insights ?? [];
   const safeCount = insights.filter((i) => {
     if (typeof i.report_safe === "boolean") return i.report_safe;
     const conf =
-      typeof i.confidence === "number"
-        ? i.confidence <= 1 ? i.confidence * 100 : i.confidence
+      typeof i.confidence === "number" && Number.isFinite(i.confidence)
+        ? Math.max(0, Math.min(100, i.confidence * 100))
         : 0;
     const cat = (i.category ?? i.type ?? "") as string;
     return (
@@ -286,9 +293,14 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [analysisId, setAnalysisId] = useState<number | null>(null);
   const [isStoredResult, setIsStoredResult] = useState(false);
-  const [tab, setTab] = useState("overview");
+  // Default landing tab — fresh runs and reopened runs both start here.  The
+  // RunStateBanner promises "Opens at <DEFAULT_LANDING_TAB_LABEL>" so this
+  // must stay tied to the centralized constant.
+  const [tab, setTab] = useState(DEFAULT_LANDING_TAB);
   // Ephemeral in-session step visitation — reset whenever a new result loads
-  const [visitedSteps, setVisitedSteps] = useState<Set<string>>(new Set<string>(["intake"]));
+  const [visitedSteps, setVisitedSteps] = useState<Set<string>>(
+    new Set<string>([DEFAULT_LANDING_TAB]),
+  );
 
   // Hydrate from a stored run passed by the parent page.
   // Runs when initialResult changes (e.g. after parent fetches /run/{id}/results).
@@ -296,10 +308,15 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
     if (initialResult) {
       setResult(initialResult);
       setAnalysisId(initialRunId ?? null);
-      setTab("overview");
+      setTab(DEFAULT_LANDING_TAB);
       setIsStoredResult(true);
-      // Reset visitation — user is now viewing the overview (intake step)
-      setVisitedSteps(new Set<string>(["intake"]));
+      // Rehydrate compareResult from the persisted block on the run so the
+      // Compare tab and Report Builder both show the saved comparison
+      // without forcing the user to re-run /explore/multifile.  null when
+      // the run was never paired against another file.
+      setCompareResult(initialResult.compare_result ?? null);
+      // Reset visitation — user is now viewing the default landing step
+      setVisitedSteps(new Set<string>([DEFAULT_LANDING_TAB]));
     }
   }, [initialResult, initialRunId]);
   const [useCleaned, setUseCleaned] = useState(true);
@@ -379,9 +396,11 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
           setResult(adapted);
           // run_id is the stable identifier for this analysis run
           if (raw.run_id) setAnalysisId(raw.run_id as number);
-          setTab("overview");
-          // Overview is the Intake Review step — auto-mark as visited on first view
-          setVisitedSteps(new Set<string>(["intake"]));
+          // Land on the default step (Intake Review) — keep this in sync with
+          // the RunStateBanner promise on the project page.
+          setTab(DEFAULT_LANDING_TAB);
+          // Auto-mark the default landing step as visited on first view
+          setVisitedSteps(new Set<string>([DEFAULT_LANDING_TAB]));
           setLoading(false);
           setProgress(null);
           es.close();
@@ -578,6 +597,34 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
             stepStatuses={deriveStepStatuses(result, visitedSteps, compareResult)}
           />
 
+          {/* ── Intake Review ────────────────────────────────────────── */}
+          {tab === "intake" && (
+            <SafePanel label="Intake Review">
+              <TabPanel>
+                <h2 className="mb-4 font-semibold text-white">Intake Review</h2>
+                {result.intake_result &&
+                Object.keys(result.intake_result).length > 0 ? (
+                  <IntakeReview
+                    filename={
+                      (result.intake_result.file_name as string | undefined) ??
+                      "uploaded file"
+                    }
+                    intakeResult={result.intake_result as IntakeResult}
+                  />
+                ) : (
+                  <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-6 py-8 text-center">
+                    <p className="text-sm text-white/60">
+                      Intake review was not saved for this run.
+                    </p>
+                    <p className="mt-1 text-xs text-white/35">
+                      Re-run the analysis to capture parse confidence, warnings, and a preview of the data.
+                    </p>
+                  </div>
+                )}
+              </TabPanel>
+            </SafePanel>
+          )}
+
           {/* ── Data Table ───────────────────────────────────────────── */}
           {tab === "data-table" && (
             <SafePanel label="Data Table">
@@ -606,6 +653,30 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
                 </TabPanel>
                 <RecommendedAction insights={result.insights} />
               </div>
+            </SafePanel>
+          )}
+
+          {/* ── Health Check ─────────────────────────────────────────── */}
+          {tab === "health" && (
+            <SafePanel label="Health Check">
+              <TabPanel>
+                <h2 className="mb-4 font-semibold text-white">Health Check</h2>
+                {result.health_result || result.health_score ? (
+                  <HealthScore
+                    healthResult={result.health_result}
+                    score={result.health_score}
+                  />
+                ) : (
+                  <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-6 py-8 text-center">
+                    <p className="text-sm text-white/60">
+                      Health check was not saved for this run.
+                    </p>
+                    <p className="mt-1 text-xs text-white/35">
+                      Re-run the analysis to capture the dataset health score, warnings, and client-readiness notes.
+                    </p>
+                  </div>
+                )}
+              </TabPanel>
             </SafePanel>
           )}
 
@@ -698,7 +769,13 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
           {/* ── Compare Files ────────────────────────────────────────── */}
           {tab === "compare-files" && (
             <SafePanel label="File Comparison">
-              <TabPanel><MultifileCompare currentProjectId={projectId} onCompareResult={setCompareResult} /></TabPanel>
+              <TabPanel>
+                <MultifileCompare
+                  currentProjectId={projectId}
+                  onCompareResult={setCompareResult}
+                  initialCompareResult={compareResult}
+                />
+              </TabPanel>
             </SafePanel>
           )}
 

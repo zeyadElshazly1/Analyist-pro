@@ -26,6 +26,7 @@ from app.services.analyzer import analyze_dataset, generate_executive_panel
 from app.services.cache import get_cached_analysis, set_cached_analysis
 from app.services.cleaner import clean_dataset
 from app.services.file_loader import load_dataset
+from app.services.intake_for_analysis import build_intake_for_project
 from app.services.profiler import calculate_health_score, profile_dataset
 from app.services.run_tracker import create_run_stub, fail_run, finalise_run, set_run_status
 from app.services.serializers import to_jsonable
@@ -68,6 +69,15 @@ def run_analysis(
     cached = get_cached_analysis(project_id, _file_hash)
     if cached:
         logger.info(f"Cache hit for project {project_id} — returning cached result")
+        # Backfill intake_result on cache hits if the cached payload predates the
+        # intake-persistence change (best-effort; never blocks the response).
+        if not cached.get("intake_result"):
+            intake_snapshot = build_intake_for_project(
+                db, project_id, file_path=file_path, file_hash=_file_hash
+            )
+            if intake_snapshot:
+                cached = {**cached, "intake_result": intake_snapshot}
+                set_cached_analysis(project_id, _file_hash, cached)
         return cached
 
     try:
@@ -123,9 +133,18 @@ def run_analysis(
 
         set_run_status(db, run, "insights_complete")
 
+        # ── Intake snapshot (canonical, best-effort) ──────────────────────────
+        # Recomputed from disk so the stored result_json carries the same
+        # intake metadata the upload route returned.  Failure → None; the
+        # frontend renders a clean empty state on reopen.
+        intake_result = build_intake_for_project(
+            db, project_id, file_path=file_path, file_hash=_file_hash
+        )
+
         result = {
             "project_id": project_id,
             "run_id": run.id if run else None,
+            "intake_result": intake_result,                      # canonical V1 (None if unavailable)
             "cleaning_summary": to_jsonable(cleaning_summary),   # backward compat — CleaningSummaryCards legacy fallback
             "cleaning_result": cleaning_result,                  # canonical V1
             "profile_result": to_jsonable(profile),              # canonical V1
@@ -329,6 +348,8 @@ def get_run_results(
       executive_panel   — high-level summary panel
       narrative         — plain-text analysis narrative
       report_result     — AI data story if generated (story_result_json)
+      compare_result    — CompareResult from the most recent /explore/multifile
+                          paired with this run's project (None for unpaired runs)
 
     Legacy fields (health_score, insights, cleaning_report) are
     intentionally excluded; use canonical blocks above instead.
@@ -342,6 +363,7 @@ def get_run_results(
             project_id=r.project_id,
             status=r.status,
             error_summary=r.error_summary,
+            intake_result=None,
             cleaning_result=None,
             health_result=None,
             insight_results=None,
@@ -349,6 +371,7 @@ def get_run_results(
             executive_panel=None,
             narrative=None,
             story_result=None,
+            compare_result=None,
         )
 
     # Parse result_json once; extract canonical blocks only.
@@ -374,6 +397,7 @@ def get_run_results(
         project_id=r.project_id,
         status=r.status,
         error_summary=None,
+        intake_result=_block("intake_result"),
         cleaning_result=_block("cleaning_result"),
         health_result=_block("health_result"),
         insight_results=_block("insight_results"),
@@ -381,6 +405,9 @@ def get_run_results(
         executive_panel=_block("executive_panel"),
         narrative=stored.get("narrative") or None,
         story_result=story_result,
+        # compare_result is written separately by /explore/multifile and is None
+        # for runs that were never paired against another project.
+        compare_result=_block("compare_result"),
     )
 
 

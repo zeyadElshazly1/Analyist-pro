@@ -26,9 +26,18 @@ const CAT_STYLE: Record<string, { card: string; dot: string }> = {
 
 const FALLBACK = { card: "border-white/10 bg-white/[0.03]", dot: "bg-white/30" };
 
+// Canonical insight confidence is 0.0–1.0 (see app/schemas/insight.py).  We
+// scale to 0–100 only for threshold comparisons and never store the percent.
+function confPct(i: Insight, fallback: number): number {
+  if (typeof i.confidence !== "number" || !Number.isFinite(i.confidence)) {
+    return fallback;
+  }
+  return Math.max(0, Math.min(100, i.confidence * 100));
+}
+
 function isReportSafe(i: Insight): boolean {
   if (typeof i.report_safe === "boolean") return i.report_safe;
-  const conf = i.confidence === undefined ? 0 : (i.confidence <= 1 ? i.confidence * 100 : i.confidence);
+  const conf = confPct(i, 0);
   const cat  = i.category ?? i.type ?? "";
   return (
     (i.severity === "high" || i.severity === "medium") &&
@@ -40,7 +49,7 @@ function isReportSafe(i: Insight): boolean {
 function sortKey(i: Insight): number {
   const sev  = i.severity === "high" ? 0 : i.severity === "medium" ? 1 : 2;
   const safe = isReportSafe(i) ? 0 : 1;
-  const conf = i.confidence === undefined ? 50 : (i.confidence <= 1 ? i.confidence * 100 : i.confidence);
+  const conf = confPct(i, 50);
   return safe * 1000 + sev * 100 + (100 - conf);
 }
 

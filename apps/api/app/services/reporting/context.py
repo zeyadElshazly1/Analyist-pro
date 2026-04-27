@@ -137,6 +137,16 @@ def build_context(
         "project_name": project_name,
     }
 
+    # Carry compare_result through unchanged so downstream templates / Excel
+    # writers can read it when present.  We do not transform it here — the
+    # canonical CompareResult dict is well-typed already and the current HTML
+    # template does not render compare sections.  Keeping it on the context
+    # dict means a future small rendering addition can read it without a
+    # second context-builder change.
+    compare_result = analysis_result.get("compare_result")
+    if not isinstance(compare_result, dict):
+        compare_result = None
+
     return {
         "title":           project_name,
         "date":            datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -154,4 +164,9 @@ def build_context(
         "health_chart":    chart_configs.get("health_chart"),
         "missing_chart":   chart_configs.get("missing_chart"),
         "trust_meta":      trust_meta,
+        # Optional canonical block — None when no comparison was run for this
+        # project.  Templates that opt in can render it; existing templates
+        # ignore it.
+        "compare_result":  compare_result,
+        "has_compare":     compare_result is not None,
     }

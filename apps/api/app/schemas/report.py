@@ -33,9 +33,11 @@ from pydantic import BaseModel, Field
 ExportFormat = Literal["html", "pdf", "xlsx"]
 
 ExportStatus = Literal[
-    "completed",    # successfully generated and delivered
-    "failed",       # generation failed
-    "pending",      # queued / in progress (future async use)
+    "completed",     # successfully generated and delivered
+    "failed",        # generation failed (e.g. backend exception)
+    "unavailable",   # generator deps missing / format not supported on this host
+                     # (PDF returns 501 today when WeasyPrint/pdfkit aren't installed)
+    "pending",       # queued / in progress (future async use)
 ]
 
 SectionId = Literal[
@@ -129,7 +131,10 @@ class ExportRecord(BaseModel):
     exported_at: datetime | None = None
     error_message: str | None = Field(
         default=None,
-        description="Populated when status is 'failed'.",
+        description=(
+            "Populated when status is 'failed' or 'unavailable'. "
+            "Truncated to ~500 chars on write."
+        ),
     )
 
 

@@ -115,24 +115,49 @@ def export_report(
 ):
     result, project_name = _get_stored_analysis(project_id, current_user, db)
 
-    def _log_export(fmt: str):
+    def _log_export(
+        fmt: str,
+        *,
+        action: str = "export_completed",
+        error: str | None = None,
+    ) -> None:
+        """Record an export attempt to the audit log.
+
+        Synchronous (_sync=True) so the row is committed before the response
+        returns — this is what makes the audit-backed export-history strip
+        reliably rehydrate on the very next /reports/draft request.
+
+        ``action`` is one of:
+          * ``export_completed``    — the file was generated and streamed
+          * ``export_failed``       — generation raised; ``error`` carries detail
+          * ``export_unavailable``  — generator deps missing (PDF 501 path)
+        """
         try:
             from app.services.audit import log_event
+            detail: dict[str, str] = {"format": fmt}
+            if error:
+                detail["error"] = error[:500]   # cap to keep audit row sane
             log_event(
                 db,
-                action="export_completed",
+                action=action,
                 user_id=current_user.id,
                 resource_type="project",
                 resource_id=str(project_id),
-                detail={"format": fmt},
-                category="activation",
+                detail=detail,
+                category="export",
+                _sync=True,
             )
         except Exception:
+            # Audit must never break the export response — swallow.
             pass
 
     if format == "xlsx":
-        df = _load_df(project_id)
-        xlsx_bytes = generate_excel_report(df, result, project_name)
+        try:
+            df = _load_df(project_id)
+            xlsx_bytes = generate_excel_report(df, result, project_name)
+        except Exception as e:
+            _log_export("xlsx", action="export_failed", error=str(e))
+            raise HTTPException(status_code=500, detail=f"Excel generation failed: {e}")
         _log_export("xlsx")
         return Response(
             content=xlsx_bytes,
@@ -141,7 +166,11 @@ def export_report(
         )
 
     if format == "html":
-        html = generate_html_report(_load_df(project_id), result, project_name)
+        try:
+            html = generate_html_report(_load_df(project_id), result, project_name)
+        except Exception as e:
+            _log_export("html", action="export_failed", error=str(e))
+            raise HTTPException(status_code=500, detail=f"HTML generation failed: {e}")
         _log_export("html")
         return Response(
             content=html,
@@ -153,8 +182,12 @@ def export_report(
     try:
         pdf_bytes = generate_pdf_report(_load_df(project_id), result, project_name)
     except RuntimeError as e:
+        # PDF generator deps not installed (WeasyPrint / pdfkit) → record
+        # honestly so the strip can show "unavailable" after a refresh.
+        _log_export("pdf", action="export_unavailable", error=str(e))
         raise HTTPException(status_code=501, detail=str(e))
     except Exception as e:
+        _log_export("pdf", action="export_failed", error=str(e))
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
     _log_export("pdf")
     return Response(
@@ -208,18 +241,22 @@ def _build_report_result(draft: ReportDraft, db: Session) -> dict:
             try:
                 result_data = json.loads(analysis.result_json)
                 raw = result_data.get("insight_results") or result_data.get("insights") or []
-                for idx in draft.selected_insights:
-                    if isinstance(idx, int) and 0 <= idx < len(raw):
-                        ins = raw[idx]
-                        included_insights.append(IncludedInsight(
-                            insight_id=ins.get("insight_id") or f"idx_{idx}",
-                            title=(
-                                ins.get("title") or ins.get("explanation")
-                                or ins.get("finding") or f"Finding {idx + 1}"
-                            ),
-                            severity=ins.get("severity") or "medium",
-                            index_in_run=idx,
-                        ))
+                # Resolve stable IDs (preferred) and legacy integer indices
+                # against the same insight list the export will render, so
+                # the draft response and the export agree on what's included.
+                from app.services.reporting.draft_context import _select_indices
+                resolved = _select_indices(raw, draft.selected_insights)
+                for idx in resolved:
+                    ins = raw[idx]
+                    included_insights.append(IncludedInsight(
+                        insight_id=ins.get("insight_id") or f"idx_{idx}",
+                        title=(
+                            ins.get("title") or ins.get("explanation")
+                            or ins.get("finding") or f"Finding {idx + 1}"
+                        ),
+                        severity=ins.get("severity") or "medium",
+                        index_in_run=idx,
+                    ))
             except Exception:
                 pass
 
@@ -243,11 +280,27 @@ def _build_report_result(draft: ReportDraft, db: Session) -> dict:
         for sid, title, included, is_ai in _SECTIONS
     ]
 
-    # Export history from audit log (most recent 10)
+    # Export history from audit log (most recent 10).
+    #
+    # The export endpoint writes one row per attempt with one of three
+    # actions:
+    #   * export_completed   → ExportRecord.status="completed"
+    #   * export_failed      → ExportRecord.status="failed" (carries error)
+    #   * export_unavailable → ExportRecord.status="unavailable" (PDF 501,
+    #                          missing WeasyPrint/pdfkit on the host)
+    #
+    # Surfacing all three is what lets the Report Builder export-history
+    # strip render honest state — successful exports, failures, and the
+    # PDF-unavailable case — without ever pretending PDF succeeded.
+    _ACTION_TO_STATUS = {
+        "export_completed":   "completed",
+        "export_failed":      "failed",
+        "export_unavailable": "unavailable",
+    }
     export_logs = (
         db.query(AuditLog)
         .filter(
-            AuditLog.action == "export_completed",
+            AuditLog.action.in_(list(_ACTION_TO_STATUS.keys())),
             AuditLog.resource_type == "project",
             AuditLog.resource_id == str(draft.project_id),
         )
@@ -262,11 +315,14 @@ def _build_report_result(draft: ReportDraft, db: Session) -> dict:
         except Exception:
             detail = {}
         fmt = detail.get("format")
-        if fmt in ("html", "pdf", "xlsx"):
+        status = _ACTION_TO_STATUS.get(log.action)
+        if fmt in ("html", "pdf", "xlsx") and status is not None:
+            err = detail.get("error") if status in ("failed", "unavailable") else None
             export_statuses.append(ExportRecord(
                 format=fmt,          # type: ignore[arg-type]
-                status="completed",
+                status=status,       # type: ignore[arg-type]
                 exported_at=log.created_at,
+                error_message=err,
             ))
 
     result = ReportResult(

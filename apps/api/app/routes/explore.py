@@ -211,6 +211,20 @@ def multifile_compare(
         project_id_b=payload.project_id_b,
     ).model_dump()
 
+    # ── Persist compare_result into the active run ────────────────────────────
+    # Pinned to the *left-hand* project (project_id_a) — that's the project the
+    # consultant is currently working in.  Best-effort: if the project has no
+    # report_ready run yet, the live response is still returned to the caller
+    # and the comparison is simply not durable until the next analysis run.
+    # Other canonical result blocks (intake/cleaning/health/insight) are not
+    # touched.
+    try:
+        from app.services.run_tracker import persist_compare_result
+        persist_compare_result(db, payload.project_id_a, compare_result)
+    except Exception:
+        # Swallow — persistence must never break the live compare response.
+        pass
+
     try:
         from app.db import SessionLocal
         from app.services.audit import log_event

@@ -2,7 +2,8 @@
 Apply a saved Report Builder draft to a raw analysis-result dict.
 
 The Report Builder lets a consultant:
-- pick which findings appear in the export (by index in the displayed list)
+- pick which findings appear in the export (by stable ``insight_id`` —
+  legacy drafts may still hold integer indices)
 - edit the executive summary
 - edit the report title
 
@@ -11,14 +12,32 @@ out — not the raw analysis result.  This module provides a single helper,
 ``apply_draft_to_result``, that returns a copy of the analysis dict with:
 
   * ``insight_results`` (canonical) and ``insights`` (legacy) filtered down
-    to the selected indices.
+    to the selected findings.
   * ``narrative`` overridden with the consultant's edited summary, so the
     existing template/Excel "Executive Summary" sections render the right
     text without any further plumbing.
 
-The function never mutates its input.  Selected indices are clamped to the
-length of the source list, so a stale draft that points past the end of a
-shorter run can never raise.
+Selection identity
+------------------
+The Report Builder used to save numeric *indices* into the displayed insight
+list.  That was fragile: re-running analysis can re-order findings, so a
+draft that recorded ``[2, 5]`` may end up selecting completely different
+insights on the next run.
+
+This module now selects by **stable insight_id** (``InsightResult.insight_id``,
+a deterministic hex digest of category + sorted columns).  When the draft
+holds string IDs, only insights whose ``insight_id`` matches one of those
+strings are kept.
+
+Legacy drafts that recorded integer indices keep working: the helper falls
+back to index-based selection for any numeric entries.  Mixed lists are
+also tolerated — string entries match by ID, numeric entries match by index.
+
+The function never mutates its input.  Selected entries are clamped to the
+length of the source list (for indices) or matched case-sensitively (for
+IDs), so a stale draft pointing past the end of a shorter run — or at an
+ID that no longer exists — never raises and never silently selects the
+wrong finding.  Missing IDs are dropped, not coerced into a fallback row.
 """
 from __future__ import annotations
 
@@ -30,12 +49,59 @@ def _is_nonempty_list(value: Any) -> bool:
     return isinstance(value, list) and len(value) > 0
 
 
+def _select_indices(
+    source_list: list[Any],
+    selected: Iterable[Any],
+) -> list[int]:
+    """Resolve a draft's ``selected`` list to indices into ``source_list``.
+
+    Each entry may be:
+      * a ``str`` — matched against ``insight["insight_id"]`` on the source
+        items.  Misses are silently dropped (we'd rather show fewer findings
+        than the wrong finding).
+      * an ``int`` — treated as a legacy positional index, clamped to
+        ``[0, len(source_list))``.
+      * anything else — ignored.
+
+    Returns the indices in the order they appear in the draft, with
+    duplicates de-duplicated while preserving first-seen order.
+    """
+    id_to_index: dict[str, int] = {}
+    for idx, ins in enumerate(source_list):
+        if isinstance(ins, dict):
+            iid = ins.get("insight_id")
+            if isinstance(iid, str) and iid and iid not in id_to_index:
+                id_to_index[iid] = idx
+
+    resolved: list[int] = []
+    seen: set[int] = set()
+
+    # Booleans are a subclass of int in Python — exclude them explicitly so
+    # ``True``/``False`` cannot accidentally select index 1 or 0.
+    for entry in selected:
+        if isinstance(entry, bool):
+            continue
+        if isinstance(entry, str):
+            idx = id_to_index.get(entry)
+            if idx is None:
+                continue
+            if idx not in seen:
+                resolved.append(idx)
+                seen.add(idx)
+        elif isinstance(entry, int):
+            if 0 <= entry < len(source_list) and entry not in seen:
+                resolved.append(entry)
+                seen.add(entry)
+
+    return resolved
+
+
 def apply_draft_to_result(
     analysis_result: dict[str, Any],
     *,
     draft_summary: Optional[str] = None,
     draft_title: Optional[str] = None,
-    selected_indices: Optional[Iterable[int]] = None,
+    selected_indices: Optional[Iterable[Any]] = None,
 ) -> dict[str, Any]:
     """Return a copy of ``analysis_result`` with the saved draft applied.
 
@@ -49,13 +115,13 @@ def apply_draft_to_result(
         HTML/Excel templates render the consultant's edit.
     draft_title :
         ``ReportDraft.title`` — used by callers that want to read it back via
-        ``result["draft_title"]``.  Existing templates do not consume this
-        field, but persisting it on the dict keeps preview/export consistent.
+        ``result["draft_title"]``.
     selected_indices :
-        ``ReportDraft.selected_insights`` (list of integer indices into the
-        same insight list that the Report Builder UI displayed).  When
-        ``None`` no filtering is applied — useful for legacy drafts that
-        never recorded a selection, where we keep the run's full insight set.
+        ``ReportDraft.selected_insights`` — a list whose entries are either
+        stable ``insight_id`` strings (preferred) or legacy integer indices.
+        ``None`` means "no selection recorded" and the run's full insight
+        set is preserved (used for freshly created drafts that have not
+        been edited yet).
     """
     result = deepcopy(analysis_result)
 
@@ -70,10 +136,7 @@ def apply_draft_to_result(
         source_list, source_key = None, None
 
     if selected_indices is not None and source_list is not None and source_key is not None:
-        clean_idxs = [
-            i for i in selected_indices
-            if isinstance(i, int) and 0 <= i < len(source_list)
-        ]
+        clean_idxs = _select_indices(source_list, selected_indices)
         filtered = [source_list[i] for i in clean_idxs]
 
         result[source_key] = filtered

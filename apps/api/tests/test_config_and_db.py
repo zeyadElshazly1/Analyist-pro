@@ -7,7 +7,8 @@ import pytest
 class TestConfig:
     def test_max_upload_bytes(self):
         from app.config import MAX_UPLOAD_BYTES
-        assert MAX_UPLOAD_BYTES == 100 * 1024 * 1024
+        # 500 MB ceiling — must be ≥ largest per-plan cap (Studio).
+        assert MAX_UPLOAD_BYTES == 500 * 1024 * 1024
 
     def test_allowed_extensions(self):
         from app.config import ALLOWED_EXTENSIONS

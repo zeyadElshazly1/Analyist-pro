@@ -69,23 +69,40 @@ def apply_template_to_draft(draft_data: dict, template_id: str, analysis_result:
     """
     Pre-fill a report draft payload based on a template and the available
     analysis result.  Returns a dict of suggested draft field values.
+
+    Prefers canonical ``insight_results`` (each carrying a stable ``insight_id``)
+    when available so the saved draft is robust against re-ordering on the
+    next analysis run.  Falls back to the legacy ``insights`` array (and
+    integer indices) when no stable IDs are present, which keeps older
+    pipeline outputs working without changing their behaviour.
     """
     template = TEMPLATES.get(template_id)
     if not template:
         return draft_data
 
-    insights = analysis_result.get("insights", [])
+    canonical = analysis_result.get("insight_results")
+    legacy = analysis_result.get("insights", [])
+    insights = canonical if isinstance(canonical, list) and canonical else legacy
     sorted_insights = sort_insights_by_template(insights, template_id)
+    top = sorted_insights[:5]
 
-    # Select top 5 by template priority
-    selected_ids = [
-        i for i, ins in enumerate(insights)
-        if ins in sorted_insights[:5]
-    ]
+    selected: list = []
+    for ins in top:
+        if isinstance(ins, dict):
+            iid = ins.get("insight_id")
+            if isinstance(iid, str) and iid:
+                selected.append(iid)
+                continue
+        # Stable id missing → fall back to position in the source list so
+        # the legacy index path in apply_draft_to_result still resolves it.
+        try:
+            selected.append(insights.index(ins))
+        except ValueError:
+            continue
 
     return {
         **draft_data,
         "template": template_id,
-        "selected_insight_ids": selected_ids[:5],
+        "selected_insight_ids": selected[:5],
         "executive_summary_hint": template["executive_summary_hint"],
     }
