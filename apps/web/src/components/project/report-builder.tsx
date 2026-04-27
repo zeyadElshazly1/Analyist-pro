@@ -67,6 +67,7 @@ type Props = {
   projectName?: string;
   healthResult?: HealthBlock | null;
   cleaningResult?: CleaningBlock | null;
+  onNavigateTo?: (tab: string) => void;
 };
 
 type Draft = {
@@ -270,6 +271,7 @@ export function ReportBuilder({
   projectName,
   healthResult,
   cleaningResult,
+  onNavigateTo,
 }: Props) {
   // Canonical-first: prefer insightResults, fall back to insights
   const allInsights: InsightItem[] = insightResults?.length ? insightResults : insights;
@@ -286,6 +288,7 @@ export function ReportBuilder({
   const [exportErr, setExportErr] = useState<string | null>(null);
   const [pdfUnavailable, setPdfUnavailable] = useState(false);
   const [exportHistory, setExportHistory] = useState<ExportRecord[]>([]);
+  const [exportedWeak, setExportedWeak] = useState(false);
   const [loaded,    setLoaded]    = useState(false);
   const [previewOpen, setPreviewOpen] = useState(true);
 
@@ -383,6 +386,7 @@ export function ReportBuilder({
   async function handleExport(format: "pdf" | "xlsx" | "html") {
     setExportErr(null);
     setPdfUnavailable(false);
+    if (reportIsWeak) setExportedWeak(true);
     setExporting(format);
     try {
       await exportReport(projectId, format);
@@ -420,6 +424,11 @@ export function ReportBuilder({
   ].filter((a) => a.label);
 
   const hasCompare = !!(compareResult?.file_a || compareResult?.summary_draft);
+
+  // Report is "weak" when there is nothing meaningful to export yet
+  const summaryTooShort = draft.summary.trim().length < 40;
+  const noFindingsSelected = draft.selectedIndices.length === 0 && allInsights.length > 0;
+  const reportIsWeak = noFindingsSelected || summaryTooShort;
 
   // ── Loading state ──────────────────────────────────────────────────────────
 
@@ -479,6 +488,16 @@ export function ReportBuilder({
             placeholder="Write a client-safe summary of what you found and why it matters…"
             className="w-full resize-none rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:border-indigo-500/50 focus:outline-none"
           />
+          {draft.summary.trim().length === 0 && (
+            <p className="mt-1 text-[11px] text-white/30">
+              Add a short executive summary before exporting — 2–3 sentences is enough.
+            </p>
+          )}
+          {draft.summary.trim().length > 0 && draft.summary.trim().length < 40 && (
+            <p className="mt-1 text-[11px] text-amber-400/60">
+              Summary is quite short — a bit more context will help the client understand the key takeaway.
+            </p>
+          )}
         </div>
 
         {/* Insight selection */}
@@ -522,6 +541,38 @@ export function ReportBuilder({
                 );
               })}
             </div>
+
+            {/* No findings selected hint */}
+            {allInsights.length > 0 && draft.selectedIndices.length === 0 && (
+              <div className="flex items-center justify-between rounded-lg border border-amber-500/15 bg-amber-500/[0.04] px-3 py-2">
+                <p className="text-xs text-amber-300/80">No findings selected — pick 2–5 for a solid client report</p>
+                {onNavigateTo && (
+                  <button
+                    onClick={() => onNavigateTo("insights")}
+                    className="ml-3 flex-shrink-0 text-xs font-medium text-amber-400 transition hover:text-amber-300"
+                  >
+                    Review Findings →
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Compare soft nudge */}
+            {!compareResult && allInsights.length > 0 && (
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] text-white/25">
+                  No comparison loaded — upload a second file to add a before/after summary
+                </p>
+                {onNavigateTo && (
+                  <button
+                    onClick={() => onNavigateTo("compare-files")}
+                    className="ml-3 flex-shrink-0 text-[11px] text-white/35 transition hover:text-white/55"
+                  >
+                    Compare Files →
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -855,6 +906,20 @@ export function ReportBuilder({
         {/* Export history strip */}
         {exportHistory.length > 0 && (
           <ExportHistoryStrip history={exportHistory} onRetry={handleExport} exporting={exporting} />
+        )}
+
+        {/* Weak-content warning — shown after first export attempt with thin content */}
+        {exportedWeak && reportIsWeak && (
+          <div className="flex items-start gap-2 rounded-xl border border-amber-500/15 bg-amber-500/[0.04] px-4 py-2.5">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-400/70" />
+            <p className="text-xs text-amber-300/70">
+              This export may be too thin for client delivery —{" "}
+              {noFindingsSelected && "select some findings"}
+              {noFindingsSelected && summaryTooShort && " and "}
+              {summaryTooShort && "add an executive summary"}
+              {" "}to strengthen the report.
+            </p>
+          </div>
         )}
 
       </div>
