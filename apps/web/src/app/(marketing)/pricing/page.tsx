@@ -99,7 +99,7 @@ export default function PricingPage() {
               "Is my data secure?",
               "Do you support Excel?",
             ].map((q) => (
-              <span key={q} className="cursor-pointer hover:text-indigo-400 transition-colors">{q}</span>
+              <span key={q}>{q}</span>
             ))}
           </div>
         </div>

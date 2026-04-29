@@ -493,10 +493,6 @@ export async function uploadFile(projectId: number, file: File) {
 
 // ── Analysis ──────────────────────────────────────────────────────────────────
 
-export function runAnalysis(projectId: number) {
-  return post<Record<string, unknown>>("/analysis/run", { project_id: projectId });
-}
-
 export function getDataPreview(projectId: number, rows = 5) {
   return get<{
     columns: string[];

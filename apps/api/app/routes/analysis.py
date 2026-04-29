@@ -901,7 +901,7 @@ def download_cleaned_dataset(
     """
     Run the cleaning pipeline on the project's uploaded file and return the
     result as a CSV file download.  Useful for inspecting or re-using the
-    cleaned data outside Analyist Pro.
+    cleaned data outside Analyst Pro.
     """
     import io
     from fastapi.responses import StreamingResponse as _StreamingResponse
