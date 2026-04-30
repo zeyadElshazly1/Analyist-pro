@@ -17,6 +17,8 @@ nonlinear relationships surface alongside linear ones.
 
 Data generation is vectorized (no iterrows()) for performance on large datasets.
 """
+import re
+
 import pandas as pd
 from itertools import combinations
 
@@ -48,6 +50,29 @@ _ID_SEMANTIC_TYPES: frozenset[str] = frozenset({
     "id", "account_number", "email", "ip_address", "phone", "postal", "sku",
 })
 
+# Column names that are almost always record identifiers (even when synthetic
+# data reuses a few values and cardinality is not pathological).
+_ID_NAME_CANONICAL: frozenset[str] = frozenset({
+    "customerid", "userid", "user_id", "accountid", "account_id", "custid",
+    "subscriberid", "subscriber_id", "memberid", "member_id", "clientid",
+    "client_id", "primarykey", "primary_key",
+})
+_ID_NAME_SUFFIX = re.compile(
+    r"(customer|account|member|user|subscriber|client)(id)$",
+    re.I,
+)
+
+
+def _column_name_looks_like_record_id(col: str) -> bool:
+    """True when the column name alone signals an identifier field."""
+    key = col.lower().replace(" ", "").replace("-", "_")
+    if key in _ID_NAME_CANONICAL:
+        return True
+    compact = key.replace("_", "")
+    if compact in _ID_NAME_CANONICAL or compact in {"customerid", "userid"}:
+        return True
+    return _ID_NAME_SUFFIX.search(key.replace("_", "")) is not None
+
 
 def _is_id_col(
     col: str,
@@ -58,15 +83,19 @@ def _is_id_col(
 
     A column is treated as an identifier when ANY of the following hold:
 
-    1. Its semantic type (from ``detect_semantic_columns``) is in the ID set.
-    2. unique_ratio >= 0.9  AND  unique_count > 20
+    1. Its column name matches common record-id patterns (e.g. ``customerID``).
+    2. Its semantic type (from ``detect_semantic_columns``) is in the ID set.
+    3. unique_ratio >= 0.9  AND  unique_count > 20
        (catches high-cardinality string/numeric IDs without a recognised name)
-    3. unique_count == len(df)
+    4. unique_count == len(df)
        (every row is distinct — categorical charts would be one bar per row)
 
     The minimum unique_count of 20 prevents very small datasets (e.g. 3 rows,
     2 unique) from having their columns incorrectly suppressed.
     """
+    if _column_name_looks_like_record_id(col):
+        return True
+
     if semantic_map and col in semantic_map:
         if semantic_map[col] in _ID_SEMANTIC_TYPES:
             return True

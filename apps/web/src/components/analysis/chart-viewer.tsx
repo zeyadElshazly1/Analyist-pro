@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -52,6 +51,10 @@ type ChartDef = {
   regression?: Array<{ x: number; y_hat: number }>;
   columns?: string[];
   recommended?: boolean;
+  /** Server hint: render as horizontal bars (category on Y). */
+  horizontal?: boolean;
+  /** Numeric 0/1 flag column — prefer short, unrotated category labels. */
+  is_binary?: boolean;
 };
 
 type Props = {
@@ -71,6 +74,167 @@ const DARK_TOOLTIP = {
 
 const PIE_COLORS = ["#6366f1", "#8b5cf6", "#a78bfa", "#c4b5fd", "#818cf8", "#4f46e5", "#7c3aed", "#6d28d9"];
 const BG_COLOR = "#0c0c14";
+
+/** Drawing area height inside chart cards (premium, readable). */
+const CHART_PLOT_HEIGHT = 440;
+const MAX_CATEGORY_TICKS = 9;
+
+function longestCategoryLabel(rows: Array<Record<string, unknown>>, key: string): number {
+  let m = 0;
+  for (const row of rows) {
+    const v = row[key];
+    if (v != null) m = Math.max(m, String(v).length);
+  }
+  return m;
+}
+
+function chartTickInterval(barCount: number, maxTicks: number): number | "preserveStartEnd" {
+  if (barCount <= maxTicks) return "preserveStartEnd";
+  return Math.max(0, Math.ceil(barCount / maxTicks) - 1);
+}
+
+function TruncatedRotatedTick({
+  x = 0,
+  y = 0,
+  payload,
+  rotate,
+  maxChars,
+}: {
+  x?: number;
+  y?: number;
+  payload?: { value?: unknown };
+  rotate: number;
+  maxChars: number;
+}) {
+  const raw = String(payload?.value ?? "");
+  const show = raw.length > maxChars ? `${raw.slice(0, maxChars - 1)}…` : raw;
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <title>{raw}</title>
+      <text
+        fill="#9ca3af"
+        fontSize={11}
+        textAnchor={rotate ? "end" : "middle"}
+        transform={rotate ? `rotate(${rotate},0,0)` : undefined}
+        dy={rotate ? 12 : 14}
+      >
+        {show}
+      </text>
+    </g>
+  );
+}
+
+function HorizontalBarPanel({ chart }: { chart: ChartDef }) {
+  const rows = chart.data;
+  const labelChars = longestCategoryLabel(rows, chart.x_key);
+  const yAxisWidth = Math.min(220, 48 + Math.min(labelChars, 36) * 7);
+
+  return (
+    <div
+      className="w-full min-w-0"
+      style={{ height: CHART_PLOT_HEIGHT, minHeight: CHART_PLOT_HEIGHT }}
+    >
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart
+          data={rows}
+          layout="vertical"
+          margin={{ left: 12, right: 16, top: 12, bottom: 12 }}
+        >
+          <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.12} horizontal />
+          <XAxis type="number" tick={{ fill: "#9ca3af", fontSize: 11 }} tickCount={6} />
+          <YAxis
+            type="category"
+            dataKey={chart.x_key}
+            width={yAxisWidth}
+            tick={{ fill: "#9ca3af", fontSize: 11 }}
+            tickFormatter={(v: string) => {
+              const s = String(v);
+              return s.length > 32 ? `${s.slice(0, 31)}…` : s;
+            }}
+            interval={0}
+          />
+          <Tooltip
+            {...DARK_TOOLTIP}
+            formatter={(value: number | string) => [value, chart.y_label ?? "Count"]}
+            labelFormatter={(label) => String(label)}
+          />
+          <Bar
+            dataKey={chart.y_key}
+            fill="#6366f1"
+            fillOpacity={0.88}
+            radius={[0, 5, 5, 0]}
+            maxBarSize={38}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function VerticalBarPanel({ chart }: { chart: ChartDef }) {
+  const rows = chart.data;
+  const n = rows.length;
+  const isBinary = chart.is_binary === true;
+  const maxLabLen = longestCategoryLabel(rows, chart.x_key);
+  const needsRotate = !isBinary && (n > 6 || maxLabLen > 11);
+  const rotate = isBinary ? 0 : needsRotate ? -38 : 0;
+  const bottomGutter = isBinary ? 32 : rotate ? Math.min(108, 40 + Math.min(maxLabLen, 20) * 2.2) : 52;
+  const tickMaxChars = rotate ? 16 : 22;
+  const interval = isBinary ? 0 : chartTickInterval(n, MAX_CATEGORY_TICKS);
+
+  return (
+    <div
+      className="w-full min-w-0"
+      style={{ height: CHART_PLOT_HEIGHT, minHeight: CHART_PLOT_HEIGHT }}
+    >
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={rows} margin={{ left: 4, right: 12, top: 12, bottom: bottomGutter }}>
+          <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.12} />
+          <XAxis
+            dataKey={chart.x_key}
+            interval={interval}
+            tick={(props) => (
+              <TruncatedRotatedTick {...props} rotate={rotate} maxChars={tickMaxChars} />
+            )}
+            height={bottomGutter + 8}
+            axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
+            tickLine={{ stroke: "rgba(255,255,255,0.06)" }}
+          />
+          <YAxis
+            tick={{ fill: "#9ca3af", fontSize: 11 }}
+            axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
+            tickLine={{ stroke: "rgba(255,255,255,0.06)" }}
+          />
+          <Tooltip
+            {...DARK_TOOLTIP}
+            formatter={(value: number | string) => [value, chart.y_label ?? "Count"]}
+            labelFormatter={(label) => String(label)}
+          />
+          <Bar
+            dataKey={chart.y_key}
+            fill="#6366f1"
+            fillOpacity={0.88}
+            radius={[5, 5, 0, 0]}
+            maxBarSize={n > 14 ? 32 : 48}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function BarPanels({ chart }: { chart: ChartDef }) {
+  const rows = chart.data;
+  const n = rows.length;
+  const maxLab = longestCategoryLabel(rows, chart.x_key);
+  const useHorizontal =
+    chart.horizontal === true || (!chart.is_binary && (n > 12 || maxLab > 18));
+
+  if (useHorizontal) {
+    return <HorizontalBarPanel chart={chart} />;
+  }
+  return <VerticalBarPanel chart={chart} />;
+}
 
 function slugify(title: string) {
   return title.replace(/[^a-z0-9]+/gi, "_").toLowerCase().replace(/^_+|_+$/g, "");
@@ -268,14 +432,21 @@ function SingleChart({ chart }: { chart: ChartDef }) {
     return <HeatmapChart chart={chart} />;
   }
 
+  const plotBoxStyle = { height: CHART_PLOT_HEIGHT, minHeight: CHART_PLOT_HEIGHT };
+
   if (chart.type === "line") {
     return (
-      <div className="h-64">
+      <div className="w-full min-w-0" style={plotBoxStyle}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chart.data}>
-            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.1} />
-            <XAxis dataKey={chart.x_key} tick={{ fill: "#6b7280", fontSize: 11 }} interval="preserveStartEnd" />
-            <YAxis tick={{ fill: "#6b7280", fontSize: 11 }} />
+          <LineChart data={chart.data} margin={{ left: 4, right: 8, top: 8, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.12} />
+            <XAxis
+              dataKey={chart.x_key}
+              tick={{ fill: "#9ca3af", fontSize: 11 }}
+              interval={chartTickInterval(chart.data.length, 12)}
+              minTickGap={28}
+            />
+            <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} />
             <Tooltip {...DARK_TOOLTIP} />
             <Line type="monotone" dataKey={chart.y_key} stroke="#6366f1" strokeWidth={2} dot={false} />
           </LineChart>
@@ -286,20 +457,22 @@ function SingleChart({ chart }: { chart: ChartDef }) {
 
   if (chart.type === "scatter") {
     return (
-      <div className="h-64">
+      <div className="w-full min-w-0" style={plotBoxStyle}>
         <ResponsiveContainer width="100%" height="100%">
-          <ScatterChart>
-            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.1} />
+          <ScatterChart margin={{ left: 4, right: 8, top: 8, bottom: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.12} />
             <XAxis
               dataKey="x"
               name={chart.x_label ?? chart.x_key}
-              tick={{ fill: "#6b7280", fontSize: 11 }}
-              label={{ value: chart.x_label, position: "insideBottom", offset: -5, fill: "#9ca3af", fontSize: 11 }}
+              tick={{ fill: "#9ca3af", fontSize: 11 }}
+              tickCount={8}
+              label={{ value: chart.x_label, position: "insideBottom", offset: -4, fill: "#9ca3af", fontSize: 11 }}
             />
             <YAxis
               dataKey="y"
               name={chart.y_label ?? chart.y_key}
-              tick={{ fill: "#6b7280", fontSize: 11 }}
+              tick={{ fill: "#9ca3af", fontSize: 11 }}
+              tickCount={8}
               label={{ value: chart.y_label, angle: -90, position: "insideLeft", fill: "#9ca3af", fontSize: 11 }}
             />
             <Tooltip {...DARK_TOOLTIP} cursor={{ strokeDasharray: "3 3" }} />
@@ -312,7 +485,7 @@ function SingleChart({ chart }: { chart: ChartDef }) {
 
   if (chart.type === "pie") {
     return (
-      <div className="h-64">
+      <div className="w-full min-w-0" style={plotBoxStyle}>
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
@@ -321,7 +494,7 @@ function SingleChart({ chart }: { chart: ChartDef }) {
               nameKey={chart.x_key}
               cx="50%"
               cy="50%"
-              outerRadius={90}
+              outerRadius={118}
               label={({ name, percent }: any) => `${name}: ${(percent * 100).toFixed(0)}%`}
               labelLine={{ stroke: "rgba(255,255,255,0.2)" }}
             >
@@ -336,27 +509,8 @@ function SingleChart({ chart }: { chart: ChartDef }) {
     );
   }
 
-  // Default: bar
-  return (
-    <div className="h-64">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={chart.data}>
-          <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.1} />
-          <XAxis
-            dataKey={chart.x_key}
-            tick={{ fill: "#6b7280", fontSize: 11 }}
-            angle={-15}
-            textAnchor="end"
-            height={50}
-            interval={0}
-          />
-          <YAxis tick={{ fill: "#6b7280", fontSize: 11 }} />
-          <Tooltip {...DARK_TOOLTIP} />
-          <Bar dataKey={chart.y_key} fill="#6366f1" fillOpacity={0.8} radius={[4, 4, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
+  // Default: bar (histogram, categorical, binary)
+  return <BarPanels chart={chart} />;
 }
 
 function DownloadMenu({
@@ -431,9 +585,9 @@ export function ChartViewer({ projectId, autoLoad }: Props) {
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         {[0, 1, 2, 4].map((i) => (
-          <div key={i} className="h-80 rounded-xl bg-white/[0.04] animate-pulse" />
+          <div key={i} className="h-[520px] rounded-2xl bg-white/[0.04] animate-pulse" />
         ))}
       </div>
     );
@@ -479,41 +633,48 @@ export function ChartViewer({ projectId, autoLoad }: Props) {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {charts.map((chart, i) => (
-          <div
-            key={i}
-            ref={(el) => { cardRefs.current[i] = el; }}
-            className={`rounded-xl border bg-white/[0.03] p-4 space-y-2 ${chart.recommended ? "border-indigo-500/30" : "border-white/[0.07]"}`}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  {chart.recommended && (
-                    <TrendingUp className="h-3.5 w-3.5 text-indigo-400 flex-shrink-0" />
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+        {charts.map((chart, i) => {
+          const nBars = chart.type === "bar" ? chart.data.length : 0;
+          const prefersWide =
+            chart.type === "bar" && (chart.horizontal === true || nBars > 10);
+          return (
+            <div
+              key={i}
+              ref={(el) => { cardRefs.current[i] = el; }}
+              className={`min-w-0 rounded-2xl border bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-5 shadow-lg shadow-black/25 space-y-3 ${
+                prefersWide ? "xl:col-span-2" : ""
+              } ${chart.recommended ? "border-indigo-500/35" : "border-white/[0.08]"}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    {chart.recommended && (
+                      <TrendingUp className="h-3.5 w-3.5 text-indigo-400 flex-shrink-0" />
+                    )}
+                    <h3 className="text-sm font-semibold tracking-tight text-white">{chart.title}</h3>
+                  </div>
+                  {chart.insight && (
+                    <p className="mt-1 text-xs leading-relaxed text-white/45 line-clamp-2">{chart.insight}</p>
                   )}
-                  <h3 className="text-sm font-semibold text-white truncate">{chart.title}</h3>
                 </div>
-                {chart.insight && (
-                  <p className="mt-0.5 text-xs text-white/40 line-clamp-2">{chart.insight}</p>
-                )}
+                <div className="flex flex-shrink-0 items-center gap-1">
+                  <span className="rounded-full bg-white/[0.07] px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-white/45">
+                    {chart.type}
+                  </span>
+                  <DownloadMenu
+                    onExport={(fmt) => {
+                      if (cardRefs.current[i]) {
+                        exportChart(cardRefs.current[i]!, chart, fmt);
+                      }
+                    }}
+                  />
+                </div>
               </div>
-              <div className="flex flex-shrink-0 items-center gap-1">
-                <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-xs text-white/40">
-                  {chart.type}
-                </span>
-                <DownloadMenu
-                  onExport={(fmt) => {
-                    if (cardRefs.current[i]) {
-                      exportChart(cardRefs.current[i]!, chart, fmt);
-                    }
-                  }}
-                />
-              </div>
+              <SingleChart chart={chart} />
             </div>
-            <SingleChart chart={chart} />
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

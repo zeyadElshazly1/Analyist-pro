@@ -645,10 +645,17 @@ export function RunAnalysis({ projectId, initialResult, initialRunId, initialCom
             <SafePanel label="Overview">
               <div className="space-y-4">
                 <StatsCards healthResult={result.health_result} profileResult={result.profile_result ?? result.profile} summary={result.dataset_summary} />
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <TabPanel><HealthScore healthResult={result.health_result} score={result.health_score} /></TabPanel>
+                <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 lg:items-start lg:gap-6">
                   <TabPanel>
-                    <h2 className="mb-4 text-sm font-semibold text-white/70 uppercase tracking-wider">Cleaning Summary</h2>
+                    <h2 className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-white/50">
+                      Data quality
+                    </h2>
+                    <p className="mb-5 max-w-prose text-[13px] leading-relaxed text-white/38">
+                      Health score, dimensions, and readiness signals for this dataset.
+                    </p>
+                    <HealthScore healthResult={result.health_result} score={result.health_score} />
+                  </TabPanel>
+                  <TabPanel>
                     <CleaningSummaryCards cleaningResult={result.cleaning_result} summary={result.cleaning_summary} />
                   </TabPanel>
                 </div>

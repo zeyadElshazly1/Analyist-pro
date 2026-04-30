@@ -24,22 +24,74 @@ from .narrator import (
 from .stats import _normality_badge
 
 
+def _series_is_integer_like(series: pd.Series) -> bool:
+    """True when values are all whole numbers (tenure-style integers)."""
+    if pd.api.types.is_integer_dtype(series):
+        return True
+    arr = pd.to_numeric(series, errors="coerce").dropna().to_numpy(dtype=float)
+    if arr.size == 0:
+        return False
+    return bool(np.max(np.abs(arr - np.round(arr))) < 1e-6)
+
+
+def _format_histogram_bin_label(lo: float, hi: float, span: float, integer_like: bool) -> str:
+    """
+    Human-readable range label for a histogram bin.
+    Avoids long runs of decimals from numpy edges (e.g. 19.999–24.001).
+    """
+    if integer_like:
+        a = int(np.floor(lo + 1e-6))
+        b = int(np.ceil(hi - 1e-6))
+        if a == b:
+            return str(a)
+        return f"{a}–{b}"
+
+    def fmt_edge(v: float) -> str:
+        if not np.isfinite(v):
+            return "?"
+        av = abs(v)
+        if span >= 1000 or av >= 1000:
+            return f"{v:,.0f}".replace(",", "")
+        if span >= 100:
+            s = f"{v:.1f}".rstrip("0").rstrip(".")
+            return s or "0"
+        if span >= 10:
+            s = f"{v:.2f}".rstrip("0").rstrip(".")
+            return s or "0"
+        if span >= 1:
+            s = f"{v:.2f}".rstrip("0").rstrip(".")
+            return s or "0"
+        s = f"{v:.3g}"
+        return s
+
+    lo_s, hi_s = fmt_edge(lo), fmt_edge(hi)
+    if lo_s == hi_s:
+        return lo_s
+    return f"{lo_s}–{hi_s}"
+
+
 def _histogram_bins(series: pd.Series, n_bins: int = 10) -> list[dict]:
     """Build histogram bin data with density and anomaly flagging."""
     clean = series.dropna()
     if len(clean) == 0:
         return []
-    q1, q3  = float(clean.quantile(0.25)), float(clean.quantile(0.75))
+    numeric_clean = pd.to_numeric(clean, errors="coerce").dropna()
+    if numeric_clean.empty:
+        return []
+    q1, q3  = float(numeric_clean.quantile(0.25)), float(numeric_clean.quantile(0.75))
     iqr     = q3 - q1
     lo_fence = q1 - 1.5 * iqr
     hi_fence = q3 + 1.5 * iqr
 
-    counts, edges = np.histogram(clean, bins=n_bins)
-    total = len(clean)
+    counts, edges = np.histogram(numeric_clean.to_numpy(dtype=float), bins=n_bins)
+    span = float(edges[-1] - edges[0]) if len(edges) > 1 else 0.0
+    integer_like = _series_is_integer_like(numeric_clean)
+    total = int(numeric_clean.shape[0])
     result = []
     for i, count in enumerate(counts):
-        label      = f"{edges[i]:.2g}–{edges[i+1]:.2g}"
-        bin_center = (edges[i] + edges[i + 1]) / 2
+        lo_e, hi_e = float(edges[i]), float(edges[i + 1])
+        label = _format_histogram_bin_label(lo_e, hi_e, span, integer_like)
+        bin_center = (lo_e + hi_e) / 2
         result.append({
             "label":         label,
             "value":         int(count),
@@ -109,13 +161,18 @@ def build_histogram_payload(
     clean = df[col].dropna()
     if len(clean) < 5:
         return None
+    if not pd.api.types.is_numeric_dtype(clean):
+        clean = pd.to_numeric(clean, errors="coerce").dropna()
+    if len(clean) < 5:
+        return None
     # Binary flag guard — prevents "normally distributed" or skewness language
     # being applied to a column that only ever takes two values.
     if clean.nunique() <= 2:
         return None
 
     skew   = float(clean.skew())
-    n_bins = 15 if len(clean) > 500 else 10
+    # Fewer bins on smaller series keeps x-axis labels legible.
+    n_bins = 12 if len(clean) > 500 else (10 if len(clean) > 120 else 8)
     hist_data = _histogram_bins(clean, n_bins=n_bins)
     if not hist_data:
         return None
@@ -233,6 +290,11 @@ def build_cat_bar_payload(df: pd.DataFrame, col: str) -> dict | None:
     if n_unique < 2:
         return None
 
+    n_rows = max(len(df), 1)
+    # Extremely high cardinality: a bar chart adds little value and crowds the UI.
+    if n_unique > 400:
+        return None
+
     counts       = df[col].fillna("(missing)").astype(str).value_counts()
     show_top     = n_unique > 15
     display_counts = counts.head(MAX_CAT_BAR_TOP)
@@ -240,13 +302,15 @@ def build_cat_bar_payload(df: pd.DataFrame, col: str) -> dict | None:
         return None
 
     top_cat = str(display_counts.index[0])
-    top_pct = float(display_counts.iloc[0]) / max(len(df), 1) * 100
-    data    = [{"label": str(k), "value": int(v)} for k, v in display_counts.items()]
+    top_pct = float(display_counts.iloc[0]) / n_rows * 100
+    data    = [{"label": str(k).strip(), "value": int(v)} for k, v in display_counts.items()]
     if show_top and len(counts) > MAX_CAT_BAR_TOP:
         data.append({"label": "Other", "value": int(counts.iloc[MAX_CAT_BAR_TOP:].sum())})
 
     narration = _narrate_categorical(col, top_cat, top_pct, n_unique)
     n_shown   = f"top {MAX_CAT_BAR_TOP} of {n_unique}" if show_top else str(n_unique)
+    # Horizontal layout improves label readability for medium+ cardinality.
+    use_horizontal = show_top or n_unique > 8
     return {
         "type":        "bar",
         "title":       f"Top values in {col}" if show_top else f"Distribution of {col}",
@@ -257,7 +321,7 @@ def build_cat_bar_payload(df: pd.DataFrame, col: str) -> dict | None:
         "x_label":     col,
         "y_label":     "Count",
         "data":        data,
-        "horizontal":  show_top,
+        "horizontal":  use_horizontal,
         "recommended": False,
         "score":       6,
     }

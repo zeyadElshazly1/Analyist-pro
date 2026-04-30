@@ -10,6 +10,8 @@ import {
   Bar,
   ResponsiveContainer,
   Tooltip,
+  XAxis,
+  YAxis,
 } from "recharts";
 
 type ColProfile = {
@@ -120,28 +122,84 @@ function NumericMiniViz({ col }: { col: ColProfile }) {
   );
 }
 
+type CatBarRow = {
+  /** Short label for the X-axis (may truncate). */
+  name: string;
+  /** Full category label after value_label_map (tooltip). */
+  fullLabel: string;
+  value: number;
+  pct?: number;
+};
+
+function resolveTopValueLabel(raw: string, labelMap: Record<string, string>): string {
+  const k = String(raw);
+  if (labelMap[k] !== undefined) return labelMap[k];
+  const trimmed = k.trim();
+  if (labelMap[trimmed] !== undefined) return labelMap[trimmed];
+  return k;
+}
+
 function CategoricalMiniViz({ col }: { col: ColProfile }) {
   if (!col.top_values) return null;
   const labelMap = col.value_label_map ?? {};
   const entries = Object.entries(col.top_values).slice(0, 5);
-  // Apply value_label_map so binary flags show "Not senior"/"Senior" instead of "0"/"1"
-  const data = entries.map(([k, v]) => ({
-    name: (labelMap[k] ?? k).slice(0, 16),
-    value: v,
-  }));
+  const totalCount = Object.values(col.top_values).reduce((s, n) => s + n, 0);
+
+  const data: CatBarRow[] = entries.map(([k, v]) => {
+    const fullLabel = resolveTopValueLabel(k, labelMap);
+    const name =
+      fullLabel.length > 12 ? `${fullLabel.slice(0, 11)}…` : fullLabel;
+    return {
+      name,
+      fullLabel,
+      value: v,
+      pct: totalCount > 0 ? (v / totalCount) * 100 : undefined,
+    };
+  });
 
   return (
     <div className="mt-3">
       <p className="mb-1 text-xs text-white/40">Value breakdown</p>
-      <div className="h-20">
+      <div className="h-24">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-            <Bar dataKey="value" fill="#6366f1" radius={[3, 3, 0, 0]} />
-            <Tooltip
-              contentStyle={{ background: "#1a1a2e", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8 }}
-              labelStyle={{ color: "#fff", fontSize: 11 }}
-              itemStyle={{ color: "#a5b4fc", fontSize: 11 }}
+          <BarChart
+            data={data}
+            margin={{ top: 4, right: 4, bottom: 2, left: 0 }}
+          >
+            <XAxis
+              dataKey="name"
+              type="category"
+              tick={{ fill: "rgba(255,255,255,0.32)", fontSize: 9 }}
+              interval={0}
+              tickLine={false}
+              axisLine={{ stroke: "rgba(255,255,255,0.06)" }}
+              height={26}
             />
+            <YAxis hide domain={[0, "auto"]} />
+            <Tooltip
+              cursor={{ fill: "rgba(99,102,241,0.07)" }}
+              content={({ active, payload }) => {
+                if (!active || !payload?.length) return null;
+                const row = payload[0].payload as CatBarRow;
+                return (
+                  <div className="rounded-lg border border-white/[0.12] bg-[#14141f] px-3 py-2 shadow-lg">
+                    <p className="text-xs font-semibold leading-snug text-white">{row.fullLabel}</p>
+                    <p className="mt-1.5 text-[11px] text-white/75">
+                      Count:{" "}
+                      <span className="font-medium tabular-nums text-indigo-200">
+                        {row.value.toLocaleString()}
+                      </span>
+                    </p>
+                    {row.pct != null && (
+                      <p className="mt-0.5 text-[11px] text-white/45">
+                        {row.pct.toFixed(1)}% of rows (this column)
+                      </p>
+                    )}
+                  </div>
+                );
+              }}
+            />
+            <Bar dataKey="value" fill="#6366f1" radius={[3, 3, 0, 0]} maxBarSize={48} />
           </BarChart>
         </ResponsiveContainer>
       </div>

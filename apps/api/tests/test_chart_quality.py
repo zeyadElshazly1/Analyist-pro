@@ -424,3 +424,72 @@ class TestBuildChartDataQuality:
             assert "near_unique_id" not in c.get("x_label", "").lower(), (
                 "near_unique_id (92% unique) should not be charted"
             )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6.  Histogram bin labels (tenure, charges)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestHistogramBinLabels:
+    def test_tenure_integer_style_bins(self):
+        from app.services.charting.payloads import build_histogram_payload
+        df = pd.DataFrame({"tenure": list(range(1, 101))})
+        p = build_histogram_payload(df, "tenure", is_first_chart=True)
+        assert p is not None
+        for row in p["data"]:
+            label = row["label"]
+            assert "e+" not in label.lower()
+            assert len(label) <= 24, f"label too long: {label!r}"
+
+    def test_monthlycharges_compact_float_bins(self):
+        from app.services.charting.payloads import build_histogram_payload
+        import numpy as np
+        rng = np.random.default_rng(0)
+        df = pd.DataFrame({"MonthlyCharges": rng.normal(64, 30, 200).clip(18, 120)})
+        p = build_histogram_payload(df, "MonthlyCharges", is_first_chart=True)
+        assert p is not None
+        for row in p["data"]:
+            assert "e+" not in row["label"].lower()
+            assert len(row["label"]) <= 28
+
+    def test_totalcharges_string_numeric_coerces(self):
+        from app.services.charting.payloads import build_histogram_payload
+        df = pd.DataFrame({
+            "TotalCharges": [str(round(20 + i * 3.17, 2)) for i in range(80)],
+        })
+        p = build_histogram_payload(df, "TotalCharges", is_first_chart=True)
+        assert p is not None
+        assert len(p["data"]) >= 3
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7.  customerID / SeniorCitizen naming edge cases
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestChartNamingEdgeCases:
+    def test_customerid_suppressed_even_when_low_cardinality(self):
+        """Record-id column names must not appear in charts (name heuristic)."""
+        from app.services.charting.orchestrator import build_chart_data
+        df = pd.DataFrame({
+            "CustomerID": ["X", "Y", "Z"] * 34,  # 3 values — still an ID column
+            "MonthlyCharges": [float(i) for i in range(102)],
+        })
+        charts = build_chart_data(df)
+        blob = " ".join(
+            f"{c.get('x_label', '')} {c.get('y_label', '')} {c.get('title', '')}"
+            for c in charts
+        ).lower()
+        assert "customerid" not in blob
+
+    def test_seniorcitizen_pascal_is_binary_bar(self):
+        from app.services.charting.orchestrator import build_chart_data
+        df = pd.DataFrame({
+            "SeniorCitizen": [0] * 80 + [1] * 20,
+            "MonthlyCharges": [float(30 + i * 0.5) for i in range(100)],
+        })
+        charts = build_chart_data(df)
+        sc = [c for c in charts if c.get("x_label", "") == "SeniorCitizen"]
+        assert len(sc) >= 1
+        assert all(c.get("is_binary") is True for c in sc)
+        labels = {d["label"] for d in sc[0]["data"]}
+        assert "Not senior" in labels and "Senior" in labels
