@@ -6,6 +6,7 @@ Set DATABASE_URL env var (or .env file) to switch to PostgreSQL for production:
   DATABASE_URL=postgresql+psycopg2://user:pass@localhost/analyistpro
 """
 import os
+import logging
 from pathlib import Path
 
 # Load .env from the api root (one level above this file's parent directory)
@@ -18,6 +19,8 @@ except ImportError:
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
+
+logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -68,11 +71,8 @@ def init_db():
     (e.g. running tests against an in-memory SQLite), we fall back to
     ``create_all`` so tests keep working without a full migration stack.
     """
-    import logging
-    _log = logging.getLogger(__name__)
-
     if not _run_migrations_on_startup():
-        _log.info("Skipping Alembic migrations on startup")
+        logger.info("Skipping Alembic migrations on startup")
         return
 
     try:
@@ -90,12 +90,12 @@ def init_db():
         # config works in every environment without editing alembic.ini.
         alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
 
-        _log.info("Running Alembic migrations (upgrade head)…")
+        logger.info("Running Alembic migrations (upgrade head)…")
         command.upgrade(alembic_cfg, "head")
-        _log.info("Alembic migrations complete")
+        logger.info("Alembic migrations complete")
 
     except Exception as exc:
-        _log.warning(
+        logger.warning(
             f"Alembic migration failed ({exc}); falling back to create_all. "
             "This is normal in tests — in production ensure alembic.ini is present."
         )
