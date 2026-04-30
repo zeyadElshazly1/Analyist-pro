@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(python -c \"from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary; print\\('OK'\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary; print\\('OK'\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"from app.services.chart_builder import build_chart_data; print\\('OK'\\)\")"
+    ]
+  }
+}
