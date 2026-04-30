@@ -5,8 +5,16 @@ import { ChevronDown, ChevronUp, ArrowRight, Check } from "lucide-react";
 
 export type StepStatus = "unavailable" | "available" | "attention" | "complete";
 
+// ── Default landing step ──────────────────────────────────────────────────────
+// Single source of truth for the tab a freshly-completed or reopened run lands
+// on, plus the human-readable label used in resume/reopen copy.  Any banner or
+// CTA that promises "opens at <step>" should import these so the promise can't
+// drift away from the actual `setTab(...)` behavior in run-analysis.tsx.
+export const DEFAULT_LANDING_TAB = "intake";
+export const DEFAULT_LANDING_TAB_LABEL = "Intake Review";
+
 export function getStepForTab(tabId: string): string {
-  return TAB_TO_STEP[tabId] ?? "intake";
+  return TAB_TO_STEP[tabId] ?? DEFAULT_LANDING_TAB;
 }
 
 type Props = {
@@ -22,8 +30,9 @@ const STEPS = [
     label: "Intake Review",
     description: "Check how your file was parsed and structured",
     number: 1,
-    primaryTab: "overview",
+    primaryTab: "intake",
     tabs: [
+      { id: "intake", label: "Intake review" },
       { id: "overview", label: "Summary" },
       { id: "data-table", label: "Raw data" },
     ],
@@ -41,10 +50,11 @@ const STEPS = [
   {
     id: "health",
     label: "Health Check",
-    description: "Column-by-column data quality profile",
+    description: "Dataset readiness, score, warnings, and column profiles",
     number: 3,
-    primaryTab: "profile",
+    primaryTab: "health",
     tabs: [
+      { id: "health", label: "Health score" },
       { id: "profile", label: "Column profiles" },
     ],
   },

@@ -86,4 +86,5 @@ def build_run_detail(r: AnalysisResult) -> RunDetail:
         has_insight_results="insight_results" in result_keys,
         has_executive_panel="executive_panel" in result_keys,
         has_report_result=bool(r.story_result_json),
+        has_compare_result="compare_result" in result_keys,
     )

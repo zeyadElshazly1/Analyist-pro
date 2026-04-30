@@ -29,7 +29,7 @@ from pydantic import BaseModel, field_validator
 import app.db as _db_module
 from app.middleware.auth import get_current_user
 from app.models import User
-from app.plan_names import PLAN_CONSULTANT, PLAN_FREE, PLAN_STUDIO
+from app.plan_names import PLAN_CONSULTANT, PLAN_FREE, PLAN_STUDIO, normalize_plan
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["billing"])
@@ -164,11 +164,15 @@ class CheckoutRequest(BaseModel):
     @field_validator("plan")
     @classmethod
     def plan_must_be_checkout_plan(cls, v: str) -> str:
-        if v not in CHECKOUT_PLANS:
+        # Normalise legacy aliases ('pro' → 'consultant', 'team' → 'studio')
+        # and unknown values (which become 'free') so callers always see a
+        # canonical plan name in the rejection message.
+        canonical = normalize_plan(v)
+        if canonical not in CHECKOUT_PLANS:
             raise ValueError(
                 f"plan must be one of: {', '.join(sorted(CHECKOUT_PLANS))}"
             )
-        return v
+        return canonical
 
 
 @router.post("/create-checkout-session")
@@ -191,6 +195,18 @@ def create_checkout_session(
 
     price_id = _PLAN_PRICE_MAP.get(body.plan, "")
     if not price_id:
+        # Studio is sales-assisted by default — when no Stripe price ID is
+        # configured for it, surface a clear contact-sales message instead of
+        # a generic "Contact support".  Consultant falls back to the standard
+        # 503 because it is meant to be self-serve.
+        if body.plan == PLAN_STUDIO:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "The Studio plan is sales-assisted. "
+                    "Please contact sales@analystpro.com to set up your account."
+                ),
+            )
         raise HTTPException(
             status_code=503,
             detail=f"Stripe price ID for plan '{body.plan}' is not configured. Contact support.",

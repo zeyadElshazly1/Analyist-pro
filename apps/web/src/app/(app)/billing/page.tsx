@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { getProjectStats, createCheckoutSession } from "@/lib/api";
 import { useUser } from "@/lib/user-context";
-import { PLAN_NAMES, PLAN_LABELS, type PlanName } from "@/lib/plans";
+import { PLAN_NAMES, PLAN_LABELS, normalizePlan, type PlanName } from "@/lib/plans";
 import { CheckCircle, Sparkles, Zap, Users, ArrowRight, Loader2 } from "lucide-react";
 
 type Stats = { total_projects: number; total_analyses: number };
@@ -21,7 +21,7 @@ const PLANS = [
       "3 projects",
       "Basic analysis pipeline",
       "Health score & profiling",
-      "Up to 10K rows per file",
+      "Up to 10 MB per file",
       "Community support",
     ],
     cta: "Current plan",
@@ -99,7 +99,7 @@ export default function BillingPage() {
     }
   }
 
-  const currentPlan = (user?.plan ?? PLAN_NAMES.FREE) as PlanName;
+  const currentPlan: PlanName = normalizePlan(user?.plan);
 
   const activePlan = PLANS.find((p) => p.id === currentPlan) ?? PLANS[0];
   const projectLimit = activePlan.projectLimit;

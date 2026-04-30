@@ -1,8 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from app.db import get_db
 from app.middleware.auth import get_current_user
 from app.models import User
+from app.services.access_guards import get_project_for_user
 from app.services.cleaner import clean_dataset
 from app.services.file_loader import load_dataset
 from app.services.serializers import to_jsonable
@@ -12,7 +15,9 @@ from app.state import get_project_file_info
 router = APIRouter(prefix="/stats", tags=["stats"])
 
 
-def _load(project_id: int):
+def _load_owned(db: Session, user: User, project_id: int):
+    """Verify ownership, then load and clean the dataset."""
+    get_project_for_user(db, project_id, user)
     info = get_project_file_info(project_id)
     if not info:
         raise HTTPException(status_code=404, detail="No uploaded file for this project.")
@@ -43,8 +48,12 @@ class PowerRequest(BaseModel):
 
 
 @router.post("/test")
-def stats_test(req: TestRequest, current_user: User = Depends(get_current_user)):
-    df = _load(req.project_id)
+def stats_test(
+    req: TestRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    df = _load_owned(db, current_user, req.project_id)
     try:
         result = run_test(df, req.test_type, req.col_a, req.col_b, req.alpha)
         return to_jsonable(result)
@@ -64,8 +73,12 @@ def stats_power(req: PowerRequest):
 
 
 @router.get("/columns")
-def stats_columns(project_id: int = Query(...), current_user: User = Depends(get_current_user)):
-    df = _load(project_id)
+def stats_columns(
+    project_id: int = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    df = _load_owned(db, current_user, project_id)
     numeric = df.select_dtypes(include="number").columns.tolist()
     categorical = df.select_dtypes(include=["object", "category"]).columns.tolist()
     return {"numeric_columns": numeric, "categorical_columns": categorical}

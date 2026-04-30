@@ -58,7 +58,7 @@ def create_invite(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Generate a team invite link. Caller must have a Team plan."""
+    """Generate a team invite link. Caller must have a Studio plan."""
     _require_team_plan(current_user)
 
     active = _active_member_count(current_user.id, db)

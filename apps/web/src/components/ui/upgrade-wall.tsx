@@ -12,24 +12,24 @@ interface Props {
 
 const FEATURE_LABELS: Record<string, { title: string; description: string }> = {
   ai_chat: {
-    title: "AI Chat is a Pro feature",
+    title: "AI Chat is a Consultant feature",
     description:
       "Ask unlimited questions about your data — trends, anomalies, forecasts — answered instantly by Claude.",
   },
   ai_story: {
-    title: "AI Data Story is a Pro feature",
+    title: "AI Data Story is a Consultant feature",
     description:
       "Generate a polished 5-slide narrative from your analysis results, ready to share with stakeholders.",
   },
   projects: {
     title: "Project limit reached",
     description:
-      "Free plan includes 3 projects. Upgrade to Pro for unlimited projects and larger file support.",
+      "Free plan includes 3 projects. Upgrade to Consultant for unlimited projects and larger file support.",
   },
   file_size: {
     title: "File too large for your plan",
     description:
-      "Your file exceeds the free plan's 10 MB limit. Upgrade to Pro for up to 100 MB, or Team for 500 MB.",
+      "Free plan supports up to 10 MB per file. Upgrade to Consultant for 100 MB, or Studio for 500 MB.",
   },
 };
 

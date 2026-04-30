@@ -4,7 +4,10 @@ All magic numbers and thresholds live here — change once, affects everywhere.
 """
 
 # ── File Upload ───────────────────────────────────────────────────────────────
-MAX_UPLOAD_BYTES = 100 * 1024 * 1024   # 100 MB
+# Global hard ceiling — must be ≥ the largest per-plan cap in
+# ``app.middleware.plans.PLAN_LIMITS`` (Studio = 500 MB) so the per-plan gate
+# is what users actually hit.  Per-plan limits remain the canonical promise.
+MAX_UPLOAD_BYTES = 500 * 1024 * 1024   # 500 MB
 ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
 UPLOAD_DIR = "uploads"
 

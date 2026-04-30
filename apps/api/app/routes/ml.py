@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from app.db import get_db
 from app.limiter import limiter
 from app.middleware.auth import get_current_user
 from app.models import User
+from app.services.access_guards import get_project_for_user
 from app.services.automl_service import (
     detect_problem_type,
     load_model_artifacts,
@@ -18,7 +21,9 @@ from app.state import get_project_file_info
 router = APIRouter(prefix="/ml", tags=["ml"])
 
 
-def _load(project_id: int):
+def _load_owned(db: Session, user: User, project_id: int):
+    """Verify ownership, then load + clean the dataset."""
+    get_project_for_user(db, project_id, user)
     return load_prepared(project_id)
 
 
@@ -29,8 +34,13 @@ class TrainRequest(BaseModel):
 
 @router.post("/train")
 @limiter.limit("4/minute")
-def train(request: Request, req: TrainRequest, current_user: User = Depends(get_current_user)):
-    df = _load(req.project_id)
+def train(
+    request: Request,
+    req: TrainRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    df = _load_owned(db, current_user, req.project_id)
     if req.target_col not in df.columns:
         raise HTTPException(status_code=400, detail=f"Column '{req.target_col}' not found.")
     if len(df) < 10:
@@ -47,8 +57,13 @@ def train(request: Request, req: TrainRequest, current_user: User = Depends(get_
 
 
 @router.get("/model-info/{project_id}")
-def model_info(project_id: int, current_user: User = Depends(get_current_user)):
+def model_info(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Return metadata about the saved model for this project, if any."""
+    get_project_for_user(db, project_id, current_user)
     arts = load_model_artifacts(project_id)
     if arts is None:
         raise HTTPException(status_code=404, detail="No trained model found. Run /ml/train first.")
@@ -71,10 +86,12 @@ def predict(
     project_id: int,
     req: PredictRequest,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Score new rows against the trained model for this project."""
     if not req.rows:
         raise HTTPException(status_code=400, detail="No rows provided.")
+    get_project_for_user(db, project_id, current_user)
     arts = load_model_artifacts(project_id)
     if arts is None:
         raise HTTPException(status_code=404, detail="No trained model found. Run /ml/train first.")
@@ -91,6 +108,10 @@ def predict(
 
 
 @router.get("/columns")
-def get_columns(project_id: int = Query(...), current_user: User = Depends(get_current_user)):
-    df = _load(project_id)
+def get_columns(
+    project_id: int = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    df = _load_owned(db, current_user, project_id)
     return {"columns": df.columns.tolist()}

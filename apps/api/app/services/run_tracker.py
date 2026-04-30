@@ -121,3 +121,69 @@ def finalise_run(
     except SQLAlchemyError as e:
         db.rollback()
         logger.error("Failed to finalise run %s: %s", run.id, e, exc_info=True)
+
+
+def persist_compare_result(
+    db: Session,
+    project_id: int,
+    compare_result: dict,
+) -> int | None:
+    """
+    Merge a freshly-built ``compare_result`` block into the latest report_ready
+    run's ``result_json`` for ``project_id``.
+
+    Behaviour
+    ---------
+    * Only updates the ``compare_result`` key — every other canonical block
+      (intake_result / cleaning_result / health_result / insight_results /
+      profile_result / executive_panel / narrative / story_result) is left
+      untouched.
+    * If the project has no ``report_ready`` run yet, this is a no-op (caller
+      will still receive the live response — we simply have nowhere durable to
+      pin the comparison until the next analysis run completes).
+    * Best-effort: any DB / JSON error is swallowed so a failed persistence
+      never breaks the live compare endpoint.
+
+    Returns the run id we wrote to, or ``None`` when nothing was persisted.
+    """
+    from sqlalchemy.exc import SQLAlchemyError
+    import json
+
+    try:
+        run = (
+            db.query(AnalysisResult)
+            .filter(
+                AnalysisResult.project_id == project_id,
+                AnalysisResult.status == "report_ready",
+            )
+            .order_by(AnalysisResult.created_at.desc(), AnalysisResult.id.desc())
+            .first()
+        )
+        if run is None:
+            return None
+
+        try:
+            stored = json.loads(run.result_json) if run.result_json else {}
+            if not isinstance(stored, dict):
+                stored = {}
+        except (json.JSONDecodeError, TypeError):
+            stored = {}
+
+        stored["compare_result"] = compare_result
+        run.result_json = json.dumps(stored, default=str)
+        db.commit()
+        return run.id
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.warning(
+            "Failed to persist compare_result for project %s: %s", project_id, e
+        )
+        return None
+    except Exception as e:  # pragma: no cover — defensive
+        db.rollback()
+        logger.warning(
+            "Unexpected error persisting compare_result for project %s: %s",
+            project_id,
+            e,
+        )
+        return None

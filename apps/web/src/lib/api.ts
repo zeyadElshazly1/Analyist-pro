@@ -395,6 +395,7 @@ export interface LatestRun {
   has_insight_results: boolean;
   has_executive_panel: boolean;
   has_report_result: boolean;
+  has_compare_result?: boolean;  // optional — older API builds may omit it
 }
 
 export interface ProjectDetail {
@@ -632,7 +633,10 @@ export interface UserEdit {
 
 export interface ReportExportRecord {
   format: "html" | "pdf" | "xlsx";
-  status: "completed" | "failed" | "pending";
+  // ``unavailable`` is emitted by the backend when the PDF generator deps
+  // (WeasyPrint / pdfkit) are missing on the host — surfaced honestly to
+  // the export-history strip rather than disguised as a generic failure.
+  status: "completed" | "failed" | "unavailable" | "pending";
   exported_at: string | null;
   error_message: string | null;
 }
@@ -663,13 +667,19 @@ export interface ReportResult {
   updated_at: string;
 }
 
-// Draft API response — flat draft fields + embedded canonical report_result
+// Draft API response — flat draft fields + embedded canonical report_result.
+//
+// ``selected_insight_ids`` carries stable ``insight_id`` strings for any
+// draft saved after the report-builder stable-ID hardening.  Legacy drafts
+// saved before that change may still contain integer positional indices —
+// the backend keeps an index-fallback path so both shapes load without
+// silently picking the wrong finding.
 export interface DraftResponse {
   id: number;
   project_id: number;
   title: string | null;
   summary: string | null;
-  selected_insight_ids: number[];
+  selected_insight_ids: Array<string | number>;
   selected_chart_ids: string[];
   template: string | null;
   created_at: string | null;
@@ -684,6 +694,8 @@ export interface RunResultsResponse {
   status: string;
   error_summary: string | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  intake_result: Record<string, any> | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   cleaning_result: Record<string, any> | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   health_result: Record<string, any> | null;
@@ -695,6 +707,10 @@ export interface RunResultsResponse {
   executive_panel: Record<string, any> | null;
   narrative: string | null;
   story_result: DataStory | null;  // AI data story (story_result_json); was report_result
+  // Compare block — written by /explore/multifile and pinned to the latest run
+  // of the "current" project (left-hand side of the compare). null for runs
+  // that were never paired against another project.
+  compare_result?: CompareResult | null;
 }
 
 export function getRunResults(runId: number) {
@@ -930,7 +946,11 @@ export function sendChatMessage(
 export interface SaveDraftPayload {
   title?: string;
   summary?: string;
-  selected_insight_ids?: number[];
+  // Stable ``insight_id`` strings are preferred for new drafts so insight
+  // re-ordering on a fresh analysis run cannot silently swap selected
+  // findings.  Numeric entries are still accepted for legacy compatibility
+  // — the backend resolves both shapes.
+  selected_insight_ids?: Array<string | number>;
   selected_chart_ids?: string[];
   template?: string | null;
 }

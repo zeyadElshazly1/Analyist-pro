@@ -32,15 +32,31 @@ _LEGACY_NAME_MAP: dict[str, str] = {
 
 
 def normalize_plan(plan: str | None) -> str:
-    """Return the canonical plan name, mapping legacy 'pro'/'team' if needed."""
+    """Return the canonical plan name, mapping legacy 'pro'/'team' if needed.
+
+    Unknown / unrecognised values fall back to ``PLAN_FREE`` so downstream
+    plan checks never raise on dirty data (legacy DB rows, typos in env
+    overrides, etc.).
+    """
     if not plan:
         return PLAN_FREE
-    return _LEGACY_NAME_MAP.get(plan, plan)
+    canonical = _LEGACY_NAME_MAP.get(plan, plan)
+    if canonical not in PLAN_VALUES:
+        return PLAN_FREE
+    return canonical
 
 
-def plan_at_least(user_plan: str, required: str) -> bool:
-    """Return True if user_plan is at or above required in the plan hierarchy."""
+def plan_at_least(user_plan: str | None, required: str | None) -> bool:
+    """Return True if ``user_plan`` is at or above ``required`` in the hierarchy.
+
+    Both inputs are normalised first so legacy values like ``"pro"`` /
+    ``"team"`` and unknown / empty plans never raise.  An unknown
+    ``required`` plan returns ``False`` defensively (callers should pass a
+    canonical plan name).
+    """
+    user_canonical = normalize_plan(user_plan)
+    required_canonical = normalize_plan(required)
     try:
-        return PLAN_ORDER.index(user_plan) >= PLAN_ORDER.index(required)
+        return PLAN_ORDER.index(user_canonical) >= PLAN_ORDER.index(required_canonical)
     except ValueError:
         return False

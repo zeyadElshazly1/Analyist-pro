@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 import pandas as pd
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from app.db import get_db
 from app.middleware.auth import get_current_user
 from app.models import User
+from app.services.access_guards import get_project_for_user
 from app.services.cohort_service import retention_matrix, rfm_segmentation
 from app.services.dataset_loader import load_prepared
 from app.services.serializers import to_jsonable
@@ -11,7 +14,9 @@ from app.services.serializers import to_jsonable
 router = APIRouter(prefix="/cohorts", tags=["cohorts"])
 
 
-def _load(project_id: int):
+def _load_owned(db: Session, user: User, project_id: int):
+    """Verify ownership, then load + clean the dataset."""
+    get_project_for_user(db, project_id, user)
     return load_prepared(project_id)
 
 
@@ -30,8 +35,12 @@ class RetentionRequest(BaseModel):
 
 
 @router.post("/rfm")
-def rfm(req: RfmRequest, current_user: User = Depends(get_current_user)):
-    df = _load(req.project_id)
+def rfm(
+    req: RfmRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    df = _load_owned(db, current_user, req.project_id)
     for col in [req.customer_col, req.date_col, req.revenue_col]:
         if col not in df.columns:
             raise HTTPException(status_code=400, detail=f"Column '{col}' not found.")
@@ -43,8 +52,12 @@ def rfm(req: RfmRequest, current_user: User = Depends(get_current_user)):
 
 
 @router.post("/retention")
-def retention(req: RetentionRequest, current_user: User = Depends(get_current_user)):
-    df = _load(req.project_id)
+def retention(
+    req: RetentionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    df = _load_owned(db, current_user, req.project_id)
     for col in [req.cohort_col, req.period_col, req.user_col]:
         if col not in df.columns:
             raise HTTPException(status_code=400, detail=f"Column '{col}' not found.")
@@ -56,8 +69,12 @@ def retention(req: RetentionRequest, current_user: User = Depends(get_current_us
 
 
 @router.get("/columns")
-def cohort_columns(project_id: int = Query(...), current_user: User = Depends(get_current_user)):
-    df = _load(project_id)
+def cohort_columns(
+    project_id: int = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    df = _load_owned(db, current_user, project_id)
     numeric = df.select_dtypes(include="number").columns.tolist()
     datetime_cols = df.select_dtypes(include=["datetime64"]).columns.tolist()
     # also detect string cols that look like dates

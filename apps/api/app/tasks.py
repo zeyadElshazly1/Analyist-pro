@@ -80,7 +80,9 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
     from app.services.cleaning_adapter import build_cleaning_result
     from app.services.health_adapter import build_health_result
     from app.services.insight_adapter import build_insight_results
+    from app.services.intake_for_analysis import build_intake_for_project
     from app.services.serializers import to_jsonable
+    from app.db import SessionLocal as _SessionLocal
 
     # ── Step 0: resolve file ──────────────────────────────────────────────────
     emit("Loading dataset", 5, "Resolving uploaded file...")
@@ -95,6 +97,19 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
     cached = get_cached_analysis(project_id, file_hash)
     if cached:
         emit("Loading from cache", 80, "Previous analysis found — loading instantly")
+        # Backfill intake_result on cache hits if the cached payload predates
+        # the intake-persistence change (best-effort).
+        if not cached.get("intake_result"):
+            _db = _SessionLocal()
+            try:
+                intake_snapshot = build_intake_for_project(
+                    _db, project_id, file_path=info.get("path"), file_hash=file_hash
+                )
+            finally:
+                _db.close()
+            if intake_snapshot:
+                cached = {**cached, "intake_result": intake_snapshot}
+                set_cached_analysis(project_id, file_hash, cached)
         emit("Complete", 100, "Loaded from cache")
         _publish(r, run_key, {"__done__": True, "result": cached, "from_cache": True})
         return
@@ -168,9 +183,19 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
 
     emit("Building your brief", 90, f"{len(insights)} findings ready for review")
 
+    # ── Intake snapshot (canonical, best-effort) ──────────────────────────────
+    _db = _SessionLocal()
+    try:
+        intake_result = build_intake_for_project(
+            _db, project_id, file_path=info.get("path"), file_hash=file_hash
+        )
+    finally:
+        _db.close()
+
     # ── Build canonical result ────────────────────────────────────────────────
     result = {
         "project_id": project_id,
+        "intake_result": intake_result,                      # canonical V1 (None if unavailable)
         "cleaning_summary": to_jsonable(cleaning_summary),   # backward compat — CleaningSummaryCards legacy fallback
         "cleaning_result": cleaning_result,                  # canonical V1
         "profile_result": to_jsonable(profile),              # canonical V1

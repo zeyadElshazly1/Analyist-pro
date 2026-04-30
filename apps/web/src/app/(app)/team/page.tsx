@@ -22,7 +22,7 @@ import {
   TeamMember,
   ApiError,
 } from "@/lib/api";
-import { PLAN_NAMES, PLAN_LABELS } from "@/lib/plans";
+import { PLAN_NAMES, PLAN_LABELS, normalizePlan } from "@/lib/plans";
 
 function SeatBar({ used, limit }: { used: number; limit: number }) {
   const pct = Math.min(100, (used / limit) * 100);
@@ -141,8 +141,9 @@ export default function TeamPage() {
   const [newInviteLink, setNewInviteLink] = useState<string | null>(null);
   const [copiedNew, setCopiedNew] = useState(false);
 
+  const canonicalPlan = normalizePlan(user?.plan);
   useEffect(() => {
-    if (!loadingUser && user?.plan === PLAN_NAMES.STUDIO) {
+    if (!loadingUser && canonicalPlan === PLAN_NAMES.STUDIO) {
       getTeamMembers()
         .then(setData)
         .catch(() => {})
@@ -150,7 +151,7 @@ export default function TeamPage() {
     } else if (!loadingUser) {
       setLoading(false);
     }
-  }, [user, loadingUser]);
+  }, [canonicalPlan, loadingUser]);
 
   async function handleInvite() {
     setInviting(true);
@@ -197,7 +198,7 @@ export default function TeamPage() {
     );
   }
 
-  if (user?.plan !== PLAN_NAMES.STUDIO) {
+  if (canonicalPlan !== PLAN_NAMES.STUDIO) {
     return (
       <AppShell>
         <div className="flex min-h-full flex-col items-center justify-center gap-4 bg-[#080810] p-6 text-center">
@@ -312,10 +313,10 @@ export default function TeamPage() {
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-white/30">Owner</h3>
             <div className="flex items-center gap-3">
               <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-xs font-bold text-white">
-                {user.email[0]?.toUpperCase()}
+                {user?.email?.[0]?.toUpperCase()}
               </div>
               <div>
-                <p className="text-sm text-white/80">{user.email}</p>
+                <p className="text-sm text-white/80">{user?.email}</p>
                 <span className="text-[11px] text-indigo-400">Team owner</span>
               </div>
             </div>

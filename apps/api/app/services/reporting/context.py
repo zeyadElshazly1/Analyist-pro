@@ -62,15 +62,25 @@ def build_context(
         quality_rows.append((dim, f"{sc:.0f}", badge_cls, label))
 
     # Insights (analyst: up to 10; executive: up to 3)
+    # Prefer the legacy ``insights`` key when populated (so older saved runs
+    # keep working); fall back to the canonical V1 ``insight_results`` shape
+    # produced by the current pipeline.
     max_insights = 3 if mode == "executive" else 10
-    raw_insights = analysis_result.get("insights", [])
+    legacy = analysis_result.get("insights")
+    canonical = analysis_result.get("insight_results")
+    if isinstance(legacy, list) and legacy:
+        raw_insights = legacy
+    elif isinstance(canonical, list):
+        raw_insights = canonical
+    else:
+        raw_insights = []
     insights = []
     for ins in raw_insights[:max_insights]:
         severity = str(ins.get("severity", "medium")).lower()
         insights.append({
-            "finding":   ins.get("finding", ins.get("title", "")),
+            "finding":   ins.get("finding") or ins.get("title") or ins.get("explanation", ""),
             "evidence":  ins.get("evidence", ""),
-            "action":    ins.get("recommendation", ins.get("action", "")),
+            "action":    ins.get("recommendation") or ins.get("action", ""),
             "severity":  severity,
             "badge_cls": _SEVERITY_BADGE.get(severity, "badge-purple"),
         })
@@ -127,6 +137,16 @@ def build_context(
         "project_name": project_name,
     }
 
+    # Carry compare_result through unchanged so downstream templates / Excel
+    # writers can read it when present.  We do not transform it here — the
+    # canonical CompareResult dict is well-typed already and the current HTML
+    # template does not render compare sections.  Keeping it on the context
+    # dict means a future small rendering addition can read it without a
+    # second context-builder change.
+    compare_result = analysis_result.get("compare_result")
+    if not isinstance(compare_result, dict):
+        compare_result = None
+
     return {
         "title":           project_name,
         "date":            datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -144,4 +164,9 @@ def build_context(
         "health_chart":    chart_configs.get("health_chart"),
         "missing_chart":   chart_configs.get("missing_chart"),
         "trust_meta":      trust_meta,
+        # Optional canonical block — None when no comparison was run for this
+        # project.  Templates that opt in can render it; existing templates
+        # ignore it.
+        "compare_result":  compare_result,
+        "has_compare":     compare_result is not None,
     }

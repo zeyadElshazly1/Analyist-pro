@@ -2,6 +2,8 @@
 
 import { useCallback, useRef, useState } from "react";
 import { uploadFile, getDataPreview, ApiError } from "@/lib/api";
+import { useUser } from "@/lib/user-context";
+import { uploadHintForPlan } from "@/lib/plans";
 import { Upload, FileText, CheckCircle2, AlertCircle, TableIcon } from "lucide-react";
 import { IntakeReview } from "./intake-review";
 
@@ -30,6 +32,12 @@ export function UploadDataset({ projectId, onUploaded }: Props) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [intakeResult, setIntakeResult] = useState<IntakeResult | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { user, loading: userLoading } = useUser();
+  // Show plan-specific hint when we know the plan; otherwise show a safe
+  // generic message that does not promise a specific limit.
+  const sizeHint = !user && userLoading
+    ? "File size limit depends on your plan."
+    : uploadHintForPlan(user?.plan);
 
   function selectFile(f: File) {
     setFile(f);
@@ -115,7 +123,7 @@ export function UploadDataset({ projectId, onUploaded }: Props) {
                 Drag & drop your file, or{" "}
                 <span className="text-indigo-400 underline underline-offset-2">browse</span>
               </p>
-              <p className="mt-1 text-xs text-white/30">CSV, XLSX, XLS · Max 100 MB</p>
+              <p className="mt-1 text-xs text-white/30">CSV, XLSX, XLS · {sizeHint}</p>
             </div>
           </div>
         )}

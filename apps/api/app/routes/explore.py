@@ -1,13 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 import pandas as pd
+from sqlalchemy.orm import Session
 
+from app.db import get_db
 from app.middleware.auth import get_current_user
 from app.middleware.plans import require_feature
 from app.models import User
+from app.services.access_guards import get_project_for_user
 from app.services.dataset_loader import load_prepared
 from app.services.serializers import to_jsonable
-from app.state import PROJECT_FILES
+from app.state import PROJECT_FILES, get_project_file_info
 from app.services.timeseries import detect_date_columns, run_timeseries
 from app.services.outlier_explorer import get_numeric_columns, explore_outliers
 from app.services.correlation_matrix import build_correlation_matrix
@@ -18,16 +21,21 @@ from app.services.multifile_compare import compare_files
 router = APIRouter(prefix="/explore", tags=["explore"])
 
 
-def _load(project_id: int):
-    """Load + clean a dataset by project_id. Raises HTTPException on failure."""
+def _load_owned(db: Session, user: User, project_id: int):
+    """Verify ownership, then load + clean the dataset for the project."""
+    get_project_for_user(db, project_id, user)
     return load_prepared(project_id)
 
 
 # ── Time Series ───────────────────────────────────────────────────────────────
 
 @router.get("/timeseries/columns")
-def timeseries_columns(project_id: int = Query(...), current_user: User = Depends(get_current_user)):
-    df = _load(project_id)
+def timeseries_columns(
+    project_id: int = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    df = _load_owned(db, current_user, project_id)
     date_cols = detect_date_columns(df)
     numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
     return {"date_columns": date_cols, "value_columns": numeric_cols}
@@ -41,8 +49,12 @@ class TimeseriesRequest(BaseModel):
 
 
 @router.post("/timeseries/run")
-def timeseries_run(payload: TimeseriesRequest, current_user: User = Depends(get_current_user)):
-    df = _load(payload.project_id)
+def timeseries_run(
+    payload: TimeseriesRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    df = _load_owned(db, current_user, payload.project_id)
     try:
         result = run_timeseries(df, payload.date_col, payload.value_col, payload.aggregation)
         return to_jsonable(result)
@@ -59,8 +71,12 @@ class ProjectRequest(BaseModel):
 
 
 @router.post("/duplicates")
-def duplicates(payload: ProjectRequest, current_user: User = Depends(get_current_user)):
-    df = _load(payload.project_id)
+def duplicates(
+    payload: ProjectRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    df = _load_owned(db, current_user, payload.project_id)
     try:
         result = detect_duplicates(df)
         return to_jsonable(result)
@@ -71,8 +87,12 @@ def duplicates(payload: ProjectRequest, current_user: User = Depends(get_current
 # ── Outliers ──────────────────────────────────────────────────────────────────
 
 @router.get("/outliers/columns")
-def outlier_columns(project_id: int = Query(...), current_user: User = Depends(get_current_user)):
-    df = _load(project_id)
+def outlier_columns(
+    project_id: int = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    df = _load_owned(db, current_user, project_id)
     return {"numeric_columns": get_numeric_columns(df)}
 
 
@@ -82,8 +102,12 @@ class OutlierRequest(BaseModel):
 
 
 @router.post("/outliers/run")
-def outliers_run(payload: OutlierRequest, current_user: User = Depends(get_current_user)):
-    df = _load(payload.project_id)
+def outliers_run(
+    payload: OutlierRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    df = _load_owned(db, current_user, payload.project_id)
     try:
         result = explore_outliers(df, payload.column)
         return to_jsonable(result)
@@ -96,8 +120,12 @@ def outliers_run(payload: OutlierRequest, current_user: User = Depends(get_curre
 # ── Correlations ──────────────────────────────────────────────────────────────
 
 @router.post("/correlations")
-def correlations(payload: ProjectRequest, current_user: User = Depends(get_current_user)):
-    df = _load(payload.project_id)
+def correlations(
+    payload: ProjectRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    df = _load_owned(db, current_user, payload.project_id)
     try:
         result = build_correlation_matrix(df)
         return to_jsonable(result)
@@ -110,8 +138,12 @@ def correlations(payload: ProjectRequest, current_user: User = Depends(get_curre
 # ── Column Compare ────────────────────────────────────────────────────────────
 
 @router.get("/compare-columns/columns")
-def compare_columns_options(project_id: int = Query(...), current_user: User = Depends(get_current_user)):
-    df = _load(project_id)
+def compare_columns_options(
+    project_id: int = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    df = _load_owned(db, current_user, project_id)
     return {"columns": get_columns(df)}
 
 
@@ -122,8 +154,12 @@ class ColumnCompareRequest(BaseModel):
 
 
 @router.post("/compare-columns/run")
-def compare_columns_run(payload: ColumnCompareRequest, current_user: User = Depends(get_current_user)):
-    df = _load(payload.project_id)
+def compare_columns_run(
+    payload: ColumnCompareRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    df = _load_owned(db, current_user, payload.project_id)
     try:
         result = compare_columns(df, payload.col_a, payload.col_b)
         return to_jsonable(result)
@@ -144,14 +180,19 @@ class MultifileRequest(BaseModel):
 def multifile_compare(
     payload: MultifileRequest,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
     _plan: None = Depends(require_feature("file_compare")),
 ):
+    # Both projects must belong to the current user
+    get_project_for_user(db, payload.project_id_a, current_user)
+    get_project_for_user(db, payload.project_id_b, current_user)
+
     file_a = get_project_file_info(payload.project_id_a)
     if not file_a:
-        raise HTTPException(status_code=404, detail=f"No file for project {payload.project_id_a}")
+        raise HTTPException(status_code=404, detail="Project not found.")
     file_b = get_project_file_info(payload.project_id_b)
     if not file_b:
-        raise HTTPException(status_code=404, detail=f"No file for project {payload.project_id_b}")
+        raise HTTPException(status_code=404, detail="Project not found.")
 
     path_a = file_a["path"]
     path_b = file_b["path"]
@@ -169,6 +210,20 @@ def multifile_compare(
         project_id_a=payload.project_id_a,
         project_id_b=payload.project_id_b,
     ).model_dump()
+
+    # ── Persist compare_result into the active run ────────────────────────────
+    # Pinned to the *left-hand* project (project_id_a) — that's the project the
+    # consultant is currently working in.  Best-effort: if the project has no
+    # report_ready run yet, the live response is still returned to the caller
+    # and the comparison is simply not durable until the next analysis run.
+    # Other canonical result blocks (intake/cleaning/health/insight) are not
+    # touched.
+    try:
+        from app.services.run_tracker import persist_compare_result
+        persist_compare_result(db, payload.project_id_a, compare_result)
+    except Exception:
+        # Swallow — persistence must never break the live compare response.
+        pass
 
     try:
         from app.db import SessionLocal
@@ -206,10 +261,11 @@ def join_columns(
     project_id_left: int = Query(...),
     project_id_right: int = Query(...),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Return column lists for both projects + suggested join keys (common names)."""
-    df_left = _load(project_id_left)
-    df_right = _load(project_id_right)
+    df_left = _load_owned(db, current_user, project_id_left)
+    df_right = _load_owned(db, current_user, project_id_right)
     left_cols = df_left.columns.tolist()
     right_cols = df_right.columns.tolist()
     suggested = sorted(set(left_cols) & set(right_cols))
@@ -229,15 +285,19 @@ class JoinRequest(BaseModel):
 
 
 @router.post("/join/run")
-def join_run(payload: JoinRequest, current_user: User = Depends(get_current_user)):
+def join_run(
+    payload: JoinRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Join two project datasets on specified keys and return a preview + stats."""
     if payload.how not in _VALID_HOW:
         raise HTTPException(
             status_code=400,
             detail=f"'how' must be one of: {', '.join(sorted(_VALID_HOW))}",
         )
-    df_left = _load(payload.project_id_left)
-    df_right = _load(payload.project_id_right)
+    df_left = _load_owned(db, current_user, payload.project_id_left)
+    df_right = _load_owned(db, current_user, payload.project_id_right)
 
     if payload.left_on not in df_left.columns:
         raise HTTPException(status_code=400, detail=f"Column '{payload.left_on}' not in left dataset.")
@@ -272,8 +332,12 @@ def join_run(payload: JoinRequest, current_user: User = Depends(get_current_user
 # ── Segments ──────────────────────────────────────────────────────────────────
 
 @router.get("/segments/columns")
-def segment_columns(project_id: int = Query(...), current_user: User = Depends(get_current_user)):
-    df = _load(project_id)
+def segment_columns(
+    project_id: int = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    df = _load_owned(db, current_user, project_id)
     categorical = df.select_dtypes(include=["object", "category"]).columns.tolist()
     numeric = df.select_dtypes(include="number").columns.tolist()
     return {"categorical_columns": categorical, "numeric_columns": numeric}
@@ -286,8 +350,12 @@ class SegmentRequest(BaseModel):
 
 
 @router.post("/segments/run")
-def segment_run(payload: SegmentRequest, current_user: User = Depends(get_current_user)):
-    df = _load(payload.project_id)
+def segment_run(
+    payload: SegmentRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    df = _load_owned(db, current_user, payload.project_id)
     if payload.segment_col not in df.columns:
         raise HTTPException(status_code=400, detail=f"Column '{payload.segment_col}' not found.")
     if payload.metric_col not in df.columns:

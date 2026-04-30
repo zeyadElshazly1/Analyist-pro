@@ -42,6 +42,7 @@ class RunDetail(RunSummary):
     has_insight_results: bool    # insight_results list is non-empty
     has_executive_panel: bool    # executive_panel block present
     has_report_result: bool      # AI story (story_result_json) generated
+    has_compare_result: bool = False  # compare_result block present (added late — default keeps old runs valid)
 
 
 class RunResults(BaseModel):
@@ -58,6 +59,7 @@ class RunResults(BaseModel):
     error_summary: Optional[str]
 
     # ── Canonical V1 result blocks ────────────────────────────────────────────
+    intake_result: Optional[dict[str, Any]] = None  # IntakeResult model dump (None for old runs)
     cleaning_result: Optional[dict[str, Any]]   # CleaningResult model dump
     health_result: Optional[dict[str, Any]]     # HealthResult model dump
     insight_results: Optional[list[Any]]        # list of InsightResult model dumps
@@ -65,3 +67,7 @@ class RunResults(BaseModel):
     executive_panel: Optional[dict[str, Any]]   # high-level summary panel
     narrative: Optional[str]                    # plain-text narrative
     story_result: Optional[dict[str, Any]]       # AI data story (story_result_json)
+    # Compare block — written by /explore/multifile and pinned to the latest run
+    # of the "current" project (project_id_a). None for runs that were never
+    # used as the left-hand side of a compare.
+    compare_result: Optional[dict[str, Any]] = None

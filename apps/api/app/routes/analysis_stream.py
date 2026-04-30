@@ -36,6 +36,7 @@ from app.services.cleaner import clean_dataset
 from app.services.file_loader import load_dataset
 from app.services.health_adapter import build_health_result
 from app.services.insight_adapter import build_insight_results
+from app.services.intake_for_analysis import build_intake_for_project
 from app.services.profiler import calculate_health_score, profile_dataset
 from app.services.run_tracker import create_run_stub, fail_run, finalise_run, set_run_status
 from app.services.serializers import to_jsonable
@@ -202,6 +203,15 @@ async def _run_analysis_stream(
         cached = get_cached_analysis(project_id, file_hash)
         if cached:
             yield emit("Reading your file", 80, "Previous analysis found — loading instantly")
+            # Backfill intake_result on cache hits if the cached payload predates
+            # the intake-persistence change (best-effort; never blocks).
+            if not cached.get("intake_result"):
+                intake_snapshot = build_intake_for_project(
+                    db, project_id, file_path=info.get("path"), file_hash=file_hash
+                )
+                if intake_snapshot:
+                    cached = {**cached, "intake_result": intake_snapshot}
+                    set_cached_analysis(project_id, file_hash, cached)
             yield emit("Building your brief", 100, "Loaded from cache")
             yield _sse({"step": "result", "progress": 100, "result": cached, "from_cache": True})
             return
@@ -286,9 +296,15 @@ async def _run_analysis_stream(
 
         set_run_status(db, run, "insights_complete")
 
+        # ── Intake snapshot (canonical, best-effort) ──────────────────────────
+        intake_result = build_intake_for_project(
+            db, project_id, file_path=info.get("path"), file_hash=file_hash
+        )
+
         result = {
             "project_id": project_id,
             "run_id": run.id if run else None,
+            "intake_result": intake_result,                      # canonical V1 (None if unavailable)
             "cleaning_summary": to_jsonable(cleaning_summary),   # backward compat — CleaningSummaryCards legacy fallback
             "cleaning_result": cleaning_result,                  # canonical V1
             "profile_result": to_jsonable(profile),              # canonical V1

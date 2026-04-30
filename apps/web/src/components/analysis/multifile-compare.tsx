@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { runMultifileCompare } from "@/lib/api";
 import type { CompareResult, CompareMetricDelta } from "@/lib/api";
 import { AlertCircle, AlertTriangle, Info } from "lucide-react";
@@ -16,7 +16,17 @@ import {
   Legend,
 } from "recharts";
 
-type Props = { currentProjectId: number; onCompareResult?: (cr: CompareResult) => void };
+type Props = {
+  currentProjectId: number;
+  onCompareResult?: (cr: CompareResult) => void;
+  /**
+   * Pre-populated compare_result from a stored run (e.g. after reopen).  When
+   * provided, the component renders the saved comparison immediately without
+   * forcing the user to re-run the compare endpoint.  Re-running compare
+   * replaces this with the fresh result.
+   */
+  initialCompareResult?: CompareResult | null;
+};
 
 const DARK_TOOLTIP = {
   contentStyle: {
@@ -48,11 +58,26 @@ function classifyDelta(pct: number | null): CompareMetricDelta["change_flag"] {
   return "stable";
 }
 
-export function MultifileCompare({ currentProjectId, onCompareResult }: Props) {
+export function MultifileCompare({ currentProjectId, onCompareResult, initialCompareResult }: Props) {
   const [otherProjectId, setOtherProjectId] = useState("");
-  const [result, setResult] = useState<(Record<string, any> & { compare_result?: CompareResult }) | null>(null);
+  // Seed from the persisted compare_result so reopened runs render the
+  // saved comparison immediately.  Wrapped in `compare_result` to match the
+  // shape of /explore/multifile's response (the canonical-first reads below
+  // already prefer compare_result over legacy raw keys).
+  const [result, setResult] = useState<(Record<string, any> & { compare_result?: CompareResult }) | null>(
+    initialCompareResult ? { compare_result: initialCompareResult } : null,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Keep local `result` in sync with `initialCompareResult` when the parent
+  // swaps stored runs (the component does not always remount).  Skipped after
+  // a fresh user-initiated compare so we don't clobber live state.
+  useEffect(() => {
+    if (initialCompareResult) {
+      setResult({ compare_result: initialCompareResult });
+    }
+  }, [initialCompareResult]);
 
   async function handleCompare() {
     const otherId = parseInt(otherProjectId);

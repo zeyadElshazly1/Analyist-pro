@@ -12,7 +12,8 @@ from app.db import get_db
 from app.middleware.auth import get_current_user
 from app.middleware.plans import plan_max_file_bytes
 from app.models import Project, ProjectFile, User
-from app.plan_names import PLAN_FREE
+from app.plan_names import PLAN_FREE, PLAN_LABELS, normalize_plan
+from app.services.access_guards import get_project_for_user
 from app.services.audit import log_event
 from app.services.cache import invalidate_project_cache
 from app.services.storage import get_local_path, save_file
@@ -33,11 +34,7 @@ async def upload_file(
     request: Request = None,  # type: ignore[assignment]
 ):
     # ── Validate project exists and belongs to user ───────────────────────────
-    project = db.query(Project).filter(
-        Project.id == project_id, Project.user_id == current_user.id
-    ).first()
-    if not project:
-        raise HTTPException(status_code=404, detail=f"Project {project_id} not found.")
+    project = get_project_for_user(db, project_id, current_user)
 
     # ── Validate file extension ───────────────────────────────────────────────
     filename = file.filename or "upload"
@@ -58,15 +55,19 @@ async def upload_file(
     if size_bytes > effective_limit:
         mb = size_bytes / (1024 * 1024)
         max_mb = effective_limit / (1024 * 1024)
+        plan_max_mb = plan_limit / (1024 * 1024)
+        canonical = normalize_plan(current_user.plan)
+        plan_label = PLAN_LABELS.get(canonical, PLAN_LABELS[PLAN_FREE])
         detail: dict | str
         if size_bytes > plan_limit:
             detail = {
                 "message": (
-                    f"File too large for your {current_user.plan or PLAN_FREE} plan "
-                    f"({mb:.1f} MB). Upgrade for larger file support."
+                    f"File too large for your {plan_label} plan "
+                    f"({mb:.1f} MB). {plan_label} allows up to {plan_max_mb:.0f} MB per file. "
+                    "Upgrade for larger file support."
                 ),
                 "feature": "file_size",
-                "current_plan": current_user.plan or PLAN_FREE,
+                "current_plan": canonical,
             }
             raise HTTPException(status_code=402, detail=detail)
         raise HTTPException(

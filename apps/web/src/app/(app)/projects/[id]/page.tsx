@@ -7,6 +7,7 @@ import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
 import { UploadDataset } from "@/components/project/upload-dataset";
 import { RunAnalysis, type AnalysisResult } from "@/components/project/run-analysis";
+import { DEFAULT_LANDING_TAB_LABEL } from "@/components/project/project-tabs";
 import {
   getProject,
   getAnalysisHistory,
@@ -32,32 +33,56 @@ type HistoryEntry = { id: number; project_id: number; created_at: string; file_h
 
 // ── Adapter: canonical RunResults → RunAnalysis shape ─────────────────────────
 
+// Canonical insight confidence scale is 0.0–1.0 (see app/schemas/insight.py).
+// Live SSE results already arrive on this scale.  This adapter is the single
+// boundary that has historically corrupted reopened runs by multiplying by 100;
+// instead we now defensively NORMALIZE legacy stored values that are > 1 back
+// down to the 0.0–1.0 canonical scale.  After this point, all downstream
+// state and components can assume confidence ∈ [0, 1].
+function normalizeInsightConfidence<T extends { confidence?: number }>(i: T): T {
+  if (typeof i.confidence !== "number" || !Number.isFinite(i.confidence)) {
+    return i;
+  }
+  // Legacy reopened runs may have been persisted on a 0–100 scale by an
+  // earlier version of this adapter; bring them back to canonical 0.0–1.0.
+  const c = i.confidence > 1 ? i.confidence / 100 : i.confidence;
+  // Clamp into the canonical range so a corrupted value (e.g. NaN-ish or
+  // >100) cannot leak into UI scoring/sorting heuristics.
+  const clamped = Math.max(0, Math.min(1, c));
+  return clamped === i.confidence ? i : { ...i, confidence: clamped };
+}
+
 function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
   const hr = stored.health_result;
   const cr = stored.cleaning_result;
   const ir = stored.insight_results ?? [];
   const pr = stored.profile_result ?? [];
 
-  // Canonical InsightResult has confidence 0.0–1.0; UI expects 0–100.
-  const insights = ir.map((i: any) =>
-    typeof i.confidence === "number" && i.confidence <= 1
-      ? { ...i, confidence: Math.round(i.confidence * 100) }
-      : i
-  );
+  // Preserve canonical 0.0–1.0 confidence (with defensive clamp for any
+  // legacy 0–100 values still in older result_json blobs).
+  const normalizedInsights = ir.map((i: any) => normalizeInsightConfidence(i));
 
   return {
     run_id: stored.run_id,
     analysis_id: stored.run_id,
+    // intake_result carries parse confidence, warnings, preview sample, etc.
+    // for the Intake Review step on reopened runs (null for legacy result_json
+    // that pre-dates intake persistence — IntakeReview shows a clean empty state).
+    intake_result: stored.intake_result ?? null,
     // health_result passes the canonical block directly — HealthScore/StatsCards read from it
     health_result: hr ?? null,
     // cleaning_result passes the canonical block directly — CleaningSummaryCards/CleaningReview read from it
     cleaning_result: cr ?? null,
-    insights,
+    insights: normalizedInsights,
+    insight_results: normalizedInsights,
     profile_result: pr,
     narrative: stored.narrative ?? undefined,
     executive_panel: stored.executive_panel ?? undefined,
     // story_result: pre-populate DataStoryView so reopening shows stored story
     story_result: stored.story_result ?? undefined,
+    // compare_result: rehydrate the Compare tab and Report Builder context on
+    // reopened runs (null when this run was never paired against another file).
+    compare_result: stored.compare_result ?? null,
   };
 }
 
@@ -153,7 +178,10 @@ function RunStateBanner({
               {run.filename && finishedAt && <span className="mx-1.5 text-white/20">·</span>}
               {finishedAt && <span>{finishedAt}</span>}
               <span className="mx-1.5 text-white/20">·</span>
-              <span className="text-white/35">Opens at Intake Review</span>
+              {/* Single source of truth for the landing step label, see
+                  DEFAULT_LANDING_TAB(_LABEL) in project-tabs.tsx.  Keep this
+                  honest — fresh and reopened runs both land on this step. */}
+              <span className="text-white/35">Opens at {DEFAULT_LANDING_TAB_LABEL}</span>
             </p>
           </div>
         </div>
@@ -161,9 +189,10 @@ function RunStateBanner({
           onClick={onOpenPrevious}
           disabled={loadingPrevious}
           className="flex shrink-0 items-center gap-1.5 rounded-lg bg-emerald-600/20 px-3 py-1.5 text-xs font-medium text-emerald-300 hover:bg-emerald-600/30 disabled:opacity-60 transition-colors"
+          aria-label={`Open the saved analysis at ${DEFAULT_LANDING_TAB_LABEL}`}
         >
           {loadingPrevious ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
-          Resume analysis
+          Open run
         </button>
       </div>
     );

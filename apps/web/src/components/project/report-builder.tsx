@@ -70,10 +70,17 @@ type Props = {
   onNavigateTo?: (tab: string) => void;
 };
 
+// Selection key is normally the canonical ``insight_id`` string, falling
+// back to a numeric positional index only for legacy drafts (or the
+// vanishingly rare insight that lacks an id).  Storing the key — not the
+// index — means a re-run that re-orders findings can no longer silently
+// swap which findings end up in the export.
+type SelectionKey = string | number;
+
 type Draft = {
   title: string;
   summary: string;
-  selectedIndices: number[];
+  selected: SelectionKey[];
   template: string | undefined;
 };
 
@@ -83,6 +90,29 @@ type ExportRecord = {
   at: Date;
   message?: string;
 };
+
+// Map the canonical ReportExportRecord (audit-log backed) onto the local
+// strip representation.  ``completed`` and ``pending`` collapse onto
+// ``success`` for display — pending is rare today (no async export queue)
+// and rendering it as success keeps the strip simple.  Unknown statuses
+// fall back to ``failed`` so the row is shown rather than silently dropped.
+function fromBackendExport(rec: import("@/lib/api").ReportExportRecord): ExportRecord | null {
+  if (!rec.format || (rec.format !== "pdf" && rec.format !== "xlsx" && rec.format !== "html")) {
+    return null;
+  }
+  let status: ExportRecord["status"];
+  if (rec.status === "completed" || rec.status === "pending") status = "success";
+  else if (rec.status === "unavailable") status = "unavailable";
+  else status = "failed";
+
+  const at = rec.exported_at ? new Date(rec.exported_at) : new Date();
+  return {
+    format: rec.format,
+    status,
+    at: isNaN(at.getTime()) ? new Date() : at,
+    message: rec.error_message ?? undefined,
+  };
+}
 
 const FORMAT_LABEL: Record<string, string> = { pdf: "PDF", xlsx: "Excel", html: "HTML" };
 
@@ -113,9 +143,11 @@ function severityBadge(sev: string | undefined) {
 
 function insightReportSafe(i: InsightItem): boolean {
   if (typeof i.report_safe === "boolean") return i.report_safe;
+  // Canonical insight confidence is 0.0–1.0 (see app/schemas/insight.py and
+  // the adapter in projects/[id]/page.tsx).  Multiply for the threshold only.
   const conf =
-    typeof i.confidence === "number"
-      ? i.confidence <= 1 ? i.confidence * 100 : i.confidence
+    typeof i.confidence === "number" && Number.isFinite(i.confidence)
+      ? Math.max(0, Math.min(100, i.confidence * 100))
       : 0;
   const cat = i.category ?? "";
   return (
@@ -123,6 +155,34 @@ function insightReportSafe(i: InsightItem): boolean {
     conf >= 60 &&
     cat !== "data_quality" && cat !== "missing_pattern"
   );
+}
+
+// Stable identity for an insight in the draft selection.  Prefer the
+// canonical ``insight_id`` (a deterministic hex digest the pipeline emits
+// on every run); fall back to the positional index only when the
+// pipeline did not produce an id, so legacy results still toggle.
+function selectionKey(ins: InsightItem, idx: number): SelectionKey {
+  return typeof ins.insight_id === "string" && ins.insight_id
+    ? ins.insight_id
+    : idx;
+}
+
+// Resolve a draft selection key back to the insight in the current run.
+// Strings match by ``insight_id``; numbers fall back to positional index
+// so legacy drafts keep working.  Returns ``undefined`` when the key has
+// no match — callers should drop missing entries rather than coerce
+// them into the wrong finding.
+function findInsightByKey(
+  list: InsightItem[],
+  key: SelectionKey,
+): InsightItem | undefined {
+  if (typeof key === "string") {
+    return list.find((i) => i.insight_id === key);
+  }
+  if (typeof key === "number" && key >= 0 && key < list.length) {
+    return list[key];
+  }
+  return undefined;
 }
 
 const GRADE_CFG: Record<string, { card: string; text: string; verdict: string }> = {
@@ -277,10 +337,10 @@ export function ReportBuilder({
   const allInsights: InsightItem[] = insightResults?.length ? insightResults : insights;
 
   const [draft, setDraft] = useState<Draft>({
-    title:           projectName ?? "",
-    summary:         narrative ?? "",
-    selectedIndices: [],
-    template:        undefined,
+    title:    projectName ?? "",
+    summary:  narrative ?? "",
+    selected: [],
+    template: undefined,
   });
   const [saving,    setSaving]    = useState(false);
   const [saved,     setSaved]     = useState(false);
@@ -300,28 +360,45 @@ export function ReportBuilder({
     getDraftReport(projectId)
       .then((d) => {
         if (!d) {
-          // No saved draft — auto-select top report-safe insights
+          // No saved draft — auto-select only insights that the pipeline
+          // explicitly flagged ``report_safe === true``.  Anything where
+          // ``report_safe`` is undefined or false stays unselected so the
+          // consultant has to opt it in.
           const topSafe = allInsights
             .map((ins, idx) => ({ ins, idx }))
-            .filter(({ ins }) => ins.report_safe !== false)
+            .filter(({ ins }) => ins.report_safe === true)
             .slice(0, 5)
-            .map(({ idx }) => idx);
+            .map(({ ins, idx }) => selectionKey(ins, idx));
           setDraft((prev) => ({
             ...prev,
-            title:           projectName ?? "",
-            summary:         narrative ?? "",
-            selectedIndices: topSafe,
+            title:    projectName ?? "",
+            summary:  narrative ?? "",
+            selected: topSafe,
           }));
+          setExportHistory([]);
           setLoaded(true);
           return;
         }
         const rr = d.report_result;
+        // Hydrate whatever the backend returned: stable insight_id strings
+        // for new drafts, numeric indices for legacy ones.  Both shapes
+        // resolve correctly through ``findInsightByKey`` below.
+        const stored = (d.selected_insight_ids ?? []) as SelectionKey[];
         setDraft({
-          title:           rr?.title     ?? d.title     ?? projectName ?? "",
-          summary:         rr?.summary   ?? d.summary   ?? narrative   ?? "",
-          selectedIndices: d.selected_insight_ids ?? [],
-          template:        rr?.template  ?? d.template  ?? undefined,
+          title:    rr?.title    ?? d.title    ?? projectName ?? "",
+          summary:  rr?.summary  ?? d.summary  ?? narrative   ?? "",
+          selected: stored,
+          template: rr?.template ?? d.template ?? undefined,
         });
+        // Hydrate the export-history strip from the audit-log-backed
+        // report_result.export_statuses.  The backend already returns up
+        // to the most recent 10 attempts in newest-first order; we cap at
+        // 6 here to match the local-append slice and keep the strip tight.
+        const remoteHistory = (rr?.export_statuses ?? [])
+          .map(fromBackendExport)
+          .filter((x): x is ExportRecord => x !== null)
+          .slice(0, 6);
+        setExportHistory(remoteHistory);
         setLoaded(true);
       })
       .catch(() => {
@@ -345,7 +422,7 @@ export function ReportBuilder({
         await saveDraftReport(projectId, {
           title:                next.title,
           summary:              next.summary,
-          selected_insight_ids: next.selectedIndices,
+          selected_insight_ids: next.selected,
           selected_chart_ids:   [],
           template:             next.template ?? null,
         });
@@ -366,13 +443,14 @@ export function ReportBuilder({
     });
   }
 
-  function toggleInsight(idx: number) {
+  function toggleInsight(ins: InsightItem, idx: number) {
+    const key = selectionKey(ins, idx);
     setDraft((prev) => {
       const next = {
         ...prev,
-        selectedIndices: prev.selectedIndices.includes(idx)
-          ? prev.selectedIndices.filter((i) => i !== idx)
-          : [...prev.selectedIndices, idx],
+        selected: prev.selected.includes(key)
+          ? prev.selected.filter((k) => k !== key)
+          : [...prev.selected, key],
       };
       persistDraft(next);
       return next;
@@ -383,6 +461,27 @@ export function ReportBuilder({
     setExportHistory((prev) => [rec, ...prev].slice(0, 6));
   }
 
+  // Re-fetch the draft after an export attempt and replace the local
+  // history with the canonical, audit-log-backed list.  This is what
+  // makes a refresh / reopen show the exact same strip the user saw
+  // immediately after exporting — no duplicates, no drift.  Best-effort
+  // only; if the GET fails the optimistic local row stays visible.
+  const refreshExportHistory = useCallback(async () => {
+    try {
+      const d = await getDraftReport(projectId);
+      const rr = d?.report_result;
+      const remoteHistory = (rr?.export_statuses ?? [])
+        .map(fromBackendExport)
+        .filter((x): x is ExportRecord => x !== null)
+        .slice(0, 6);
+      if (remoteHistory.length > 0) {
+        setExportHistory(remoteHistory);
+      }
+    } catch {
+      // silent — keep the optimistic local row
+    }
+  }, [projectId]);
+
   async function handleExport(format: "pdf" | "xlsx" | "html") {
     setExportErr(null);
     setPdfUnavailable(false);
@@ -390,6 +489,7 @@ export function ReportBuilder({
     setExporting(format);
     try {
       await exportReport(projectId, format);
+      // Optimistic append for instant feedback…
       pushExportRecord({ format, status: "success", at: new Date() });
     } catch (e) {
       if (e instanceof ApiError && e.status === 501 && format === "pdf") {
@@ -402,14 +502,21 @@ export function ReportBuilder({
       }
     } finally {
       setExporting(null);
+      // …then reconcile against the audit-log-backed canonical list so
+      // the row carries the server timestamp and survives a page refresh.
+      refreshExportHistory();
     }
   }
 
   // ── Derived preview values ──────────────────────────────────────────────────
 
-  const selectedInsights = draft.selectedIndices
-    .map((idx) => allInsights[idx])
-    .filter(Boolean);
+  // Resolve every saved selection key back to the live insight on this run.
+  // Missing keys (e.g. an insight_id from a previous run that no longer
+  // exists) are dropped silently — we'd rather show fewer findings than
+  // surface the wrong one.
+  const selectedInsights = draft.selected
+    .map((k) => findInsightByKey(allInsights, k))
+    .filter((x): x is InsightItem => Boolean(x));
 
   const actionItems = [
     ...(executivePanel?.action_plan ?? []).slice(0, 4).map((a) => ({
@@ -427,7 +534,7 @@ export function ReportBuilder({
 
   // Report is "weak" when there is nothing meaningful to export yet
   const summaryTooShort = draft.summary.trim().length < 40;
-  const noFindingsSelected = draft.selectedIndices.length === 0 && allInsights.length > 0;
+  const noFindingsSelected = selectedInsights.length === 0 && allInsights.length > 0;
   const reportIsWeak = noFindingsSelected || summaryTooShort;
 
   // ── Loading state ──────────────────────────────────────────────────────────
@@ -508,17 +615,18 @@ export function ReportBuilder({
                 Select findings to include
               </label>
               <span className="text-xs text-white/25">
-                {draft.selectedIndices.length} / {Math.min(allInsights.length, 10)} selected
+                {selectedInsights.length} / {Math.min(allInsights.length, 10)} selected
               </span>
             </div>
             <div className="space-y-1.5">
               {allInsights.slice(0, 10).map((ins, idx) => {
-                const selected = draft.selectedIndices.includes(idx);
+                const key = selectionKey(ins, idx);
+                const selected = draft.selected.includes(key);
                 const label = ins.title || ins.explanation || ins.finding || `Finding ${idx + 1}`;
                 return (
                   <button
-                    key={idx}
-                    onClick={() => toggleInsight(idx)}
+                    key={typeof key === "string" ? key : `idx-${idx}`}
+                    onClick={() => toggleInsight(ins, idx)}
                     className={`flex w-full items-start gap-3 rounded-xl border px-3 py-2.5 text-left transition-all ${
                       selected
                         ? "border-indigo-500/40 bg-indigo-600/8"
@@ -543,7 +651,7 @@ export function ReportBuilder({
             </div>
 
             {/* No findings selected hint */}
-            {allInsights.length > 0 && draft.selectedIndices.length === 0 && (
+            {allInsights.length > 0 && selectedInsights.length === 0 && (
               <div className="flex items-center justify-between rounded-lg border border-amber-500/15 bg-amber-500/[0.04] px-3 py-2">
                 <p className="text-xs text-amber-300/80">No findings selected — pick 2–5 for a solid client report</p>
                 {onNavigateTo && (

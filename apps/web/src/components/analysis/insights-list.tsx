@@ -50,9 +50,14 @@ const FALLBACK_META = { dot: "bg-white/20", badge: "border-white/[0.08] bg-white
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// Canonical insight confidence is 0.0–1.0 (see app/schemas/insight.py and the
+// adapter in projects/[id]/page.tsx that normalises legacy 0–100 values to
+// canonical at the load boundary).  Render as percent here without changing
+// stored shape; clamp defensively to keep the badge/label safe against any
+// future producer that emits a value outside [0, 1].
 function confPct(c: number | undefined): number | undefined {
-  if (c === undefined) return undefined;
-  return c <= 1 ? Math.round(c * 100) : Math.round(c);
+  if (typeof c !== "number" || !Number.isFinite(c)) return undefined;
+  return Math.max(0, Math.min(100, Math.round(c * 100)));
 }
 
 function isReportSafe(i: Insight): boolean {

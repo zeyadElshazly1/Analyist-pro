@@ -4,7 +4,7 @@ import { useState } from "react";
 import { CheckCircle2, AlertTriangle, XCircle, ChevronDown, ChevronUp } from "lucide-react";
 
 // Canonical IntakeResult shape — mirrors app/schemas/intake.py
-type IntakeResult = {
+export type IntakeResult = {
   file_id?: number;
   file_name?: string;
   parse_status?: "ok" | "parsed_with_warnings" | "fallback";
@@ -92,31 +92,54 @@ function statusConfig(status: string) {
 export function IntakeReview({ filename, intakeResult, parseReport }: Props) {
   const [showDecisions, setShowDecisions] = useState(false);
 
-  const ir = intakeResult;
-  const pr = parseReport;
+  const ir = intakeResult ?? null;
+  const pr = parseReport ?? null;
 
-  // Canonical-first field resolution
-  const file_kind      = ir?.file_kind        ?? pr?.file_kind        ?? "flat_table";
-  const status         = ir?.parse_status     ?? pr?.status           ?? "ok";
-  const confidence     = ir?.confidence       ?? pr?.confidence       ?? 1;
+  // Canonical-first field resolution — every read is defensive so old runs or
+  // partial payloads never crash the component.
+  const file_kind      = (ir?.file_kind        ?? pr?.file_kind        ?? "flat_table") as string;
+  const status         = (ir?.parse_status     ?? pr?.status           ?? "ok") as string;
+  const confidenceRaw  = ir?.confidence ?? pr?.confidence;
+  const confidence     = typeof confidenceRaw === "number" ? confidenceRaw : 1;
   const header_row     = ir?.detected_header_row ?? pr?.header_row    ?? null;
-  const preamble_count = ir
-    ? (ir.preamble_rows?.length ?? 0)
+  const preamble_count = Array.isArray(ir?.preamble_rows)
+    ? ir.preamble_rows.length
     : (pr?.preamble_rows_skipped ?? 0);
-  const footer_count   = ir
-    ? (ir.footer_rows?.length ?? 0)
+  const footer_count   = Array.isArray(ir?.footer_rows)
+    ? ir.footer_rows.length
     : (pr?.footer_start_row != null ? 1 : 0);
-  const warnings       = ir?.warnings         ?? pr?.warnings         ?? [];
-  const decisions      = ir?.parsing_decisions ?? pr?.parsing_decisions ?? [];
-  const metadata       = ir?.file_metadata    ?? (pr?.metadata as Record<string, unknown> | undefined) ?? {};
+  const warnings       = (Array.isArray(ir?.warnings) ? ir.warnings : pr?.warnings ?? [])
+    .filter((w): w is string => typeof w === "string" && w.length > 0);
+  const decisions      = (Array.isArray(ir?.parsing_decisions) ? ir.parsing_decisions : pr?.parsing_decisions ?? [])
+    .filter((d): d is string => typeof d === "string" && d.length > 0);
+  const metadataRaw    = ir?.file_metadata ?? (pr?.metadata as Record<string, unknown> | undefined) ?? {};
+  const metadata       = (metadataRaw && typeof metadataRaw === "object" && !Array.isArray(metadataRaw))
+    ? (metadataRaw as Record<string, unknown>)
+    : {};
   const delimiter      = ir?.delimiter;
   const encoding       = ir?.encoding;
   const n_columns      = ir?.n_columns;
-  const preview_sample = ir?.preview_sample   ?? [];
+  const preview_sample = Array.isArray(ir?.preview_sample)
+    ? (ir.preview_sample.filter((r) => r && typeof r === "object") as Record<string, unknown>[])
+    : [];
 
-  const confidencePct    = Math.round(confidence * 100);
+  const confidencePct    = Math.max(0, Math.min(100, Math.round(confidence * 100)));
   const { Icon, label, banner, iconColor, textColor } = statusConfig(status);
-  const previewColumns   = preview_sample.length > 0 ? Object.keys(preview_sample[0]) : [];
+  // Union all keys across rows — first row may be sparse so picking only its
+  // keys would hide columns that show up later in the preview.
+  const previewColumns   = (() => {
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    for (const row of preview_sample) {
+      for (const k of Object.keys(row)) {
+        if (!seen.has(k)) {
+          seen.add(k);
+          ordered.push(k);
+        }
+      }
+    }
+    return ordered;
+  })();
   const hasPreview       = previewColumns.length > 0;
   const hasParseDetails  = delimiter != null || !!encoding || n_columns != null;
   const hasMetadata      = Object.keys(metadata).length > 0;

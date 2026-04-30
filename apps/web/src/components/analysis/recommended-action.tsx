@@ -13,9 +13,19 @@ type Insight = {
 
 type Props = { insights: Insight[] };
 
+// Canonical insight confidence is 0.0–1.0 (see app/schemas/insight.py and the
+// adapter in projects/[id]/page.tsx).  Convert to a 0–100 score only for the
+// thresholds below; we never store the percent form.
+function confPct(i: Insight, fallback: number): number {
+  if (typeof i.confidence !== "number" || !Number.isFinite(i.confidence)) {
+    return fallback;
+  }
+  return Math.max(0, Math.min(100, i.confidence * 100));
+}
+
 function isReportSafe(i: Insight): boolean {
   if (typeof i.report_safe === "boolean") return i.report_safe;
-  const conf = i.confidence === undefined ? 0 : (i.confidence <= 1 ? i.confidence * 100 : i.confidence);
+  const conf = confPct(i, 0);
   const cat  = i.category ?? i.type ?? "";
   return (
     (i.severity === "high" || i.severity === "medium") &&
@@ -27,7 +37,7 @@ function isReportSafe(i: Insight): boolean {
 function sortKey(i: Insight): number {
   const sev  = i.severity === "high" ? 0 : i.severity === "medium" ? 1 : 2;
   const safe = isReportSafe(i) ? 0 : 1;
-  const conf = i.confidence === undefined ? 50 : (i.confidence <= 1 ? i.confidence * 100 : i.confidence);
+  const conf = confPct(i, 50);
   return safe * 1000 + sev * 100 + (100 - conf);
 }
 
