@@ -91,6 +91,34 @@ def _narrate_scatter(
     )
 
 
+def _narrate_binary(col: str, n_zero: int, n_one: int, total: int) -> str:
+    """Narration for binary flag columns (0/1 encoded booleans like SeniorCitizen).
+
+    Deliberately avoids normality, skewness, or distribution-fit language —
+    none of those concepts are meaningful for a two-value flag column.
+    """
+    pct_one  = round(n_one  / max(total, 1) * 100, 1)
+    pct_zero = round(n_zero / max(total, 1) * 100, 1)
+    minority_pct = min(pct_one, pct_zero)
+    balance_note = (
+        "There is significant class imbalance — "
+        "consider oversampling the minority class before training predictive models."
+        if minority_pct < 20
+        else (
+            "Mild class imbalance exists; check whether it affects downstream model performance."
+            if minority_pct < 35
+            else "The two classes are reasonably balanced, which is favourable for analysis."
+        )
+    )
+    return (
+        f"'{col}' is a binary flag: {n_one:,} rows ({pct_one}%) have value 1 "
+        f"and {n_zero:,} rows ({pct_zero}%) have value 0. "
+        f"This column encodes a yes/no or true/false condition — "
+        f"normality tests and continuous-distribution statistics do not apply. "
+        f"{balance_note}"
+    )
+
+
 def _narrate_categorical(col: str, top_cat: str, top_pct: float, n_unique: int) -> str:
     """Template-based narration for categorical bar charts."""
     if top_pct > 50:

@@ -19,6 +19,7 @@ from .narrator import (
     _narrate_distribution,
     _narrate_scatter,
     _narrate_categorical,
+    _narrate_binary,
 )
 from .stats import _normality_badge
 
@@ -96,9 +97,21 @@ def build_timeseries_payload(df: pd.DataFrame, date_col: str, num_col: str) -> d
 def build_histogram_payload(
     df: pd.DataFrame, col: str, is_first_chart: bool
 ) -> dict | None:
-    """Return a histogram (bar) payload for col. Returns None when too few values."""
+    """Return a continuous histogram payload for col.
+
+    Returns None when:
+    - Fewer than 5 non-null values exist.
+    - The column has ≤ 2 unique values (binary flag) — those belong in
+      build_binary_bar_payload, not a continuous histogram.  Treating a 0/1
+      column as a continuous distribution would produce misleading normality
+      badges and skewness language.
+    """
     clean = df[col].dropna()
     if len(clean) < 5:
+        return None
+    # Binary flag guard — prevents "normally distributed" or skewness language
+    # being applied to a column that only ever takes two values.
+    if clean.nunique() <= 2:
         return None
 
     skew   = float(clean.skew())
@@ -128,6 +141,68 @@ def build_histogram_payload(
         "normality_p":        round(normality_p, 4) if normality_p is not None else None,
         "recommended":        is_first_chart,
         "score":              8,
+    }
+
+
+# ── Binary flag bar chart ──────────────────────────────────────────────────────
+
+def build_binary_bar_payload(df: pd.DataFrame, col: str) -> dict | None:
+    """Return a bar chart payload specifically for binary flag columns (0/1 encoded).
+
+    Renders exactly two bars with counts and percentages.
+    Uses binary-specific narration — no normality badges, no skewness language,
+    no mean/median reference lines (those statistics are not meaningful for a
+    two-value flag).
+
+    Returns None when the column does not have exactly 2 distinct non-null values.
+    """
+    clean = df[col].dropna()
+    if len(clean) < 5:
+        return None
+    unique_vals = sorted(clean.unique())
+    if len(unique_vals) != 2:
+        return None
+
+    val_low, val_high = unique_vals[0], unique_vals[1]
+    n_low  = int((clean == val_low).sum())
+    n_high = int((clean == val_high).sum())
+    total  = n_low + n_high
+
+    # Display labels: prefer integer representation for whole-number floats
+    def _label(v: float) -> str:
+        try:
+            return str(int(v)) if float(v) == int(v) else str(v)
+        except (ValueError, OverflowError):
+            return str(v)
+
+    data = [
+        {
+            "label": _label(val_low),
+            "value": n_low,
+            "pct":   round(n_low  / max(total, 1) * 100, 1),
+        },
+        {
+            "label": _label(val_high),
+            "value": n_high,
+            "pct":   round(n_high / max(total, 1) * 100, 1),
+        },
+    ]
+
+    narration = _narrate_binary(col, n_zero=n_low, n_one=n_high, total=total)
+
+    return {
+        "type":        "bar",
+        "title":       f"Breakdown of {col}",
+        "description": f"Binary flag distribution of {col} ({_label(val_low)} vs {_label(val_high)})",
+        "insight":     narration,
+        "x_key":       "label",
+        "y_key":       "value",
+        "x_label":     col,
+        "y_label":     "Count",
+        "data":        data,
+        "is_binary":   True,   # hint to the frontend: render as a binary-flag breakdown
+        "recommended": False,
+        "score":       6,
     }
 
 
