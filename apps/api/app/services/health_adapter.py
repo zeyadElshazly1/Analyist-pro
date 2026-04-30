@@ -85,11 +85,16 @@ def build_health_result(
 # ── Sub-builders ──────────────────────────────────────────────────────────────
 
 def _build_health_score(health: dict) -> HealthScore:
+    # max_scores carries the dataset-specific dimension weight dict
+    # (e.g. uniqueness=30 for transactional, uniqueness=20 for general).
+    # Expose it as breakdown_max so frontends never need to hardcode denominators.
+    raw_max: dict = health.get("max_scores", {})
     return HealthScore(
         total_score=float(health["total"]),          # "total" → "total_score" rename
         grade=health["grade"],
         label=health["label"],
         breakdown=dict(health["breakdown"]),
+        breakdown_max={k: float(v) for k, v in raw_max.items()},
         dataset_type=health["dataset_type"],
         dataset_type_confidence=float(health.get("dataset_type_confidence", 100)) / 100.0,
     )

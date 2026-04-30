@@ -59,6 +59,16 @@ class HealthScore(BaseModel):
             "completeness, uniqueness, consistency, validity, structure."
         ),
     )
+    breakdown_max: dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "Maximum achievable score per dimension for this run's detected dataset_type. "
+            "Frontend consumers MUST use these as denominators when displaying 'value/max' "
+            "breakdowns — the maxima differ by dataset type (e.g. uniqueness=30 for "
+            "transactional datasets vs uniqueness=20 for general). "
+            "Absent on legacy runs (pre-V1 schema); fall back to hardcoded 'general' defaults."
+        ),
+    )
     dataset_type: DatasetType = Field(
         description="Detected dataset category — drives dimension weighting.",
     )

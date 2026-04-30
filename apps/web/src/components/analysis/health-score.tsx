@@ -15,9 +15,36 @@ type Props = {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const DIMENSION_MAX: Record<string, number> = {
+// Fallback maxima matching the "general" dataset-type weights.
+// These are ONLY used when the backend does not supply breakdown_max
+// (legacy runs pre-V1 schema).  All current runs supply breakdown_max
+// via HealthScore.breakdown_max so this constant is never reached for
+// new data.  Do NOT add new hardcoded values here — extend the backend
+// health_scorer._HEALTH_WEIGHTS table instead.
+const FALLBACK_DIMENSION_MAX: Record<string, number> = {
   completeness: 30, uniqueness: 20, consistency: 20, validity: 15, structure: 15,
 };
+
+/**
+ * Return the correct maximum score for a dimension in this run.
+ *
+ * Prefers the backend-supplied breakdownMax (from HealthScore.breakdown_max),
+ * which reflects the actual dataset-type weights used by the scorer.
+ * Falls back to FALLBACK_DIMENSION_MAX only for legacy runs.
+ *
+ * This function is the single source of truth for denominators — never
+ * reference FALLBACK_DIMENSION_MAX directly outside of this helper.
+ */
+function getDimensionMax(
+  key: string,
+  breakdownMax: Record<string, number> | undefined,
+): number {
+  if (breakdownMax && typeof breakdownMax[key] === "number") {
+    return breakdownMax[key];
+  }
+  return FALLBACK_DIMENSION_MAX[key] ?? 100;
+}
+
 const DIMENSION_LABEL: Record<string, string> = {
   completeness: "Completeness", uniqueness: "Uniqueness",
   consistency: "Consistency",   validity: "Validity",  structure: "Structure",
@@ -110,14 +137,22 @@ function derivePositives(
   duplicates: Record<string, any> | undefined,
   missingness: Record<string, any> | undefined,
   highWarnings: number,
+  breakdownMax: Record<string, number> | undefined,
 ): string[] {
   const out: string[] = [];
   if (breakdown) {
-    if ((breakdown.completeness ?? 0) / 30 >= 0.9)  out.push("Completeness is strong — very few missing values");
-    if ((breakdown.uniqueness ?? 0)   / 20 >= 0.9)  out.push("Uniqueness is strong — minimal duplicates");
-    if ((breakdown.consistency ?? 0)  / 20 >= 0.9)  out.push("Data formats are consistent");
-    if ((breakdown.validity ?? 0)     / 15 >= 0.9)  out.push("Value distributions look normal");
-    if ((breakdown.structure ?? 0)    / 15 >= 0.9)  out.push("Column structure is clean");
+    // Use dynamic maxima from the backend so "0.9 × max" is always meaningful
+    // regardless of dataset type (transactional uniqueness=30 vs general=20, etc.)
+    if ((breakdown.completeness ?? 0) / getDimensionMax("completeness", breakdownMax) >= 0.9)
+      out.push("Completeness is strong — very few missing values");
+    if ((breakdown.uniqueness   ?? 0) / getDimensionMax("uniqueness",   breakdownMax) >= 0.9)
+      out.push("Uniqueness is strong — minimal duplicates");
+    if ((breakdown.consistency  ?? 0) / getDimensionMax("consistency",  breakdownMax) >= 0.9)
+      out.push("Data formats are consistent");
+    if ((breakdown.validity     ?? 0) / getDimensionMax("validity",     breakdownMax) >= 0.9)
+      out.push("Value distributions look normal");
+    if ((breakdown.structure    ?? 0) / getDimensionMax("structure",    breakdownMax) >= 0.9)
+      out.push("Column structure is clean");
   }
   if (!breakdown && duplicates?.duplicate_row_count === 0) out.push("No duplicate rows");
   if (!breakdown && (missingness?.missing_cell_pct ?? 100) < 1) out.push("Missing data is under 1%");
@@ -129,11 +164,12 @@ function derivePositives(
 
 export function HealthScore({ score, healthResult }: Props) {
   // Canonical-first reads
-  const hs          = healthResult?.health_score;
-  const value       = Math.round(hs?.total_score ?? score?.total ?? score?.score ?? 0);
-  const grade       = hs?.grade      ?? score?.grade ?? "–";
-  const breakdown   = hs?.breakdown  ?? score?.breakdown;
-  const datasetType = hs?.dataset_type;
+  const hs           = healthResult?.health_score;
+  const value        = Math.round(hs?.total_score ?? score?.total ?? score?.score ?? 0);
+  const grade        = hs?.grade       ?? score?.grade ?? "–";
+  const breakdown    = hs?.breakdown   ?? score?.breakdown;
+  const breakdownMax = hs?.breakdown_max as Record<string, number> | undefined;
+  const datasetType  = hs?.dataset_type;
   const rowCount    = healthResult?.row_count    as number | undefined;
   const colCount    = healthResult?.column_count as number | undefined;
 
@@ -155,7 +191,7 @@ export function HealthScore({ score, healthResult }: Props) {
 
   // Derived sections
   const riskItems  = deriveClientRisk(missingness, duplicates, highWarnings.length);
-  const positives  = derivePositives(breakdown, duplicates, missingness, highWarnings.length);
+  const positives  = derivePositives(breakdown, duplicates, missingness, highWarnings.length, breakdownMax);
 
   const theme       = scoreTheme(value);
   const radius      = 34;
@@ -165,7 +201,14 @@ export function HealthScore({ score, healthResult }: Props) {
   const subScores = breakdown
     ? (["completeness", "uniqueness", "consistency", "validity", "structure"] as const)
         .filter((k) => breakdown[k] != null)
-        .map((k) => ({ key: k, label: DIMENSION_LABEL[k], value: breakdown[k] as number, max: DIMENSION_MAX[k] }))
+        .map((k) => ({
+          key: k,
+          label: DIMENSION_LABEL[k],
+          value: breakdown[k] as number,
+          // Use the backend-provided max for this run's dataset type so the
+          // displayed fraction (e.g. "30 / 30") is always correct.
+          max: getDimensionMax(k, breakdownMax),
+        }))
     : [];
 
   return (
