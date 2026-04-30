@@ -2,7 +2,13 @@
 Tests for the health endpoint and project CRUD (Phase 0 + Phase 1).
 """
 import json
+import time
 
+import jwt
+from cryptography.hazmat.primitives.asymmetric import ec
+from jwt.algorithms import ECAlgorithm
+
+import app.middleware.auth as auth_mod
 from app.models import (
     AnalysisResult,
     PreparedDataset,
@@ -16,6 +22,8 @@ from tests.conftest import TestingSessionLocal, _make_test_jwt
 
 OTHER_USER_ID = "00000000-0000-0000-0000-0000000000aa"
 OTHER_USER_EMAIL = "other-project-user@example.com"
+ES256_USER_ID = "00000000-0000-0000-0000-0000000000ee"
+ES256_USER_EMAIL = "es256@example.com"
 
 
 def _other_headers(client) -> dict:
@@ -24,6 +32,34 @@ def _other_headers(client) -> dict:
     r = client.get("/auth/me", headers=headers)
     assert r.status_code == 200, r.text
     return headers
+
+
+def _es256_headers(monkeypatch) -> dict:
+    supabase_url = "https://test-project.supabase.co"
+    kid = "test-es256-key"
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    jwk = json.loads(ECAlgorithm.to_jwk(private_key.public_key()))
+    jwk.update({"kid": kid, "alg": "ES256", "use": "sig"})
+
+    monkeypatch.setenv("SUPABASE_URL", supabase_url)
+    monkeypatch.setattr(auth_mod, "_jwks_cache", None)
+    monkeypatch.setattr(auth_mod, "_jwks_cache_expires_at", 0.0)
+    monkeypatch.setattr(auth_mod, "_fetch_jwks", lambda: {"keys": [jwk]})
+
+    token = jwt.encode(
+        {
+            "sub": ES256_USER_ID,
+            "email": ES256_USER_EMAIL,
+            "role": "authenticated",
+            "aud": "authenticated",
+            "iss": f"{supabase_url}/auth/v1",
+            "exp": int(time.time()) + 3600,
+        },
+        private_key,
+        algorithm="ES256",
+        headers={"kid": kid},
+    )
+    return {"Authorization": f"Bearer {token}"}
 
 
 def _seed_project_children(project_id: int) -> None:
@@ -250,11 +286,46 @@ def test_update_notification_prefs_partial(client, auth_headers):
 def test_protected_requires_auth(client):
     r = client.get("/projects")
     assert r.status_code == 401
+    assert r.status_code != 503
 
 
 def test_invalid_token_rejected(client):
     r = client.get("/projects", headers={"Authorization": "Bearer not-a-valid-jwt"})
     assert r.status_code == 401
+    assert r.status_code != 503
+
+
+def test_hs256_token_can_create_and_delete_project(client, auth_headers):
+    r = client.post("/projects", json={"name": "HS256 Project"}, headers=auth_headers)
+    assert r.status_code == 200, r.text
+    project_id = r.json()["id"]
+
+    deleted = client.delete(f"/projects/{project_id}", headers=auth_headers)
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json() == {"ok": True, "project_id": project_id}
+
+
+def test_es256_jwks_token_can_use_project_routes(client, monkeypatch):
+    headers = _es256_headers(monkeypatch)
+
+    created = client.post("/projects", json={"name": "ES256 Project"}, headers=headers)
+    assert created.status_code == 200, created.text
+    project_id = created.json()["id"]
+
+    listed = client.get("/projects", headers=headers)
+    assert listed.status_code == 200, listed.text
+    assert any(p["id"] == project_id for p in listed.json())
+
+    detail = client.get(f"/projects/{project_id}", headers=headers)
+    assert detail.status_code == 200, detail.text
+
+    insights = client.get(f"/projects/{project_id}/latest-insights", headers=headers)
+    assert insights.status_code == 200, insights.text
+    assert insights.status_code != 503
+
+    deleted = client.delete(f"/projects/{project_id}", headers=headers)
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json() == {"ok": True, "project_id": project_id}
 
 
 # ── Project creation ──────────────────────────────────────────────────────────

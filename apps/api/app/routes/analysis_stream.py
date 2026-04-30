@@ -72,10 +72,16 @@ async def stream_analysis(
     """
     # ── Auth ──────────────────────────────────────────────────────────────────
     if token:
-        from app.middleware.auth import _decode_token
+        from app.middleware.auth import AuthServiceUnavailable, _decode_token
         from app.models import Project
 
-        payload = _decode_token(token)
+        try:
+            payload = _decode_token(token)
+        except AuthServiceUnavailable as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Authentication service temporarily unavailable. Please try again.",
+            ) from exc
         if payload is None:
             raise HTTPException(status_code=401, detail="Invalid or expired token")
         user_id: str = payload.get("sub", "")
