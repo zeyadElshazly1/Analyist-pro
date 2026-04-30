@@ -5,6 +5,7 @@ Uses SQLite by default (zero-config, file-backed, survives restarts).
 Set DATABASE_URL env var (or .env file) to switch to PostgreSQL for production:
   DATABASE_URL=postgresql+psycopg2://user:pass@localhost/analyistpro
 """
+import logging
 import os
 from pathlib import Path
 
@@ -18,6 +19,8 @@ except ImportError:
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
+
+logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
@@ -54,6 +57,9 @@ def init_db():
     """
     Apply all pending Alembic migrations at startup (upgrade head).
 
+    Set RUN_MIGRATIONS_ON_STARTUP=false to skip migrations entirely (useful
+    when the DB is already managed externally or during certain test runs).
+
     This replaces the old ``Base.metadata.create_all()`` call so the live
     database is always in sync with the migration history.  On the very
     first run against a blank database Alembic will create every table
@@ -63,8 +69,10 @@ def init_db():
     (e.g. running tests against an in-memory SQLite), we fall back to
     ``create_all`` so tests keep working without a full migration stack.
     """
-    import logging
-    _log = logging.getLogger(__name__)
+    run_migrations = os.getenv("RUN_MIGRATIONS_ON_STARTUP", "true").strip().lower()
+    if run_migrations in ("false", "0", "no"):
+        logger.info("Skipping Alembic migrations on startup")
+        return
 
     try:
         from alembic.config import Config
@@ -81,14 +89,15 @@ def init_db():
         # config works in every environment without editing alembic.ini.
         alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
 
-        _log.info("Running Alembic migrations (upgrade head)…")
+        logger.info("Running Alembic migrations (upgrade head)…")
         command.upgrade(alembic_cfg, "head")
-        _log.info("Alembic migrations complete")
+        logger.info("Alembic migrations complete")
 
     except Exception as exc:
-        _log.warning(
+        logger.warning(
             f"Alembic migration failed ({exc}); falling back to create_all. "
             "This is normal in tests — in production ensure alembic.ini is present."
         )
         from app import models  # noqa: F401
         Base.metadata.create_all(bind=engine)
+

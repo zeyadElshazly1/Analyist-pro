@@ -65,3 +65,13 @@ class TestModels:
         d = pf.to_dict()
         assert d["filename"] == "data.csv"
         assert d["size_bytes"] == 1024
+
+
+class TestDatabaseStartup:
+    def test_init_db_skips_migrations_when_flag_false(self, monkeypatch, caplog):
+        import logging
+        monkeypatch.setenv("RUN_MIGRATIONS_ON_STARTUP", "false")
+        with caplog.at_level(logging.INFO, logger="app.db"):
+            from app.db import init_db
+            init_db()
+        assert "Skipping Alembic migrations on startup" in caplog.text
