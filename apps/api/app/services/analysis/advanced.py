@@ -17,8 +17,26 @@ from itertools import combinations
 import numpy as np
 import pandas as pd
 from scipy import stats
+from scipy.stats import entropy as _scipy_entropy
 
 from .budget import MAX_ADV_NUMERIC, MAX_ADV_CATEGORICAL, MAX_LEADING_PAIRS, MAX_LAG_DEPTH
+
+# Minimum Shannon entropy (bits) a categorical moderator must have to be
+# considered informative.  A column where one value accounts for ≥ 97% of
+# rows has entropy ≈ 0.22 bits — well below this threshold, so its subgroup
+# statistics would be unreliable.  0.5 bits corresponds to a 4:1 split.
+_MIN_MODERATOR_ENTROPY = 0.5
+
+
+def _categorical_entropy(series: pd.Series) -> float:
+    """Shannon entropy (bits) of a categorical column's value distribution.
+
+    Returns 0.0 for empty or single-valued series.
+    """
+    counts = series.dropna().value_counts(normalize=True)
+    if len(counts) < 2:
+        return 0.0
+    return float(_scipy_entropy(counts.values, base=2))
 
 
 # ── Concentration risk ────────────────────────────────────────────────────────
@@ -122,6 +140,9 @@ def detect_interaction_effects(
 
     for c1, c2, overall_r in pair_corrs[:3]:
         for mod_col in categorical_cols[:MAX_ADV_CATEGORICAL]:
+            ent = _categorical_entropy(df[mod_col])
+            if ent < _MIN_MODERATOR_ENTROPY:
+                continue  # near-constant column — subgroup statistics unreliable
             group_corrs: dict[str, float] = {}
             for cat_val, group in df.groupby(mod_col):
                 sub = group[[c1, c2]].dropna()
@@ -188,6 +209,9 @@ def detect_simpsons_paradox(
             continue
 
         for cat_col in categorical_cols[:MAX_ADV_CATEGORICAL]:
+            ent = _categorical_entropy(df[cat_col])
+            if ent < _MIN_MODERATOR_ENTROPY:
+                continue  # near-constant column — flip counts would be unreliable
             flip_count = 0
             for _, group in df.groupby(cat_col):
                 sub = group[[c1, c2]].dropna()

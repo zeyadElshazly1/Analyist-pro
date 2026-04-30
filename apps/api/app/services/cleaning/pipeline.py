@@ -361,8 +361,9 @@ def clean_dataset(
 
             elif mechanism == "mar" and missing_pct <= 30:
                 try:
+                    convergence_caveat: str | None = None
                     if len(df_clean.select_dtypes(include=[np.number]).columns) >= 4:
-                        imputed = _iterative_impute_column(df_clean, col)
+                        imputed, convergence_caveat = _iterative_impute_column(df_clean, col)
                         method_name = "MICE (iterative regression)"
                     else:
                         imputed = _knn_impute_column(df_clean, col)
@@ -376,6 +377,12 @@ def clean_dataset(
                         ),
                         "impact": "medium",
                     })
+                    if convergence_caveat:
+                        report.append({
+                            "step": f"Imputation caveat: {col}",
+                            "detail": convergence_caveat,
+                            "impact": "low",
+                        })
                 except Exception:
                     fill_val, fill_method = _simple_impute_value(df_clean[col])
                     df_clean[col] = df_clean[col].fillna(fill_val)

@@ -68,22 +68,50 @@ def _knn_impute_column(df: pd.DataFrame, col: str, n_neighbors: int = 5) -> pd.S
     return pd.Series(imputed[:, numeric_cols.index(col)], index=df.index)
 
 
-def _iterative_impute_column(df: pd.DataFrame, col: str) -> pd.Series:
+def _iterative_impute_column(
+    df: pd.DataFrame, col: str
+) -> tuple[pd.Series, str | None]:
+    """Impute *col* using MICE / IterativeImputer.
+
+    Returns ``(imputed_series, convergence_caveat_or_None)``.  The caveat is
+    a human-readable string that the caller should append to the cleaning
+    report when it is not None; it means imputation completed but the
+    iterative solver did not fully converge, so values are estimates.
+    """
+    import warnings
+
     try:
-        from sklearn.experimental import enable_iterative_imputer  # noqa
+        from sklearn.experimental import enable_iterative_imputer  # noqa: F401
         from sklearn.impute import IterativeImputer
         from sklearn.linear_model import BayesianRidge
+        from sklearn.exceptions import ConvergenceWarning
     except ImportError:
-        return _knn_impute_column(df, col)
+        return _knn_impute_column(df, col), None
+
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     predictors = [c for c in numeric_cols if c != col and df[c].isnull().mean() < 0.5]
     if len(predictors) < 2:
-        return _knn_impute_column(df, col)
+        return _knn_impute_column(df, col), None
+
     cols_to_use = [col] + predictors[:9]
     sub = df[cols_to_use].copy()
-    imputer = IterativeImputer(estimator=BayesianRidge(), max_iter=10, random_state=42)
-    imputed = imputer.fit_transform(sub)
-    return pd.Series(imputed[:, 0], index=df.index)
+    # max_iter=15 reduces convergence failures vs the old 10 without
+    # materially increasing runtime on the datasets we see in practice.
+    imputer = IterativeImputer(estimator=BayesianRidge(), max_iter=15, random_state=42)
+
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always", ConvergenceWarning)
+        imputed = imputer.fit_transform(sub)
+
+    caveat: str | None = None
+    if any(issubclass(w.category, ConvergenceWarning) for w in caught_warnings):
+        caveat = (
+            f"Iterative imputation for '{col}' completed but the solver did not fully "
+            f"converge (max_iter=15). Imputed values are reasonable estimates — consider "
+            f"reviewing this column manually if precision matters."
+        )
+
+    return pd.Series(imputed[:, 0], index=df.index), caveat
 
 
 def _simple_impute_value(series: pd.Series) -> tuple[float, str]:
