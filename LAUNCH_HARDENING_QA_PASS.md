@@ -200,18 +200,65 @@ We should finish this pass knowing:
 
 ---
 
-### Areas 8–10 — Reopen Flow, Run Lifecycle, Pricing
+### Area 8 — Reopen Flow
 
-*Audit in progress.*
+| # | File | Line | Sev | Issue |
+|---|------|------|-----|-------|
+| 26 | `apps/web/src/app/(app)/projects/[id]/page.tsx` | 144–169 | P1 | "Resume analysis" button appears when `has_result=true` but `getRunResults` returns all-null blocks for non-`report_ready` runs — user sees a blank analysis page |
+| 27 | `apps/web/src/app/(app)/projects/[id]/page.tsx` | 144 | P2 | Banner doesn't distinguish "run in progress" from "all runs failed" — shows ambiguous state for projects with only failed runs |
+| 28 | `apps/web/src/app/(app)/projects/[id]/page.tsx` | 42–46 | P2 | `adaptStoredResults` passes through malformed `insight_results` items silently — no validation or warning for missing required fields |
 
 ---
 
-## Running Totals (areas 1–7)
+### Area 9 — Run Lifecycle
 
-| Severity | Count |
-|----------|-------|
-| P0 | 3 |
-| P1 | 14 |
-| P2 | 8 |
-| **Total** | **25** |
+| # | File | Line | Sev | Issue |
+|---|------|------|-----|-------|
+| 29 | `apps/api/app/routes/analysis.py` | 81–82 | P1 | `create_run_stub` returns `None` on DB failure; `set_run_status` and `finalise_run` are then called with `run=None` and silently no-op — run status is never persisted |
+| 30 | `apps/api/app/services/run_tracker.py` | 38–60 | P1 | `set_run_status` and `finalise_run` swallow `SQLAlchemyError` silently — DB commit failures are invisible; run record stays at `"created"` while result is returned successfully |
+| 31 | `apps/api/app/routes/analysis.py` | — | P1 | **SSE streaming endpoint (`GET /analysis/stream/{project_id}`) does not exist in the codebase** — frontend's `EventSource` always gets a 404 which triggers `onerror`, making the "Analyze File" button non-functional for real users |
+| 32 | `apps/api/app/services/run_tracker.py` | 38–60 | P2 | `set_run_status` accepts any string — typos like `"cleanng_complete"` are persisted silently with no validation against the canonical status enum |
+| 33 | `apps/api/app/services/run_resolver.py` | 25–49 | P2 | `resolve_latest_run` returns any `report_ready` run regardless of timestamp — an old completed run beats a newer in-progress run; no secondary sort by `id desc` |
+
+---
+
+### Area 10 — Pricing / Billing
+
+| # | File | Line | Sev | Issue |
+|---|------|------|-----|-------|
+| 34 | `apps/web/src/components/ui/upgrade-wall.tsx` | 13–33 | P1 | `FEATURE_LABELS` hardcodes `"Pro"` and `"Team"` plan names — pricing page says `"Consultant"` and `"Studio"`; users see conflicting names when hitting upgrade walls |
+| 35 | `apps/web/src/app/(marketing)/pricing/page.tsx` | 23–38 | P1 | Pricing says "Up to 500K rows per file" for Consultant but backend enforces `max_file_mb=100` — a wide dataset can hit the limit at far fewer rows; row-count claim is misleading |
+| 36 | `apps/api/app/routes/analysis.py` | 594–600 | P1 | `GET /analysis/diff` (file comparison) has no `require_feature("file_compare")` guard — free users can compare runs without upgrading |
+| 37 | `apps/api/app/routes/analysis.py` | 895–954 | P1 | `GET /analysis/download-cleaned/{project_id}` has no `require_feature("report_export")` guard — free users can download cleaned CSV exports |
+| 38 | `apps/api/app/middleware/plans.py` | 69–71 | P2 | `UPGRADE_MESSAGES` messages are correct but not guaranteed to surface in frontend — no documented contract for feature string names between backend and `UpgradeWall` |
+| 39 | `apps/api/app/routes/analysis.py` | 565–592 | P2 | `POST /analysis/story` correctly gates on `ai_story` but `UpgradeWall` label says `"Pro"` — inconsistent with `"Consultant"` on pricing page |
+| 40 | `apps/api/app/routes/team.py` | — | P2 | Team invite/manage endpoints not verified to enforce Studio plan limit — free or Consultant users may be able to invite team members |
+
+---
+
+## Final Totals (all 10 areas)
+
+| Severity | Count | Description |
+|----------|-------|-------------|
+| P0 | 3 | Blocks demo / pilot — crash or data corruption |
+| P1 | 22 | Hurts trust or core workflow |
+| P2 | 15 | Polish / UX gap |
+| **Total** | **40** | |
+
+## Safe for Demo?
+
+The `/demo` page bypasses upload and analysis — **the demo itself is safe** as long as none of the P0 components are rendered. The 3 P0 issues only trigger when real data flows through the cleaning/health pipeline:
+- P0 #1 (cleaning-report "(0 values)") — triggered during Cleaning Review with real file
+- P0 #2 (cleaning_result contract) — triggered during Cleaning Review with real file
+- P0 #3 (health-score crash) — triggered during Health Check with real file
+
+**Recommend fixing all 3 P0s before showing the product to a pilot user with a real file.**
+
+## Must Fix Before Pilot
+
+Beyond P0s, the highest-risk P1s for a live pilot:
+- Issue 31: SSE streaming endpoint missing — "Analyze File" button doesn't work
+- Issues 36–37: Free users bypass plan gates on diff and CSV export
+- Issue 34: Upgrade wall shows wrong plan names
+- Issue 26: Reopening a partial run shows blank analysis page
 
