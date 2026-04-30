@@ -16,9 +16,11 @@ except ImportError:
 # Alembic Config object
 config = context.config
 
-# Set up logging from alembic.ini
+# Set up logging from alembic.ini.
+# disable_existing_loggers=False keeps application loggers (e.g. app.db) alive
+# when Alembic is invoked programmatically (e.g. via init_db() at startup).
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # ── Inject DATABASE_URL from environment (overrides alembic.ini placeholder) ──
 _db_url = os.getenv("DATABASE_URL", "sqlite:///./analyistpro.db")
