@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type KeyboardEvent, type MouseEvent } from "react";
 import { Copy, Check, ChevronDown, ChevronUp } from "lucide-react";
 
 type Insight = {
@@ -112,7 +112,7 @@ function makeCopyText(i: Insight): string {
 
 function CopyButton({ insight }: { insight: Insight }) {
   const [copied, setCopied] = useState(false);
-  function handle(e: React.MouseEvent) {
+  function handle(e: MouseEvent<HTMLButtonElement>) {
     e.stopPropagation();
     navigator.clipboard.writeText(makeCopyText(insight)).then(() => {
       setCopied(true);
@@ -120,7 +120,7 @@ function CopyButton({ insight }: { insight: Insight }) {
     });
   }
   return (
-    <button onClick={handle} className="rounded p-1 text-white/20 hover:text-white/50 transition-colors flex-shrink-0" title="Copy">
+    <button type="button" onClick={handle} className="rounded p-1 text-white/20 hover:text-white/50 transition-colors flex-shrink-0" title="Copy">
       {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
     </button>
   );
@@ -139,11 +139,25 @@ function InsightCard({ insight, reviewNote }: { insight: Insight; reviewNote?: s
   const action   = insight.recommendation ?? insight.action ?? "";
   const why      = insight.why_it_matters ?? "";
 
+  function toggleOpen() {
+    setOpen((v) => !v);
+  }
+
+  function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      toggleOpen();
+    }
+  }
+
   return (
     <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] overflow-hidden">
-      <button
-        className="w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-white/[0.02] transition-colors"
-        onClick={() => setOpen((v) => !v)}
+      <div
+        role="button"
+        tabIndex={0}
+        className="w-full cursor-pointer text-left px-4 py-3 flex items-start gap-3 hover:bg-white/[0.02] transition-colors"
+        onClick={toggleOpen}
+        onKeyDown={handleKeyDown}
       >
         <span className={`mt-[5px] h-2 w-2 flex-shrink-0 rounded-full ${meta.dot}`} />
         <div className="flex-1 min-w-0 space-y-1">
@@ -193,7 +207,7 @@ function InsightCard({ insight, reviewNote }: { insight: Insight; reviewNote?: s
             ? <ChevronUp className="h-3.5 w-3.5 text-white/20" />
             : <ChevronDown className="h-3.5 w-3.5 text-white/20" />}
         </div>
-      </button>
+      </div>
 
       {open && (
         <div className="border-t border-white/[0.06] px-4 pb-4 pt-3 ml-5 space-y-2.5">
