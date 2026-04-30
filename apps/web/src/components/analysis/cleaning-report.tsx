@@ -47,8 +47,11 @@ export function cleaningItemsFromCanonical(
     items.push({ step: `${isSuggestion ? "[SUGGESTION] Impute missing" : "Impute missing"}: ${note.column}`, detail: `${note.missing_count} missing (${note.missing_pct}%), mechanism: ${note.mechanism}`, impact: isSuggestion ? "low" : "medium" });
   }
   const dn = cr.duplicate_notes;
-  if (dn?.duplicate_rows_removed > 0)
-    items.push({ step: "Remove duplicate rows", detail: `Removed ${dn.duplicate_rows_removed} of ${dn.duplicate_rows_found} duplicates`, impact: "medium" });
+  const removed = dn?.duplicate_rows_removed ?? 0;
+  if (dn != null && removed > 0) {
+    const found = dn.duplicate_rows_found ?? 0;
+    items.push({ step: "Remove duplicate rows", detail: `Removed ${removed} of ${found} duplicates`, impact: "medium" });
+  }
   for (const susp of cr.suspicious_columns ?? [])
     items.push({ step: `[FLAG] ${susp.column}`, detail: susp.detail, impact: "medium" });
   return items;

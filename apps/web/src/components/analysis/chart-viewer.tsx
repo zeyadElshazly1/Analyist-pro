@@ -72,6 +72,11 @@ const DARK_TOOLTIP = {
   },
 };
 
+/** Recharts Tooltip formatter: `value` may be undefined per library typings. */
+function barCountTooltipFormatter(yLabel: string | undefined) {
+  return (value: unknown) => [String(value ?? "—"), yLabel ?? "Count"] as const;
+}
+
 const PIE_COLORS = ["#6366f1", "#8b5cf6", "#a78bfa", "#c4b5fd", "#818cf8", "#4f46e5", "#7c3aed", "#6d28d9"];
 const BG_COLOR = "#0c0c14";
 
@@ -100,16 +105,18 @@ function TruncatedRotatedTick({
   rotate,
   maxChars,
 }: {
-  x?: number;
-  y?: number;
+  x?: number | string;
+  y?: number | string;
   payload?: { value?: unknown };
   rotate: number;
   maxChars: number;
 }) {
   const raw = String(payload?.value ?? "");
   const show = raw.length > maxChars ? `${raw.slice(0, maxChars - 1)}…` : raw;
+  const tx = Number(x);
+  const ty = Number(y);
   return (
-    <g transform={`translate(${x},${y})`}>
+    <g transform={`translate(${Number.isFinite(tx) ? tx : 0},${Number.isFinite(ty) ? ty : 0})`}>
       <title>{raw}</title>
       <text
         fill="#9ca3af"
@@ -155,7 +162,7 @@ function HorizontalBarPanel({ chart }: { chart: ChartDef }) {
           />
           <Tooltip
             {...DARK_TOOLTIP}
-            formatter={(value: number | string) => [value, chart.y_label ?? "Count"]}
+            formatter={barCountTooltipFormatter(chart.y_label)}
             labelFormatter={(label) => String(label)}
           />
           <Bar
@@ -194,7 +201,13 @@ function VerticalBarPanel({ chart }: { chart: ChartDef }) {
             dataKey={chart.x_key}
             interval={interval}
             tick={(props) => (
-              <TruncatedRotatedTick {...props} rotate={rotate} maxChars={tickMaxChars} />
+              <TruncatedRotatedTick
+                x={props.x}
+                y={props.y}
+                payload={props.payload}
+                rotate={rotate}
+                maxChars={tickMaxChars}
+              />
             )}
             height={bottomGutter + 8}
             axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
@@ -207,7 +220,7 @@ function VerticalBarPanel({ chart }: { chart: ChartDef }) {
           />
           <Tooltip
             {...DARK_TOOLTIP}
-            formatter={(value: number | string) => [value, chart.y_label ?? "Count"]}
+            formatter={barCountTooltipFormatter(chart.y_label)}
             labelFormatter={(label) => String(label)}
           />
           <Bar
