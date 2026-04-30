@@ -174,8 +174,9 @@ export type AnalysisResult = {
 
 type Props = {
   projectId: number;
-  initialResult?: AnalysisResult;   // pre-populated from stored run
-  initialRunId?: number;            // run_id for the stored result (used as analysisId)
+  initialResult?: AnalysisResult;          // pre-populated from stored run
+  initialRunId?: number;                   // run_id for the stored result (used as analysisId)
+  initialCompareResult?: CompareResult;    // pre-populated compare (e.g. demo mode)
 };
 
 type ProgressState = {
@@ -288,7 +289,7 @@ function ProgressBar({ progress, step, detail }: ProgressState) {
   );
 }
 
-export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
+export function RunAnalysis({ projectId, initialResult, initialRunId, initialCompareResult }: Props) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [analysisId, setAnalysisId] = useState<number | null>(null);
@@ -322,6 +323,10 @@ export function RunAnalysis({ projectId, initialResult, initialRunId }: Props) {
   const [useCleaned, setUseCleaned] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
+
+  useEffect(() => {
+    if (initialCompareResult) setCompareResult(initialCompareResult);
+  }, [initialCompareResult]);
 
   // Sync tab ↔ URL hash for shareable deep-links
   useEffect(() => {
