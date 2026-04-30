@@ -73,36 +73,66 @@ type Props = {
 };
 
 function ConfidenceBadge({ score }: { score: number }) {
-  const color =
-    score >= 80 ? "text-emerald-400 bg-emerald-500/15 border-emerald-500/25"
-    : score >= 60 ? "text-amber-400 bg-amber-500/15 border-amber-500/25"
-    : "text-red-400 bg-red-500/15 border-red-500/25";
+  const palette =
+    score >= 80
+      ? { border: "border-emerald-500/25", bg: "bg-emerald-500/10", bar: "bg-emerald-400", text: "text-emerald-400", badge: "border-emerald-500/30 bg-emerald-500/15 text-emerald-300" }
+      : score >= 60
+      ? { border: "border-amber-500/25",   bg: "bg-amber-500/10",   bar: "bg-amber-400",   text: "text-amber-400",   badge: "border-amber-500/30 bg-amber-500/15 text-amber-300" }
+      : { border: "border-red-500/25",     bg: "bg-red-500/10",     bar: "bg-red-400",     text: "text-red-400",     badge: "border-red-500/30 bg-red-500/15 text-red-300" };
 
-  const label = score >= 80 ? "High" : score >= 60 ? "Medium" : "Low";
+  const label = score >= 80 ? "High confidence" : score >= 60 ? "Medium confidence" : "Low confidence";
 
   return (
-    <div className={`rounded-xl border p-4 ${color}`}>
-      <p className="text-xs font-medium opacity-70 uppercase tracking-wide">Confidence Score</p>
-      <div className="mt-2 flex items-end gap-2">
-        <span className="text-3xl font-bold">{score}</span>
-        <span className="mb-0.5 text-sm font-medium opacity-80">/ 100 · {label}</span>
+    <div className={`flex flex-col rounded-xl border p-4 ${palette.border} ${palette.bg}`}>
+      <p className="text-[10px] font-medium uppercase tracking-widest text-white/40">
+        Confidence
+      </p>
+
+      {/* Score: large number + "/100" as a quiet suffix — no crowding */}
+      <div className="mt-2 flex items-baseline gap-1">
+        <span className={`text-4xl font-bold tabular-nums ${palette.text}`}>{score}</span>
+        <span className="text-sm text-white/30">/100</span>
       </div>
-      <div className="mt-2 h-1.5 w-full rounded-full bg-white/10">
-        <div
-          className="h-full rounded-full bg-current opacity-60"
-          style={{ width: `${score}%` }}
-        />
+
+      {/* Badge on its own line — never shares the row with the big number */}
+      <div className="mt-2">
+        <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold ${palette.badge}`}>
+          {label}
+        </span>
+      </div>
+
+      {/* Progress bar — spacer pushes it to the bottom so all cards align */}
+      <div className="mt-auto pt-3">
+        <div className="h-1 w-full rounded-full bg-white/10">
+          <div
+            className={`h-full rounded-full ${palette.bar} opacity-70 transition-all duration-500`}
+            style={{ width: `${score}%` }}
+          />
+        </div>
       </div>
     </div>
   );
 }
 
-function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+function StatCard({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+}) {
   return (
-    <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-4">
-      <p className="text-xs text-white/40 uppercase tracking-wide">{label}</p>
-      <p className="mt-1.5 text-2xl font-semibold text-white">{value}</p>
-      {sub && <p className="mt-0.5 text-xs text-white/30">{sub}</p>}
+    <div className="flex flex-col rounded-xl border border-white/[0.07] bg-white/[0.03] p-4">
+      <p className="text-[10px] font-medium uppercase tracking-widest text-white/40">{label}</p>
+      <p className="mt-2 text-2xl font-semibold leading-none text-white">{value}</p>
+      {/* Spacer + subtitle keep bottom edges aligned with ConfidenceBadge */}
+      <div className="mt-auto pt-3">
+        <p className="text-[11px] text-white/30 leading-snug">
+          {sub ?? <span className="invisible">–</span>}
+        </p>
+      </div>
     </div>
   );
 }
@@ -280,9 +310,10 @@ export function CleaningSummaryCards({ cleaningResult, summary }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Top row: confidence + core stats — only renders cards we actually have */}
+      {/* Top row: confidence + core stats — always 2-up on mobile, 4-up on sm+
+          so 4 cards never collapse into an uneven 3+1 layout. */}
       {(view.confidence_score !== undefined || topCards.length > 0) && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {view.confidence_score !== undefined && (
             <ConfidenceBadge score={view.confidence_score} />
           )}
