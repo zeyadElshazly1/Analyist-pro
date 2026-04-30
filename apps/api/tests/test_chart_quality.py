@@ -160,12 +160,24 @@ class TestBinaryBarPayload:
         assert p is not None
         assert len(p["data"]) == 2, f"Expected 2 bars, got {len(p['data'])}"
 
-    def test_labels_are_zero_and_one(self):
+    def test_labels_are_readable_not_raw_integers(self):
+        """
+        Labels must be human-readable, not raw "0"/"1".
+        Generic 0/1 flag columns default to "No"/"Yes" via _infer_binary_labels.
+        The old test expected raw integer strings; that was the bug being fixed.
+        """
         from app.services.charting.payloads import build_binary_bar_payload
         df = pd.DataFrame({"flag": [0] * 80 + [1] * 20})
         p = build_binary_bar_payload(df, "flag")
         labels = {d["label"] for d in p["data"]}
-        assert labels == {"0", "1"}, f"Expected labels {{'0','1'}}, got {labels}"
+        # Raw "0"/"1" must NOT appear — labels must be mapped to readable text
+        assert "0" not in labels and "1" not in labels, (
+            f"Labels must not be raw integers — expected 'No'/'Yes', got {labels}"
+        )
+        # Generic flag defaults to No/Yes
+        assert labels == {"No", "Yes"}, (
+            f"Generic binary flag should produce {{'No', 'Yes'}}, got {labels}"
+        )
 
     def test_is_binary_flag_set(self):
         from app.services.charting.payloads import build_binary_bar_payload
@@ -174,12 +186,15 @@ class TestBinaryBarPayload:
         assert p.get("is_binary") is True, "is_binary flag must be True for binary bar chart"
 
     def test_counts_are_correct(self):
+        """Counts must be accurate regardless of label remapping."""
         from app.services.charting.payloads import build_binary_bar_payload
         df = pd.DataFrame({"x": [0] * 80 + [1] * 20})
         p = build_binary_bar_payload(df, "x")
-        counts = {d["label"]: d["value"] for d in p["data"]}
-        assert counts["0"] == 80
-        assert counts["1"] == 20
+        # Labels are now remapped (e.g. "No"/"Yes") — look up counts by value
+        values = sorted(d["value"] for d in p["data"])
+        assert values == [20, 80], (
+            f"Expected counts [20, 80], got {values}"
+        )
 
     def test_pct_sums_to_100(self):
         from app.services.charting.payloads import build_binary_bar_payload

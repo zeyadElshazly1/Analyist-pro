@@ -7,6 +7,7 @@ _normality_test        — Shapiro-Wilk / Jarque-Bera, returns (is_normal, p_val
                          analysis.stats_helpers._normality_test which returns bool only.
 _iqr_outliers          — 1.5×IQR fence outlier count
 _recommended_chart     — simple chart type selector
+_infer_binary_labels   — map 0→"No"/1→"Yes" or domain-specific labels for known columns
 _profile_numeric_col   — full numeric column stats
 _profile_datetime_col  — full datetime column stats
 _profile_categorical_col — top values, pattern, format issues
@@ -19,6 +20,47 @@ from scipy import stats
 from .distributions import _fit_distribution
 from .datetime_analysis import _detect_gaps
 from .patterns import _detect_pattern, _check_format_consistency
+
+
+# ── Binary label inference ────────────────────────────────────────────────────
+#
+# Maps column names to domain-specific labels for binary 0/1 flags.
+# When the column name matches a pattern the labels are self-explanatory
+# to business users.  Unmatched columns fall back to generic "No" / "Yes".
+#
+# Keys are lowercase substrings; first match wins.
+_BINARY_LABEL_RULES: list[tuple[str, dict[str, str]]] = [
+    ("seniorcitizen",  {"low": "Not senior",      "high": "Senior"}),
+    ("senior_citizen", {"low": "Not senior",      "high": "Senior"}),
+    ("senior",         {"low": "Not senior",      "high": "Senior"}),
+    ("paperless",      {"low": "Paper billing",   "high": "Paperless"}),
+]
+
+
+def _infer_binary_labels(col_name: str, low_val: str, high_val: str) -> dict[str, str]:
+    """
+    Return a ``value_label_map`` for a binary column with two distinct values.
+
+    For columns whose names match a known pattern (e.g. 'seniorcitizen'),
+    domain-specific labels are returned (e.g. "Not senior" / "Senior").
+    For all other binary numeric columns the generic "No" / "Yes" mapping
+    is used, which is correct for the overwhelming majority of 0/1 flags
+    (Churn, Dependents, Partner, PhoneService, etc.).
+
+    Args:
+        col_name: Column name (case-insensitive).
+        low_val:  String key for the lower distinct value (e.g. "0").
+        high_val: String key for the higher distinct value (e.g. "1").
+
+    Returns:
+        dict with exactly two entries: ``{low_val: label, high_val: label}``.
+    """
+    col_lower = col_name.lower().replace("-", "_").replace(" ", "_")
+    for pattern, labels in _BINARY_LABEL_RULES:
+        if pattern in col_lower:
+            return {low_val: labels["low"], high_val: labels["high"]}
+    # Generic fallback: 0 = No, 1 = Yes (correct for most binary flags)
+    return {low_val: "No", high_val: "Yes"}
 
 
 # ── Statistical helpers ───────────────────────────────────────────────────────

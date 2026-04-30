@@ -149,7 +149,9 @@ def build_histogram_payload(
 def build_binary_bar_payload(df: pd.DataFrame, col: str) -> dict | None:
     """Return a bar chart payload specifically for binary flag columns (0/1 encoded).
 
-    Renders exactly two bars with counts and percentages.
+    Renders exactly two bars with human-readable labels (e.g. "Not senior" /
+    "Senior" for SeniorCitizen, "No" / "Yes" for generic 0/1 flags).
+
     Uses binary-specific narration — no normality badges, no skewness language,
     no mean/median reference lines (those statistics are not meaningful for a
     two-value flag).
@@ -168,21 +170,37 @@ def build_binary_bar_payload(df: pd.DataFrame, col: str) -> dict | None:
     n_high = int((clean == val_high).sum())
     total  = n_low + n_high
 
-    # Display labels: prefer integer representation for whole-number floats
-    def _label(v: float) -> str:
+    # Raw string keys (e.g. "0" / "1") used for the value_label_map dict lookup
+    def _raw_key(v: float) -> str:
         try:
             return str(int(v)) if float(v) == int(v) else str(v)
         except (ValueError, OverflowError):
             return str(v)
 
+    low_key  = _raw_key(val_low)
+    high_key = _raw_key(val_high)
+
+    # Resolve human-readable display labels from column name heuristics.
+    # This is the same logic as profiling._infer_binary_labels so that
+    # the profile panel and the chart always agree on labels.
+    try:
+        from app.services.profiling.column_profiler import _infer_binary_labels
+        value_label_map = _infer_binary_labels(col, low_key, high_key)
+    except Exception:
+        # Fallback: raw string keys (better than silently crashing the chart)
+        value_label_map = {low_key: low_key, high_key: high_key}
+
+    display_low  = value_label_map.get(low_key,  low_key)
+    display_high = value_label_map.get(high_key, high_key)
+
     data = [
         {
-            "label": _label(val_low),
+            "label": display_low,
             "value": n_low,
             "pct":   round(n_low  / max(total, 1) * 100, 1),
         },
         {
-            "label": _label(val_high),
+            "label": display_high,
             "value": n_high,
             "pct":   round(n_high / max(total, 1) * 100, 1),
         },
@@ -191,18 +209,19 @@ def build_binary_bar_payload(df: pd.DataFrame, col: str) -> dict | None:
     narration = _narrate_binary(col, n_zero=n_low, n_one=n_high, total=total)
 
     return {
-        "type":        "bar",
-        "title":       f"Breakdown of {col}",
-        "description": f"Binary flag distribution of {col} ({_label(val_low)} vs {_label(val_high)})",
-        "insight":     narration,
-        "x_key":       "label",
-        "y_key":       "value",
-        "x_label":     col,
-        "y_label":     "Count",
-        "data":        data,
-        "is_binary":   True,   # hint to the frontend: render as a binary-flag breakdown
-        "recommended": False,
-        "score":       6,
+        "type":            "bar",
+        "title":           f"Breakdown of {col}",
+        "description":     f"Binary flag distribution of {col} ({display_low} vs {display_high})",
+        "insight":         narration,
+        "x_key":           "label",
+        "y_key":           "value",
+        "x_label":         col,
+        "y_label":         "Count",
+        "data":            data,
+        "value_label_map": value_label_map,   # forward to frontend for tooltips
+        "is_binary":       True,              # hint: render as a binary-flag breakdown
+        "recommended":     False,
+        "score":           6,
     }
 
 

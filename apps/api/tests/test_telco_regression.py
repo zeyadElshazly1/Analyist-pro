@@ -537,7 +537,173 @@ class TestTelcoCharts:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 8.  Outlier bounds — unit test for the IQR=0 guard
+# 8.  Column profile labels — user-facing readability
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestTelcoColumnProfileLabels:
+    """
+    Verify that column profiles remain readable to business users after cleaning.
+
+    - Categorical Yes/No columns (Dependents, PhoneService, Churn) must preserve
+      their original string labels in top_values — not silently convert to 0/1.
+    - Binary numeric columns (SeniorCitizen) must carry:
+        • is_binary = True
+        • value_label_map with human-readable labels (not raw "0"/"1")
+        • top_values populated with 0/1 counts (for bar-chart rendering)
+    - The binary bar chart for SeniorCitizen must use those readable labels.
+    """
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    def _profiles(self, cleaned_telco):
+        from app.services.profiling.orchestrator import profile_dataset
+        df_clean, _, _ = cleaned_telco
+        return profile_dataset(df_clean)
+
+    def _col(self, profiles, name: str):
+        return next((p for p in profiles if p["column"] == name), None)
+
+    # ── Yes/No categorical columns preserve original labels ──────────────────
+
+    def test_dependents_top_values_show_yes_no(self, cleaned_telco):
+        """dependents must show 'yes'/'no' in top_values — not 0/1."""
+        p = self._col(self._profiles(cleaned_telco), "dependents")
+        assert p is not None, "dependents column not found in profile"
+        top_lower = {str(k).strip().lower() for k in p.get("top_values", {}).keys()}
+        assert top_lower & {"yes", "no"}, (
+            f"dependents top_values should contain 'yes'/'no', got keys: {top_lower}"
+        )
+
+    def test_phone_service_top_values_show_yes_no(self, cleaned_telco):
+        """phoneservice must show 'yes'/'no' in top_values — not 0/1."""
+        p = self._col(self._profiles(cleaned_telco), "phoneservice")
+        assert p is not None, "phoneservice column not found in profile"
+        top_lower = {str(k).strip().lower() for k in p.get("top_values", {}).keys()}
+        assert top_lower & {"yes", "no"}, (
+            f"phoneservice top_values should contain 'yes'/'no', got keys: {top_lower}"
+        )
+
+    def test_churn_top_values_show_yes_no(self, cleaned_telco):
+        """churn must show 'yes'/'no' in top_values — not 0/1."""
+        p = self._col(self._profiles(cleaned_telco), "churn")
+        assert p is not None, "churn column not found in profile"
+        top_lower = {str(k).strip().lower() for k in p.get("top_values", {}).keys()}
+        assert top_lower & {"yes", "no"}, (
+            f"churn top_values should contain 'yes'/'no', got keys: {top_lower}"
+        )
+
+    def test_partner_top_values_show_yes_no(self, cleaned_telco):
+        """partner must show 'yes'/'no' in top_values — not 0/1."""
+        p = self._col(self._profiles(cleaned_telco), "partner")
+        assert p is not None, "partner column not found in profile"
+        top_lower = {str(k).strip().lower() for k in p.get("top_values", {}).keys()}
+        assert top_lower & {"yes", "no"}, (
+            f"partner top_values should contain 'yes'/'no', got keys: {top_lower}"
+        )
+
+    # ── SeniorCitizen binary numeric — is_binary flag ────────────────────────
+
+    def test_senior_citizen_has_is_binary_flag(self, cleaned_telco):
+        """seniorcitizen (0/1 int) must be annotated as is_binary=True."""
+        p = self._col(self._profiles(cleaned_telco), "seniorcitizen")
+        assert p is not None
+        assert p.get("is_binary") is True, (
+            "seniorcitizen profile must have is_binary=True so the UI can render "
+            "it as a flag, not a continuous distribution"
+        )
+
+    def test_senior_citizen_has_value_label_map(self, cleaned_telco):
+        """seniorcitizen profile must have a value_label_map with readable labels."""
+        p = self._col(self._profiles(cleaned_telco), "seniorcitizen")
+        assert p is not None
+        vlm = p.get("value_label_map")
+        assert vlm is not None, "seniorcitizen must have a value_label_map"
+        assert "0" in vlm and "1" in vlm, (
+            f"value_label_map must have '0' and '1' keys, got: {vlm}"
+        )
+
+    def test_senior_citizen_value_labels_are_human_readable(self, cleaned_telco):
+        """seniorcitizen label values must not be raw '0'/'1'."""
+        p = self._col(self._profiles(cleaned_telco), "seniorcitizen")
+        assert p is not None
+        vlm = p.get("value_label_map", {})
+        assert vlm.get("0") not in ("0", "", None), (
+            f"value_label_map['0'] should be a human label like 'Not senior', got: {vlm.get('0')!r}"
+        )
+        assert vlm.get("1") not in ("1", "", None), (
+            f"value_label_map['1'] should be a human label like 'Senior', got: {vlm.get('1')!r}"
+        )
+
+    def test_senior_citizen_profile_has_top_values_for_bar_chart(self, cleaned_telco):
+        """seniorcitizen binary profile must populate top_values (0- and 1-counts)
+        so the profile bar chart renders correctly without a separate code path."""
+        p = self._col(self._profiles(cleaned_telco), "seniorcitizen")
+        assert p is not None
+        tv = p.get("top_values")
+        assert tv is not None, "seniorcitizen binary profile must have top_values"
+        assert "0" in tv and "1" in tv, (
+            f"top_values must contain '0' and '1' keys for seniorcitizen, got: {tv}"
+        )
+        # Counts must sum to (approximately) total non-null rows
+        assert tv["0"] + tv["1"] > 0, "top_values counts must be positive"
+
+    # ── SeniorCitizen binary bar chart uses readable labels ──────────────────
+
+    def test_senior_citizen_chart_labels_are_readable(self, cleaned_telco):
+        """build_binary_bar_payload for seniorcitizen must produce human-readable
+        bar labels — not raw '0'/'1'."""
+        from app.services.charting.payloads import build_binary_bar_payload
+        df_clean, _, _ = cleaned_telco
+        chart = build_binary_bar_payload(df_clean, "seniorcitizen")
+        assert chart is not None, (
+            "build_binary_bar_payload returned None for seniorcitizen"
+        )
+        labels = {d["label"] for d in chart["data"]}
+        # Raw integer strings must NOT appear — should be "Not senior" / "Senior"
+        assert "0" not in labels and "1" not in labels, (
+            f"Binary bar chart for seniorcitizen should use readable labels, "
+            f"not raw '0'/'1'. Got: {labels}"
+        )
+
+    def test_senior_citizen_chart_has_value_label_map(self, cleaned_telco):
+        """build_binary_bar_payload must forward the value_label_map in the payload
+        so the frontend tooltip can display mapped labels."""
+        from app.services.charting.payloads import build_binary_bar_payload
+        df_clean, _, _ = cleaned_telco
+        chart = build_binary_bar_payload(df_clean, "seniorcitizen")
+        assert chart is not None
+        vlm = chart.get("value_label_map")
+        assert vlm is not None and isinstance(vlm, dict), (
+            "chart payload must include value_label_map"
+        )
+        assert "0" in vlm and "1" in vlm
+
+    # ── _infer_binary_labels unit tests ─────────────────────────────────────
+
+    def test_infer_binary_labels_seniorcitizen(self):
+        """seniorcitizen → Not senior / Senior."""
+        from app.services.profiling.column_profiler import _infer_binary_labels
+        vlm = _infer_binary_labels("seniorcitizen", "0", "1")
+        assert vlm["0"] == "Not senior"
+        assert vlm["1"] == "Senior"
+
+    def test_infer_binary_labels_generic_flag_defaults_no_yes(self):
+        """Generic binary flag (e.g. churn, dependents) → No / Yes."""
+        from app.services.profiling.column_profiler import _infer_binary_labels
+        for col in ("churn", "dependents", "partner", "arbitraryflag"):
+            vlm = _infer_binary_labels(col, "0", "1")
+            assert vlm["0"] == "No", f"Expected 'No' for col={col!r}, got {vlm['0']!r}"
+            assert vlm["1"] == "Yes", f"Expected 'Yes' for col={col!r}, got {vlm['1']!r}"
+
+    def test_infer_binary_labels_custom_values(self):
+        """Label map keys must match the supplied low/high value strings."""
+        from app.services.profiling.column_profiler import _infer_binary_labels
+        vlm = _infer_binary_labels("flag", "false", "true")
+        assert "false" in vlm and "true" in vlm
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 9.  Outlier bounds — unit test for the IQR=0 guard
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestOutlierBoundsGuard:

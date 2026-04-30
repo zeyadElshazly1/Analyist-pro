@@ -22,6 +22,7 @@ from .column_profiler import (
     _profile_datetime_col,
     _profile_categorical_col,
     _build_flags,
+    _infer_binary_labels,
 )
 from .constants import LARGE_THRESHOLD, LARGE_SAMPLE_SIZE
 
@@ -79,6 +80,37 @@ def profile_dataset(df: pd.DataFrame) -> list[dict]:
             col_profile.update(
                 _profile_numeric_col(col_data, col_sample, unique, n_rows)
             )
+            # ── Binary numeric enhancement ────────────────────────────────────
+            # Columns with exactly 2 distinct numeric values (e.g. SeniorCitizen
+            # 0/1) are treated as binary flags.  We annotate them with:
+            #   • is_binary      — frontend hint to render as a flag, not a
+            #                      continuous distribution
+            #   • value_label_map — human-readable labels (e.g. "Not senior" /
+            #                       "Senior") derived from the column name
+            #   • top_values     — count of each binary value (same shape as
+            #                       categorical top_values) so the profile view
+            #                       can render a bar chart without needing a
+            #                       separate categorical profile path
+            if unique == 2:
+                clean_bin = col_data.dropna()
+                uniq_sorted = sorted(clean_bin.unique().tolist())
+                if len(uniq_sorted) == 2:
+                    try:
+                        low_str  = (str(int(uniq_sorted[0]))
+                                    if float(uniq_sorted[0]) == int(uniq_sorted[0])
+                                    else str(uniq_sorted[0]))
+                        high_str = (str(int(uniq_sorted[1]))
+                                    if float(uniq_sorted[1]) == int(uniq_sorted[1])
+                                    else str(uniq_sorted[1]))
+                    except (ValueError, OverflowError):
+                        low_str  = str(uniq_sorted[0])
+                        high_str = str(uniq_sorted[1])
+                    col_profile["is_binary"]       = True
+                    col_profile["value_label_map"] = _infer_binary_labels(col, low_str, high_str)
+                    col_profile["top_values"]      = {
+                        low_str:  int((clean_bin == uniq_sorted[0]).sum()),
+                        high_str: int((clean_bin == uniq_sorted[1]).sum()),
+                    }
         elif pat.is_datetime64_any_dtype(col_data):
             col_profile.update(_profile_datetime_col(col_data))
         else:

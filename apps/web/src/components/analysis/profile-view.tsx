@@ -33,7 +33,10 @@ type ColProfile = {
   kurtosis?: number;
   is_normal?: boolean;
   outliers_iqr?: number;
-  // categorical
+  // binary numeric flag (numeric dtype with exactly 2 distinct values)
+  is_binary?: boolean;
+  value_label_map?: Record<string, string>;   // e.g. {"0": "Not senior", "1": "Senior"}
+  // categorical (also populated for binary numeric columns)
   top_values?: Record<string, number>;
   most_common?: string;
   most_common_pct?: number;
@@ -47,7 +50,14 @@ type Props = {
   projectId?: number;
 };
 
-function TypeBadge({ type }: { type: string }) {
+function TypeBadge({ type, isBinary }: { type: string; isBinary?: boolean }) {
+  if (isBinary) {
+    return (
+      <span className="rounded-full px-2 py-0.5 text-xs font-medium bg-sky-500/20 text-sky-300">
+        binary flag
+      </span>
+    );
+  }
   const styles: Record<string, string> = {
     numeric: "bg-indigo-500/20 text-indigo-300",
     categorical: "bg-purple-500/20 text-purple-300",
@@ -112,13 +122,17 @@ function NumericMiniViz({ col }: { col: ColProfile }) {
 
 function CategoricalMiniViz({ col }: { col: ColProfile }) {
   if (!col.top_values) return null;
+  const labelMap = col.value_label_map ?? {};
   const entries = Object.entries(col.top_values).slice(0, 5);
-  const maxCount = Math.max(...entries.map(([, v]) => v));
-  const data = entries.map(([k, v]) => ({ name: k.slice(0, 12), value: v }));
+  // Apply value_label_map so binary flags show "Not senior"/"Senior" instead of "0"/"1"
+  const data = entries.map(([k, v]) => ({
+    name: (labelMap[k] ?? k).slice(0, 16),
+    value: v,
+  }));
 
   return (
     <div className="mt-3">
-      <p className="mb-1 text-xs text-white/40">Top values</p>
+      <p className="mb-1 text-xs text-white/40">Value breakdown</p>
       <div className="h-20">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
@@ -171,7 +185,7 @@ function ColRow({
           {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </span>
         <span className="flex-1 text-sm font-medium text-white truncate">{col.column}</span>
-        <TypeBadge type={col.type} />
+        <TypeBadge type={col.type} isBinary={col.is_binary} />
         {hasFlags && (
           <AlertTriangle className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
         )}
@@ -195,7 +209,24 @@ function ColRow({
             </div>
           )}
 
-          {col.type === "numeric" && (
+          {col.type === "numeric" && col.is_binary && col.value_label_map && (
+            /* ── Binary flag: show readable label mapping + bar chart ── */
+            <>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(col.value_label_map).map(([raw, label]) => (
+                  <span key={raw} className="rounded-full border border-sky-500/20 bg-sky-500/[0.08] px-3 py-1 text-xs text-sky-200">
+                    <span className="font-mono text-white/40">{raw}</span>
+                    <span className="mx-1.5 text-white/20">=</span>
+                    <span className="font-medium">{label}</span>
+                  </span>
+                ))}
+              </div>
+              <CategoricalMiniViz col={col} />
+            </>
+          )}
+
+          {col.type === "numeric" && !col.is_binary && (
+            /* ── Continuous numeric: show full statistical breakdown ── */
             <>
               <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
                 {[
