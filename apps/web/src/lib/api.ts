@@ -422,10 +422,10 @@ export function setAnnotation(projectId: number, column: string, note: string) {
 }
 
 export function createProject(name: string) {
-  return post<{ id: number; name: string }>("/projects", { name });
+  return post<{ id: number; name: string; status: string; created_at?: string }>("/projects", { name });
 }
 
-export async function deleteProject(projectId: number) {
+export async function deleteProject(projectId: number): Promise<{ ok: boolean; project_id: number }> {
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}/projects/${projectId}`, {
@@ -441,6 +441,11 @@ export async function deleteProject(projectId: number) {
   }
   if (res.status === 401) clearToken();
   if (!res.ok) throw await parseError(res, "Project");
+  try {
+    return await res.json();
+  } catch {
+    throw new ApiError("The server returned an unexpected response format.", "PARSE_ERROR", res.status);
+  }
 }
 
 export function getProjectsWithLatestRun() {

@@ -9,7 +9,15 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.middleware.auth import get_current_user
 from app.middleware.plans import check_project_limit
-from app.models import AnalysisResult, Project, ProjectFile, User
+from app.models import (
+    AnalysisResult,
+    PreparedDataset,
+    Project,
+    ProjectFeature,
+    ProjectFile,
+    ReportDraft,
+    User,
+)
 from app.schemas.project import ProjectCreate, ProjectResponse
 from app.services.access_guards import get_project_for_user
 from app.services.run_resolver import build_run_detail, resolve_latest_run
@@ -154,22 +162,39 @@ def get_project(
     return result
 
 
-@router.delete("/{project_id}", status_code=204)
+@router.delete("/{project_id}")
 def delete_project(
     project_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     project = get_project_for_user(db, project_id, current_user)
+    project_name = project.name
 
     try:
+        db.query(ReportDraft).filter(ReportDraft.project_id == project_id).delete(
+            synchronize_session=False
+        )
+        db.query(ProjectFeature).filter(ProjectFeature.project_id == project_id).delete(
+            synchronize_session=False
+        )
+        db.query(PreparedDataset).filter(PreparedDataset.project_id == project_id).delete(
+            synchronize_session=False
+        )
+        db.query(AnalysisResult).filter(AnalysisResult.project_id == project_id).delete(
+            synchronize_session=False
+        )
+        db.query(ProjectFile).filter(ProjectFile.project_id == project_id).delete(
+            synchronize_session=False
+        )
         db.delete(project)
         db.commit()
         # Only clear the cache after a successful DB commit
         PROJECT_FILES.pop(project_id, None)
         logger.info(
-            f"Project deleted: id={project_id} user={current_user.id[:8]}… name='{project.name}'"
+            f"Project deleted: id={project_id} user={current_user.id[:8]}… name='{project_name}'"
         )
+        return {"ok": True, "project_id": project_id}
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Failed to delete project {project_id}: {e}", exc_info=True)
