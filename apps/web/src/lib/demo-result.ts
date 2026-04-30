@@ -248,46 +248,57 @@ export const DEMO_RESULT = {
     slides: [
       {
         slide_num: 1,
-        title: "Executive Summary",
+        title: "Executive takeaway",
         narrative:
-          "November 2024 revenue came in at $124,300 — 12.1% below the Q3 monthly average of $141,400. Order volume also declined 7.1% compared to October. The dataset was clean and well-structured, though 8.4% of rows are missing region data.",
+          "November 2024 revenue landed at $124,300 — 12.1% below the Q3 monthly average of $141,400. Order volume fell 7.1% versus October (847 vs 912 orders). The file is analysis-ready, but 8.4% of rows lack region — flag that before geographic cuts.",
         key_points: [
-          "$124,300 total revenue — down 12.1% vs Q3 average",
-          "847 orders processed (vs 912 in October)",
-          "Data health grade: B (74/100) — good with minor issues",
+          "$124,300 revenue — down 12.1% vs Q3 monthly average",
+          "847 November orders vs 912 in October",
+          "71 rows missing region — limit geo reporting until backfilled",
         ],
       },
       {
         slide_num: 2,
-        title: "Revenue Trends",
+        title: "Data quality & trust",
         narrative:
-          "The revenue decline was not evenly distributed across the month. The final 7 days contributed only 18% of monthly revenue, well below the typical 27%. This late-month softness should be investigated for pipeline and close-rate factors.",
+          "Pipeline scored the dataset at 74/100 (grade B): strong structure with minor completeness gaps. Twelve duplicate rows were removed automatically. The Nov 3 order spike (87 orders vs ~21 daily average) needs client confirmation before citing in a board deck.",
         key_points: [
-          "Final week: 18% of monthly revenue (vs typical 27%)",
-          "Mid-month performance (Nov 10–20) was broadly in line with prior months",
-          "No single product category explains the shortfall",
+          "Health score 74/100 (grade B) — good baseline trust",
+          "12 duplicate rows removed in cleaning",
+          "Nov 3 volume spike flagged for verification",
         ],
       },
       {
         slide_num: 3,
-        title: "Customer Concentration Risk",
+        title: "Biggest opportunity or driver",
         narrative:
-          "Three customers — Acme Corp, Bright Future LLC, and Metro Group — accounted for 68% of November revenue. This level of concentration creates significant commercial risk and warrants proactive account management.",
+          "Revenue softness concentrated in the final week (only ~18% of November revenue vs a typical ~27%). Mid-month performance held closer to plan — the gap is timing and close-rate in the last seven days, not a single category write-down.",
         key_points: [
-          "Top 3 accounts: $85,200 of $124,300 (68.5%)",
-          "Acme Corp alone: $42,100 (33.9%)",
-          "Recommend: review renewal status for all top-3 accounts",
+          "Final week under-contributed vs historical month-end shape",
+          "Mid-month (Nov 10–20) tracked near prior months",
+          "No one product line explains the full shortfall — investigate pipeline",
         ],
       },
       {
         slide_num: 4,
-        title: "Data Quality Notes",
+        title: "Main risk or caveat",
         narrative:
-          "The dataset was generally clean. 12 duplicate rows were automatically removed. One flag for client follow-up: 71 rows (8.4%) are missing the region field, which limits geographic reporting. An order volume spike on Nov 3rd also needs verification.",
+          "Customer concentration remains acute: Acme Corp, Bright Future LLC, and Metro Group drove ~68% of November revenue. Discount usage and revenue show a strong negative association in-row — useful for targeting, but treat as associative until promotion rules are validated.",
         key_points: [
-          "12 duplicate rows removed automatically",
-          "71 rows missing region — client backfill requested",
-          "Nov 3rd spike (87 orders vs avg 21) — verify with client",
+          "Top 3 accounts ≈68% of November revenue — renewal risk",
+          "High concentration in `customer_id` tail — monitor churn signals",
+          "Discount–revenue pattern is correlational; confirm with finance rules",
+        ],
+      },
+      {
+        slide_num: 5,
+        title: "Recommended next actions",
+        narrative:
+          "In the next two weeks: (1) reconcile the Nov 3 order burst with ops, (2) run renewal readiness on the top-three accounts, and (3) backfill region on the 71 incomplete rows so territory dashboards are client-safe.",
+        key_points: [
+          "Ops validation on Nov 3 spike before external communication",
+          "Account plan refresh for top 3 customers ahead of Q1",
+          "Region backfill ticket — unblock geographic reporting",
         ],
       },
     ],

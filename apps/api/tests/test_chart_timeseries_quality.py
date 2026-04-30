@@ -42,7 +42,7 @@ class TestTimeseriesQualityGates:
             "claim_date": date_range_100,
             "age": rng.integers(18, 80, size=100),
         })
-        assert build_timeseries_payload(df, "claim_date", "age") is not None
+        assert build_timeseries_payload(df, "claim_date", "age") is None
         hist = build_histogram_payload(df, "age", is_first_chart=True)
         assert hist is not None
         assert hist["type"] == "bar"
@@ -85,6 +85,20 @@ class TestTimeseriesQualityGates:
             assert any(str(r.get("label")) == "Other" for r in p["data"])
 
 
+class TestChartRanker:
+    def test_dedupes_identical_chart_signatures(self):
+        from app.services.charting.ranker import rank_and_cap
+
+        charts = [
+            {"type": "line", "title": "age over time", "x_key": "date", "y_key": "value", "score": 10},
+            {"type": "line", "title": "Age Over Time ", "x_key": "date", "y_key": "value", "score": 9},
+            {"type": "bar", "title": "Distribution of premium", "x_key": "bin", "y_key": "count", "score": 8},
+        ]
+        out = rank_and_cap(charts)
+        assert len(out) == 2
+        assert {c["type"] for c in out} == {"line", "bar"}
+
+
 class TestTimeseriesNarration:
     def test_near_zero_baseline_avoids_absurd_percent(self):
         from app.services.charting.narrator import _narrate_timeseries
@@ -109,3 +123,11 @@ class TestTimeseriesNarration:
         out = _narrate_timeseries("revenue", s, "month")
         assert "%" in out
         assert "increased" in out or "decreased" in out
+
+    def test_extreme_endpoint_percent_omits_headline_number(self):
+        from app.services.charting.narrator import _narrate_timeseries
+
+        s = pd.Series([100.0, 900.0])
+        out = _narrate_timeseries("volatile", s, "day")
+        assert "800" not in out
+        assert "extreme" in out.lower() or "unstable" in out.lower()

@@ -148,6 +148,8 @@ def test_data_story_no_analysis(client, consultant_auth_headers):
 
 
 def test_data_story_returns_slides(client, uploaded_project, consultant_auth_headers):
+    from app.services.ai_chat.story import STORY_SLIDE_TITLES
+
     pid = uploaded_project["id"]
     client.post("/analysis/run", json={"project_id": pid}, headers=consultant_auth_headers)
     hist = client.get(f"/analysis/history/{pid}", headers=consultant_auth_headers).json()
@@ -159,9 +161,67 @@ def test_data_story_returns_slides(client, uploaded_project, consultant_auth_hea
     assert "title" in body
     assert "slides" in body
     assert len(body["slides"]) == 5
-    for slide in body["slides"]:
+    for i, slide in enumerate(body["slides"]):
         assert "slide_num" in slide
         assert "title" in slide
         assert "narrative" in slide
         assert "key_points" in slide
         assert isinstance(slide["key_points"], list)
+        assert len(slide["key_points"]) == 3
+        assert slide["title"] == STORY_SLIDE_TITLES[i]
+
+
+def test_data_story_persists_story_result_json(client, uploaded_project, consultant_auth_headers):
+    from app.models import AnalysisResult
+    from tests.conftest import TestingSessionLocal
+
+    pid = uploaded_project["id"]
+    client.post("/analysis/run", json={"project_id": pid}, headers=consultant_auth_headers)
+    hist = client.get(f"/analysis/history/{pid}", headers=consultant_auth_headers).json()
+    analysis_id = hist[0]["id"]
+
+    r = client.post(f"/analysis/story/{analysis_id}", headers=consultant_auth_headers)
+    assert r.status_code == 200
+
+    db = TestingSessionLocal()
+    try:
+        row = db.query(AnalysisResult).filter(AnalysisResult.id == analysis_id).first()
+        assert row is not None
+        assert row.story_result_json and row.story_result_json.strip()
+        stored = json.loads(row.story_result_json)
+        assert len(stored.get("slides", [])) == 5
+    finally:
+        db.close()
+
+
+def test_deterministic_story_references_columns():
+    from app.services.ai_chat.story import deterministic_story_slides
+
+    ar = {
+        "dataset_summary": {"rows": 1200, "columns": 8, "numeric_cols": 3, "categorical_cols": 5},
+        "insight_results": [
+            {
+                "title": "Churn is higher among month-to-month contracts",
+                "severity": "high",
+                "category": "binary_rates",
+                "report_safe": True,
+                "columns_used": ["Contract", "Churn"],
+                "evidence": "~42% churn on month-to-month vs ~11% on two-year in this extract.",
+                "recommendation": "Pilot retention offers on month-to-month before renewal season.",
+            }
+        ],
+        "health_result": {
+            "health_score": {"total_score": 74, "grade": "B"},
+            "health_warnings": [{"severity": "medium", "message": "High-cardinality ID column present"}],
+        },
+        "cleaning_result": {
+            "cleaning_summary": {"steps_applied": 3},
+            "suspicious_columns": [{"column": "customerID", "issue_type": "id_like"}],
+        },
+    }
+    s = deterministic_story_slides(ar)
+    blob = json.dumps(s)
+    assert "Contract" in blob or "Churn" in blob
+    assert "1,200" in blob or "1200" in blob
+    assert len(s["slides"]) == 5
+    assert all(len(sl["key_points"]) == 3 for sl in s["slides"])

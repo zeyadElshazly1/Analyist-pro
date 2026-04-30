@@ -1,4 +1,5 @@
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
@@ -17,6 +18,51 @@ from app.services.reporting import apply_draft_to_result
 from app.state import get_project_file_info
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+logger = logging.getLogger(__name__)
+
+
+def _load_export_statuses_from_audit(db: Session, project_id_str: str):
+    """Build export history rows from audit log (most recent 10).
+
+    Isolated helper so callers can catch DB/ORM mismatches without failing
+    the rest of the draft payload.
+    """
+    from app.schemas.report import ExportRecord
+
+    _ACTION_TO_STATUS = {
+        "export_completed":   "completed",
+        "export_failed":      "failed",
+        "export_unavailable": "unavailable",
+    }
+    export_logs = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.action.in_(list(_ACTION_TO_STATUS.keys())),
+            AuditLog.resource_type == "project",
+            AuditLog.resource_id == project_id_str,
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(10)
+        .all()
+    )
+    export_statuses: list = []
+    for log in export_logs:
+        try:
+            detail = json.loads(log.detail) if log.detail else {}
+        except Exception:
+            detail = {}
+        fmt = detail.get("format")
+        status = _ACTION_TO_STATUS.get(log.action)
+        if fmt in ("html", "pdf", "xlsx") and status is not None:
+            err = detail.get("error") if status in ("failed", "unavailable") else None
+            export_statuses.append(ExportRecord(
+                format=fmt,          # type: ignore[arg-type]
+                status=status,       # type: ignore[arg-type]
+                exported_at=log.created_at,
+                error_message=err,
+            ))
+    return export_statuses
 
 
 def _get_stored_analysis(project_id: int, current_user: User, db: Session) -> tuple:
@@ -216,12 +262,7 @@ def _build_report_result(draft: ReportDraft, db: Session) -> dict:
     All data already exists in the DB — this is a pure assembly step.
     Fields without V1 persistence (user_edits, export_artifact_refs) are empty lists.
     """
-    from app.schemas.report import (
-        ExportRecord,
-        IncludedInsight,
-        ReportResult,
-        ReportSection,
-    )
+    from app.schemas.report import IncludedInsight, ReportResult, ReportSection
 
     # Resolve selected insights from the linked analysis result.
     # Defensive: only consider the linked analysis if it actually belongs to
@@ -280,50 +321,17 @@ def _build_report_result(draft: ReportDraft, db: Session) -> dict:
         for sid, title, included, is_ai in _SECTIONS
     ]
 
-    # Export history from audit log (most recent 10).
-    #
-    # The export endpoint writes one row per attempt with one of three
-    # actions:
-    #   * export_completed   → ExportRecord.status="completed"
-    #   * export_failed      → ExportRecord.status="failed" (carries error)
-    #   * export_unavailable → ExportRecord.status="unavailable" (PDF 501,
-    #                          missing WeasyPrint/pdfkit on the host)
-    #
-    # Surfacing all three is what lets the Report Builder export-history
-    # strip render honest state — successful exports, failures, and the
-    # PDF-unavailable case — without ever pretending PDF succeeded.
-    _ACTION_TO_STATUS = {
-        "export_completed":   "completed",
-        "export_failed":      "failed",
-        "export_unavailable": "unavailable",
-    }
-    export_logs = (
-        db.query(AuditLog)
-        .filter(
-            AuditLog.action.in_(list(_ACTION_TO_STATUS.keys())),
-            AuditLog.resource_type == "project",
-            AuditLog.resource_id == str(draft.project_id),
+    # Export history from audit log — best-effort only (schema drift or DB
+    # errors must not 503 the whole draft).
+    try:
+        export_statuses = _load_export_statuses_from_audit(db, str(draft.project_id))
+    except Exception:
+        logger.warning(
+            "Could not load export history from audit log for project %s",
+            draft.project_id,
+            exc_info=True,
         )
-        .order_by(AuditLog.created_at.desc())
-        .limit(10)
-        .all()
-    )
-    export_statuses: list[ExportRecord] = []
-    for log in export_logs:
-        try:
-            detail = json.loads(log.detail) if log.detail else {}
-        except Exception:
-            detail = {}
-        fmt = detail.get("format")
-        status = _ACTION_TO_STATUS.get(log.action)
-        if fmt in ("html", "pdf", "xlsx") and status is not None:
-            err = detail.get("error") if status in ("failed", "unavailable") else None
-            export_statuses.append(ExportRecord(
-                format=fmt,          # type: ignore[arg-type]
-                status=status,       # type: ignore[arg-type]
-                exported_at=log.created_at,
-                error_message=err,
-            ))
+        export_statuses = []
 
     result = ReportResult(
         report_id=draft.id,
@@ -456,8 +464,18 @@ def get_report_draft(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Fetch the current report draft for a project."""
-    get_project_for_user(db, project_id, current_user)
+    """Fetch the current report draft for a project.
+
+    When no draft row exists yet but the project has at least one analysis
+    result, a default draft is created, persisted, and returned so the Report
+    Builder never opens empty after a successful run.
+    """
+    from app.services.reporting.default_draft import (
+        build_fallback_executive_summary,
+        select_default_insight_selection,
+    )
+
+    project = get_project_for_user(db, project_id, current_user)
 
     draft = (
         db.query(ReportDraft)
@@ -465,7 +483,36 @@ def get_report_draft(
         .order_by(ReportDraft.created_at.desc())
         .first()
     )
-    if not draft:
+    if draft:
+        return _draft_response(draft, db)
+
+    analysis = (
+        db.query(AnalysisResult)
+        .filter(AnalysisResult.project_id == project_id)
+        .order_by(AnalysisResult.created_at.desc())
+        .first()
+    )
+    if not analysis:
         return None
+
+    result_data = json.loads(analysis.result_json)
+    raw = result_data.get("insight_results") or result_data.get("insights") or []
+    if not isinstance(raw, list):
+        raw = []
+    raw_dicts = [x for x in raw if isinstance(x, dict)]
+
+    summary = build_fallback_executive_summary(result_data)
+    selected = select_default_insight_selection(raw_dicts)
+
+    draft = ReportDraft(
+        project_id=project_id,
+        analysis_result_id=analysis.id,
+        title=project.name,
+        summary=summary,
+        selected_insight_ids_json=json.dumps(selected),
+    )
+    db.add(draft)
+    db.commit()
+    db.refresh(draft)
 
     return _draft_response(draft, db)

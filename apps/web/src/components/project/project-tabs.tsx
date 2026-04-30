@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown, ChevronUp, ArrowRight, Check } from "lucide-react";
+import { ArrowRight, Check } from "lucide-react";
 
 export type StepStatus = "unavailable" | "available" | "attention" | "complete";
 
@@ -98,15 +97,6 @@ const STEPS = [
   },
 ];
 
-const ADVANCED_TABS = [
-  { id: "query", label: "SQL query" },
-  { id: "predictions", label: "AutoML" },
-  { id: "ab-tests", label: "A/B tests" },
-  { id: "segments", label: "Segments" },
-  { id: "pivot", label: "Pivot table" },
-  { id: "join", label: "Join datasets" },
-];
-
 const TAB_TO_STEP: Record<string, string> = {};
 for (const step of STEPS) {
   for (const tab of step.tabs) {
@@ -115,13 +105,10 @@ for (const step of STEPS) {
 }
 
 export function ProjectTabs({ value, onChange, compareAvailable, stepStatuses }: Props) {
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-
   const activeStepId  = TAB_TO_STEP[value] ?? STEPS[0].id;
   const activeStep    = STEPS.find((s) => s.id === activeStepId) ?? STEPS[0];
   const activeStepIdx = STEPS.findIndex((s) => s.id === activeStepId);
   const nextStep      = activeStepIdx < STEPS.length - 1 ? STEPS[activeStepIdx + 1] : null;
-  const isAdvanced    = ADVANCED_TABS.some((t) => t.id === value);
 
   return (
     <div className="space-y-2">
@@ -131,7 +118,7 @@ export function ProjectTabs({ value, onChange, compareAvailable, stepStatuses }:
         <div className="flex items-center gap-0.5 min-w-max">
           {STEPS.map((step, idx) => {
             const status: StepStatus = stepStatuses?.[step.id] ?? "available";
-            const isActive    = step.id === activeStepId && !isAdvanced;
+            const isActive    = step.id === activeStepId;
             const isComplete  = !isActive && status === "complete";
             const isAttention = !isActive && status === "attention";
             const isUnavail   = !isActive && status === "unavailable";
@@ -191,23 +178,21 @@ export function ProjectTabs({ value, onChange, compareAvailable, stepStatuses }:
       </div>
 
       {/* ── Step context: description + next-step nudge ──────────────────── */}
-      {!isAdvanced && (
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-[11px] text-white/30 leading-none">{activeStep.description}</p>
-          {nextStep && (
-            <button
-              onClick={() => onChange(nextStep.primaryTab)}
-              className="flex flex-shrink-0 items-center gap-1 text-[11px] text-white/25 transition-colors hover:text-white/50"
-            >
-              Next: {nextStep.label}
-              <ArrowRight className="h-2.5 w-2.5" />
-            </button>
-          )}
-        </div>
-      )}
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-[11px] text-white/30 leading-none">{activeStep.description}</p>
+        {nextStep && (
+          <button
+            onClick={() => onChange(nextStep.primaryTab)}
+            className="flex flex-shrink-0 items-center gap-1 text-[11px] text-white/25 transition-colors hover:text-white/50"
+          >
+            Next: {nextStep.label}
+            <ArrowRight className="h-2.5 w-2.5" />
+          </button>
+        )}
+      </div>
 
       {/* ── Sub-tabs for current step ────────────────────────────────────── */}
-      {!isAdvanced && activeStep.tabs.length > 1 && (
+      {activeStep.tabs.length > 1 && (
         <div className="overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           <div className="flex gap-1 border-b border-white/[0.07] pb-2 min-w-max">
             {activeStep.tabs.map((t) => (
@@ -226,35 +211,6 @@ export function ProjectTabs({ value, onChange, compareAvailable, stepStatuses }:
           </div>
         </div>
       )}
-
-      {/* ── Advanced drawer ──────────────────────────────────────────────── */}
-      <div>
-        <button
-          onClick={() => setAdvancedOpen((o) => !o)}
-          className="flex items-center gap-1.5 text-xs text-white/20 transition-colors hover:text-white/45"
-        >
-          {advancedOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-          Advanced tools
-        </button>
-
-        {advancedOpen && (
-          <div className="mt-2 flex flex-wrap gap-1">
-            {ADVANCED_TABS.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => onChange(t.id)}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                  value === t.id
-                    ? "bg-white/10 text-white"
-                    : "text-white/35 hover:text-white/60 hover:bg-white/[0.04]"
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

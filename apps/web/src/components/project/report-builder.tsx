@@ -17,9 +17,15 @@ import {
   BarChart2,
   Info,
   X,
+  RefreshCw,
 } from "lucide-react";
 import { getDraftReport, saveDraftReport, exportReport, ApiError } from "@/lib/api";
 import type { CompareResult } from "@/lib/api";
+import {
+  buildDeterministicExecutiveSummary,
+  selectRecommendedInsightKeys,
+} from "@/lib/report-draft-fallback";
+import type { ExecutiveSummaryRichInput } from "@/lib/report-draft-fallback";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -34,6 +40,9 @@ type InsightItem = {
   recommendation?: string;
   why_it_matters?: string;
   confidence?: number;
+  columns_used?: string[];
+  evidence?: string;
+  caveats?: string[] | string;
 };
 
 type ExecutivePanel = {
@@ -65,6 +74,15 @@ type Props = {
   executivePanel?: ExecutivePanel | null;
   compareResult?: CompareResult | null;
   projectName?: string;
+  /** Rows/columns from analysis — improves local executive-summary fallback */
+  datasetSummary?: {
+    rows?: number;
+    columns?: number;
+    numeric_cols?: number;
+    categorical_cols?: number;
+  } | null;
+  /** Overall health score 0–100 when known */
+  healthTotal?: number | null;
   healthResult?: HealthBlock | null;
   cleaningResult?: CleaningBlock | null;
   onNavigateTo?: (tab: string) => void;
@@ -335,6 +353,8 @@ export function ReportBuilder({
   executivePanel,
   compareResult,
   projectName,
+  datasetSummary,
+  healthTotal,
   healthResult,
   cleaningResult,
   onNavigateTo,
@@ -357,30 +377,87 @@ export function ReportBuilder({
   const [exportedWeak, setExportedWeak] = useState(false);
   const [loaded,    setLoaded]    = useState(false);
   const [previewOpen, setPreviewOpen] = useState(true);
+  const [draftLoadError, setDraftLoadError] = useState<string | null>(null);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const insightsRef = useRef(insights);
+  const insightResultsRef = useRef(insightResults);
+  insightsRef.current = insights;
+  insightResultsRef.current = insightResults;
+  const allInsightsRef = useRef(allInsights);
+  allInsightsRef.current = allInsights;
 
-  // ── Load saved draft on mount ───────────────────────────────────────────────
+  const richSummaryInput = useCallback(
+    (insightsList: InsightItem[]): ExecutiveSummaryRichInput => ({
+      narrative: narrative ?? "",
+      insights: insightsList,
+      datasetSummary: datasetSummary ?? null,
+      healthTotal: healthTotal ?? null,
+      healthResult: healthResult
+        ? { health_score: healthResult.health_score }
+        : null,
+      cleaningResult: cleaningResult ?? null,
+      compareResult: compareResult
+        ? {
+            summary_draft: compareResult.summary_draft,
+            row_volume_changes: compareResult.row_volume_changes,
+          }
+        : null,
+      executivePanel: executivePanel ?? null,
+    }),
+    [
+      narrative,
+      datasetSummary,
+      healthTotal,
+      healthResult,
+      cleaningResult,
+      compareResult,
+      executivePanel,
+    ],
+  );
+
+  // ── Persist (debounced 800 ms) ──────────────────────────────────────────────
+
+  const persistDraft = useCallback((next: Draft) => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    setSaved(false);
+    setSaving(true);
+    saveTimer.current = setTimeout(async () => {
+      try {
+        await saveDraftReport(projectId, {
+          title:                next.title,
+          summary:              next.summary,
+          selected_insight_ids: next.selected,
+          selected_chart_ids:   [],
+          template:             next.template ?? null,
+        });
+        setSaved(true);
+      } catch {
+        // silent — draft still lives in local state
+      } finally {
+        setSaving(false);
+      }
+    }, 800);
+  }, [projectId]);
+
+  // ── Load saved draft on mount / project change ───────────────────────────────
 
   useEffect(() => {
     getDraftReport(projectId)
       .then((d) => {
+        setDraftLoadError(null);
         if (!d) {
-          // No saved draft — auto-select only insights that the pipeline
-          // explicitly flagged ``report_safe === true``.  Anything where
-          // ``report_safe`` is undefined or false stays unselected so the
-          // consultant has to opt it in.
-          const topSafe = allInsights
-            .map((ins, idx) => ({ ins, idx }))
-            .filter(({ ins }) => ins.report_safe === true)
-            .slice(0, 5)
-            .map(({ ins, idx }) => selectionKey(ins, idx));
-          setDraft((prev) => ({
-            ...prev,
+          const list = insightResultsRef.current?.length
+            ? insightResultsRef.current
+            : insightsRef.current;
+          const summary = buildDeterministicExecutiveSummary(richSummaryInput(list));
+          const selected = selectRecommendedInsightKeys(list);
+          setDraft({
             title:    projectName ?? "",
-            summary:  narrative ?? "",
-            selected: topSafe,
-          }));
+            summary,
+            selected,
+            template: undefined,
+          });
           setExportHistory([]);
           setLoaded(true);
           return;
@@ -408,38 +485,46 @@ export function ReportBuilder({
         setLoaded(true);
       })
       .catch(() => {
-        setDraft((prev) => ({
-          ...prev,
-          summary: prev.summary || narrative || "",
-        }));
+        setDraftLoadError(
+          "We couldn't load your saved report draft from the server. You're viewing a local preview based on this analysis — reconnect to sync your draft.",
+        );
+        const summary = buildDeterministicExecutiveSummary(
+          richSummaryInput(
+            insightResultsRef.current?.length
+              ? insightResultsRef.current
+              : insightsRef.current,
+          ),
+        );
+        const selected = selectRecommendedInsightKeys(
+          insightResultsRef.current?.length
+            ? insightResultsRef.current
+            : insightsRef.current,
+        );
+        setDraft({
+          title:    projectName ?? "",
+          summary:  narrative?.trim() ? narrative : summary,
+          selected,
+          template: undefined,
+        });
+        setExportHistory([]);
         setLoaded(true);
       });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  }, [projectId, projectName, richSummaryInput]);
 
-  // ── Persist (debounced 800 ms) ──────────────────────────────────────────────
-
-  const persistDraft = useCallback((next: Draft) => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    setSaved(false);
-    setSaving(true);
-    saveTimer.current = setTimeout(async () => {
-      try {
-        await saveDraftReport(projectId, {
-          title:                next.title,
-          summary:              next.summary,
-          selected_insight_ids: next.selected,
-          selected_chart_ids:   [],
-          template:             next.template ?? null,
-        });
-        setSaved(true);
-      } catch {
-        // silent — draft still lives in local state
-      } finally {
-        setSaving(false);
-      }
-    }, 800);
-  }, [projectId]);
+  // If insights arrive after the first fetch (streaming UI), fill an empty selection once.
+  useEffect(() => {
+    if (!loaded || draftLoadError) return;
+    const list = allInsightsRef.current;
+    if (list.length === 0) return;
+    setDraft((prev) => {
+      if (prev.selected.length > 0) return prev;
+      const rec = selectRecommendedInsightKeys(list);
+      if (rec.length === 0) return prev;
+      const next = { ...prev, selected: rec };
+      persistDraft(next);
+      return next;
+    });
+  }, [loaded, allInsights.length, draftLoadError, persistDraft]);
 
   function update(patch: Partial<Draft>) {
     setDraft((prev) => {
@@ -557,6 +642,13 @@ export function ReportBuilder({
   return (
     <div className="space-y-6">
 
+      {draftLoadError && (
+        <div className="flex gap-3 rounded-xl border border-amber-500/25 bg-amber-500/[0.07] px-4 py-3">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-400" />
+          <p className="text-sm leading-snug text-amber-100/90">{draftLoadError}</p>
+        </div>
+      )}
+
       {/* ── Pre-write brief ───────────────────────────────────────────────── */}
       <ReportBrief
         allInsights={allInsights}
@@ -583,16 +675,30 @@ export function ReportBuilder({
 
         {/* Executive summary */}
         <div>
-          <div className="mb-1.5 flex items-center gap-2">
-            <label className="text-xs font-semibold uppercase tracking-wider text-white/40">
-              Executive summary
-            </label>
-            {narrative && (
-              <span className="flex items-center gap-1 rounded-full bg-indigo-500/15 px-1.5 py-px text-[10px] font-medium text-indigo-400">
-                <Sparkles className="h-2.5 w-2.5" />
-                AI-assisted — edit freely
-              </span>
-            )}
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold uppercase tracking-wider text-white/40">
+                Executive summary
+              </label>
+              {narrative && (
+                <span className="flex items-center gap-1 rounded-full bg-indigo-500/15 px-1.5 py-px text-[10px] font-medium text-indigo-400">
+                  <Sparkles className="h-2.5 w-2.5" />
+                  AI-assisted — edit freely
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                update({
+                  summary: buildDeterministicExecutiveSummary(richSummaryInput(allInsights)),
+                })
+              }
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-white/55 transition hover:border-white/15 hover:bg-white/[0.07] hover:text-white/75"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Regenerate executive summary
+            </button>
           </div>
           <textarea
             value={draft.summary}
@@ -616,13 +722,25 @@ export function ReportBuilder({
         {/* Insight selection */}
         {allInsights.length > 0 && (
           <div>
-            <div className="mb-2 flex items-center justify-between">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <label className="text-xs font-semibold uppercase tracking-wider text-white/40">
                 Select findings to include
               </label>
-              <span className="text-xs text-white/25">
-                {selectedInsights.length} / {Math.min(allInsights.length, 10)} selected
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    update({ selected: selectRecommendedInsightKeys(allInsights) })
+                  }
+                  disabled={allInsights.length === 0}
+                  className="rounded-lg border border-indigo-500/25 bg-indigo-500/10 px-2.5 py-1 text-[11px] font-medium text-indigo-300 transition hover:border-indigo-500/40 hover:bg-indigo-500/15 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Select recommended findings
+                </button>
+                <span className="text-xs text-white/25">
+                  {selectedInsights.length} / {Math.min(allInsights.length, 10)} selected
+                </span>
+              </div>
             </div>
             <div className="space-y-1.5">
               {allInsights.slice(0, 10).map((ins, idx) => {
@@ -658,16 +776,30 @@ export function ReportBuilder({
 
             {/* No findings selected hint */}
             {allInsights.length > 0 && selectedInsights.length === 0 && (
-              <div className="flex items-center justify-between rounded-lg border border-amber-500/15 bg-amber-500/[0.04] px-3 py-2">
-                <p className="text-xs text-amber-300/80">No findings selected — pick 2–5 for a solid client report</p>
-                {onNavigateTo && (
+              <div className="flex flex-col gap-2 rounded-lg border border-amber-500/15 bg-amber-500/[0.04] px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-amber-200/85">
+                  No findings selected yet — choose 2–5 findings to build a client report.
+                </p>
+                <div className="flex flex-shrink-0 gap-2">
                   <button
-                    onClick={() => onNavigateTo("insights")}
-                    className="ml-3 flex-shrink-0 text-xs font-medium text-amber-400 transition hover:text-amber-300"
+                    type="button"
+                    onClick={() =>
+                      update({ selected: selectRecommendedInsightKeys(allInsights) })
+                    }
+                    className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-medium text-amber-200 transition hover:bg-amber-500/15"
                   >
-                    Review Findings →
+                    Select recommended
                   </button>
-                )}
+                  {onNavigateTo && (
+                    <button
+                      type="button"
+                      onClick={() => onNavigateTo("insights")}
+                      className="text-xs font-medium text-amber-400 transition hover:text-amber-300"
+                    >
+                      Review Findings →
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 

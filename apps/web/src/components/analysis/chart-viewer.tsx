@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, type RefObject } from "react";
 import { getSuggestedCharts } from "@/lib/api";
-import { TrendingUp, Download } from "lucide-react";
+import { Download, X, Info, ChevronRight } from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -57,6 +57,60 @@ type ChartDef = {
   is_binary?: boolean;
 };
 
+/** Backend time-series payloads use x_key `date` and ISO-ish strings in data rows. */
+function sampleCellLooksLikeDate(value: unknown): boolean {
+  if (value == null) return false;
+  const s = String(value).trim();
+  if (s.length < 8) return false;
+  const t = Date.parse(s);
+  return !Number.isNaN(t);
+}
+
+function lineChartHasPlausibleTimeAxis(chart: ChartDef): boolean {
+  if (chart.type !== "line") return true;
+  const xk = chart.x_key ?? "";
+  if (xk.toLowerCase() !== "date") return false;
+  const rows = chart.data ?? [];
+  if (rows.length < 2) return false;
+  const sample = rows.slice(0, Math.min(16, rows.length));
+  const parsed = sample.filter((r) => sampleCellLooksLikeDate(r[xk])).length;
+  return parsed >= Math.max(2, Math.ceil(sample.length * 0.35));
+}
+
+function chartDisplaySignature(chart: ChartDef): string {
+  return `${chart.type}|${(chart.title ?? "").trim().toLowerCase()}|${chart.x_key}|${chart.y_key}`;
+}
+
+function sanitizeLineChartInsight(chart: ChartDef): ChartDef {
+  if (chart.type !== "line" || !chart.insight) return chart;
+  let insight = chart.insight;
+  if (/\d{6,}%/.test(insight)) {
+    return {
+      ...chart,
+      insight:
+        "Trend is shown in the chart; endpoint percentage summaries are omitted when they are not reliable.",
+    };
+  }
+  insight = insight.replace(
+    /\b(increased|decreased)\s+by\s+1[,0-9]{3,}\.?\d*%/gi,
+    "changed sharply (see chart)",
+  );
+  return { ...chart, insight };
+}
+
+function filterChartsForDisplay(charts: ChartDef[]): ChartDef[] {
+  const seen = new Set<string>();
+  const out: ChartDef[] = [];
+  for (const raw of charts) {
+    if (raw.type === "line" && !lineChartHasPlausibleTimeAxis(raw)) continue;
+    const sig = chartDisplaySignature(raw);
+    if (seen.has(sig)) continue;
+    seen.add(sig);
+    out.push(sanitizeLineChartInsight(raw));
+  }
+  return out;
+}
+
 type Props = {
   projectId: number;
   autoLoad?: boolean;
@@ -80,9 +134,17 @@ function barCountTooltipFormatter(yLabel: string | undefined) {
 const PIE_COLORS = ["#6366f1", "#8b5cf6", "#a78bfa", "#c4b5fd", "#818cf8", "#4f46e5", "#7c3aed", "#6d28d9"];
 const BG_COLOR = "#0c0c14";
 
-/** Drawing area height inside chart cards (premium, readable). */
+/** Full-height plot for legacy / non-preview contexts. */
 const CHART_PLOT_HEIGHT = 440;
+/** Compact plot inside grid cards (preview). */
+const CHART_PREVIEW_PLOT_HEIGHT = 220;
+/** Minimum card height so the grid aligns cleanly. */
+const CHART_CARD_MIN_HEIGHT = 336;
+/** Taller plot in Chart Detail modal / drawer. */
+const DETAIL_CHART_PLOT_HEIGHT = 520;
 const MAX_CATEGORY_TICKS = 9;
+const PREVIEW_CATEGORY_TICKS = 4;
+const DETAIL_TABLE_MAX_ROWS = 120;
 
 function longestCategoryLabel(rows: Array<Record<string, unknown>>, key: string): number {
   let m = 0;
@@ -131,34 +193,48 @@ function TruncatedRotatedTick({
   );
 }
 
-function HorizontalBarPanel({ chart }: { chart: ChartDef }) {
+function HorizontalBarPanel({
+  chart,
+  plotHeight = CHART_PLOT_HEIGHT,
+  variant = "detail",
+}: {
+  chart: ChartDef;
+  plotHeight?: number;
+  variant?: "preview" | "detail";
+}) {
+  const isPreview = variant === "preview";
   const rows = chart.data;
+  const n = rows.length;
   const labelChars = longestCategoryLabel(rows, chart.x_key);
-  const yAxisWidth = Math.min(220, 48 + Math.min(labelChars, 36) * 7);
+  const yAxisWidth = isPreview
+    ? Math.min(112, 40 + Math.min(labelChars, 10) * 6)
+    : Math.min(220, 48 + Math.min(labelChars, 36) * 7);
+  const yTickInterval = isPreview ? chartTickInterval(n, PREVIEW_CATEGORY_TICKS) : 0;
+  const tickTruncate = isPreview ? 14 : 32;
 
   return (
     <div
       className="w-full min-w-0"
-      style={{ height: CHART_PLOT_HEIGHT, minHeight: CHART_PLOT_HEIGHT }}
+      style={{ height: plotHeight, minHeight: plotHeight }}
     >
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
           data={rows}
           layout="vertical"
-          margin={{ left: 12, right: 16, top: 12, bottom: 12 }}
+          margin={{ left: 8, right: isPreview ? 8 : 16, top: 8, bottom: 8 }}
         >
           <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.12} horizontal />
-          <XAxis type="number" tick={{ fill: "#9ca3af", fontSize: 11 }} tickCount={6} />
+          <XAxis type="number" tick={{ fill: "#9ca3af", fontSize: isPreview ? 9 : 11 }} tickCount={isPreview ? 4 : 6} />
           <YAxis
             type="category"
             dataKey={chart.x_key}
             width={yAxisWidth}
-            tick={{ fill: "#9ca3af", fontSize: 11 }}
+            tick={{ fill: "#9ca3af", fontSize: isPreview ? 9 : 11 }}
             tickFormatter={(v: string) => {
               const s = String(v);
-              return s.length > 32 ? `${s.slice(0, 31)}…` : s;
+              return s.length > tickTruncate ? `${s.slice(0, tickTruncate - 1)}…` : s;
             }}
-            interval={0}
+            interval={yTickInterval}
           />
           <Tooltip
             {...DARK_TOOLTIP}
@@ -178,24 +254,40 @@ function HorizontalBarPanel({ chart }: { chart: ChartDef }) {
   );
 }
 
-function VerticalBarPanel({ chart }: { chart: ChartDef }) {
+function VerticalBarPanel({
+  chart,
+  plotHeight = CHART_PLOT_HEIGHT,
+  variant = "detail",
+}: {
+  chart: ChartDef;
+  plotHeight?: number;
+  variant?: "preview" | "detail";
+}) {
+  const isPreview = variant === "preview";
   const rows = chart.data;
   const n = rows.length;
   const isBinary = chart.is_binary === true;
   const maxLabLen = longestCategoryLabel(rows, chart.x_key);
-  const needsRotate = !isBinary && (n > 6 || maxLabLen > 11);
+  const maxCatTicks = isPreview ? PREVIEW_CATEGORY_TICKS : MAX_CATEGORY_TICKS;
+  const needsRotate = !isPreview && !isBinary && (n > 6 || maxLabLen > 11);
   const rotate = isBinary ? 0 : needsRotate ? -38 : 0;
-  const bottomGutter = isBinary ? 32 : rotate ? Math.min(108, 40 + Math.min(maxLabLen, 20) * 2.2) : 52;
-  const tickMaxChars = rotate ? 16 : 22;
-  const interval = isBinary ? 0 : chartTickInterval(n, MAX_CATEGORY_TICKS);
+  const bottomGutter = isPreview
+    ? (isBinary ? 24 : Math.min(40, 24 + Math.min(maxLabLen, 8)))
+    : isBinary
+      ? 32
+      : rotate
+        ? Math.min(108, 40 + Math.min(maxLabLen, 20) * 2.2)
+        : 52;
+  const tickMaxChars = isPreview ? 8 : rotate ? 16 : 22;
+  const interval = isBinary ? 0 : chartTickInterval(n, maxCatTicks);
 
   return (
     <div
       className="w-full min-w-0"
-      style={{ height: CHART_PLOT_HEIGHT, minHeight: CHART_PLOT_HEIGHT }}
+      style={{ height: plotHeight, minHeight: plotHeight }}
     >
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={rows} margin={{ left: 4, right: 12, top: 12, bottom: bottomGutter }}>
+        <BarChart data={rows} margin={{ left: 4, right: isPreview ? 8 : 12, top: isPreview ? 6 : 12, bottom: bottomGutter }}>
           <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.12} />
           <XAxis
             dataKey={chart.x_key}
@@ -214,7 +306,7 @@ function VerticalBarPanel({ chart }: { chart: ChartDef }) {
             tickLine={{ stroke: "rgba(255,255,255,0.06)" }}
           />
           <YAxis
-            tick={{ fill: "#9ca3af", fontSize: 11 }}
+            tick={{ fill: "#9ca3af", fontSize: isPreview ? 9 : 11 }}
             axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
             tickLine={{ stroke: "rgba(255,255,255,0.06)" }}
           />
@@ -236,7 +328,15 @@ function VerticalBarPanel({ chart }: { chart: ChartDef }) {
   );
 }
 
-function BarPanels({ chart }: { chart: ChartDef }) {
+function BarPanels({
+  chart,
+  plotHeight = CHART_PLOT_HEIGHT,
+  variant = "detail",
+}: {
+  chart: ChartDef;
+  plotHeight?: number;
+  variant?: "preview" | "detail";
+}) {
   const rows = chart.data;
   const n = rows.length;
   const maxLab = longestCategoryLabel(rows, chart.x_key);
@@ -244,9 +344,9 @@ function BarPanels({ chart }: { chart: ChartDef }) {
     chart.horizontal === true || (!chart.is_binary && (n > 12 || maxLab > 18));
 
   if (useHorizontal) {
-    return <HorizontalBarPanel chart={chart} />;
+    return <HorizontalBarPanel chart={chart} plotHeight={plotHeight} variant={variant} />;
   }
-  return <VerticalBarPanel chart={chart} />;
+  return <VerticalBarPanel chart={chart} plotHeight={plotHeight} variant={variant} />;
 }
 
 function slugify(title: string) {
@@ -312,7 +412,7 @@ function exportChart(containerEl: HTMLDivElement, chart: ChartDef, format: "svg"
   img.src = url;
 }
 
-function BoxplotChart({ chart }: { chart: ChartDef }) {
+function BoxplotChart({ chart, variant = "detail" }: { chart: ChartDef; variant?: "preview" | "detail" }) {
   const entries = chart.data as unknown as BoxplotEntry[];
   if (!entries || entries.length === 0) {
     return <p className="text-sm text-white/40">No boxplot data available.</p>;
@@ -327,9 +427,14 @@ function BoxplotChart({ chart }: { chart: ChartDef }) {
   const pct = (v: number) => `${Math.max(0, Math.min(100, ((v - gMin) / range) * 100)).toFixed(2)}%`;
   const pctW = (a: number, b: number) => `${Math.max(0, ((b - a) / range) * 100).toFixed(2)}%`;
 
+  const isPreview = variant === "preview";
+  const showEntries = isPreview ? entries.slice(0, 6) : entries;
+
   return (
-    <div className="space-y-3 mt-2">
-      {entries.map((entry, i) => (
+    <div
+      className={`space-y-2 mt-1 ${isPreview ? "max-h-[200px] overflow-y-auto pr-1" : "space-y-3 mt-2"}`}
+    >
+      {showEntries.map((entry, i) => (
         <div key={i} className="flex items-center gap-3">
           <span className="w-24 flex-shrink-0 text-right text-xs text-white/50 truncate" title={entry.name}>
             {entry.name}
@@ -367,7 +472,7 @@ function BoxplotChart({ chart }: { chart: ChartDef }) {
   );
 }
 
-function HeatmapChart({ chart }: { chart: ChartDef }) {
+function HeatmapChart({ chart, variant = "detail" }: { chart: ChartDef; variant?: "preview" | "detail" }) {
   const entries = chart.data as unknown as HeatmapEntry[];
   const cols = chart.columns ?? [];
 
@@ -390,9 +495,10 @@ function HeatmapChart({ chart }: { chart: ChartDef }) {
   }
 
   const cellSize = cols.length > 5 ? "text-[9px]" : "text-xs";
+  const isPreview = variant === "preview";
 
   return (
-    <div className="overflow-x-auto mt-2">
+    <div className={`overflow-x-auto mt-1 ${isPreview ? "max-h-[200px]" : "mt-2"}`}>
       <table className="w-full border-collapse text-center" style={{ minWidth: cols.length * 52 }}>
         <thead>
           <tr>
@@ -432,36 +538,58 @@ function HeatmapChart({ chart }: { chart: ChartDef }) {
   );
 }
 
-function SingleChart({ chart }: { chart: ChartDef }) {
+function SingleChart({
+  chart,
+  plotHeight,
+  variant = "detail",
+}: {
+  chart: ChartDef;
+  plotHeight?: number;
+  variant?: "preview" | "detail";
+}) {
   if (!chart.data || chart.data.length === 0) {
     return <p className="text-sm text-white/40">No data available for this chart.</p>;
   }
 
   if (chart.type === "boxplot") {
-    return <BoxplotChart chart={chart} />;
+    return <BoxplotChart chart={chart} variant={variant} />;
   }
 
   if (chart.type === "heatmap") {
-    return <HeatmapChart chart={chart} />;
+    return <HeatmapChart chart={chart} variant={variant} />;
   }
 
-  const plotBoxStyle = { height: CHART_PLOT_HEIGHT, minHeight: CHART_PLOT_HEIGHT };
+  const isPreview = variant === "preview";
+  const h =
+    plotHeight ??
+    (isPreview ? CHART_PREVIEW_PLOT_HEIGHT : CHART_PLOT_HEIGHT);
+  const plotBoxStyle = { height: h, minHeight: h };
 
   if (chart.type === "line") {
+    const n = chart.data.length;
+    const angled = !isPreview && n > 10;
+    const maxXTicks = isPreview ? PREVIEW_CATEGORY_TICKS : angled ? 8 : 12;
+    const bottomMargin = isPreview ? 22 : angled ? 64 : 28;
     return (
       <div className="w-full min-w-0" style={plotBoxStyle}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chart.data} margin={{ left: 4, right: 8, top: 8, bottom: 8 }}>
+          <LineChart
+            data={chart.data}
+            margin={{ left: 4, right: 6, top: 6, bottom: bottomMargin }}
+          >
             <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.12} />
             <XAxis
               dataKey={chart.x_key}
-              tick={{ fill: "#9ca3af", fontSize: 11 }}
-              interval={chartTickInterval(chart.data.length, 12)}
-              minTickGap={28}
+              tick={{ fill: "#9ca3af", fontSize: isPreview ? 8 : angled ? 9 : 11 }}
+              interval={chartTickInterval(n, maxXTicks)}
+              minTickGap={isPreview ? 48 : angled ? 20 : 28}
+              angle={angled ? -42 : 0}
+              textAnchor={angled ? "end" : "middle"}
+              height={isPreview ? 28 : angled ? 56 : 32}
             />
-            <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} />
+            <YAxis tick={{ fill: "#9ca3af", fontSize: isPreview ? 9 : 11 }} />
             <Tooltip {...DARK_TOOLTIP} />
-            <Line type="monotone" dataKey={chart.y_key} stroke="#6366f1" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey={chart.y_key} stroke="#6366f1" strokeWidth={isPreview ? 1.5 : 2} dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -472,24 +600,32 @@ function SingleChart({ chart }: { chart: ChartDef }) {
     return (
       <div className="w-full min-w-0" style={plotBoxStyle}>
         <ResponsiveContainer width="100%" height="100%">
-          <ScatterChart margin={{ left: 4, right: 8, top: 8, bottom: 8 }}>
+          <ScatterChart margin={{ left: 4, right: 8, top: 8, bottom: isPreview ? 4 : 8 }}>
             <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.12} />
             <XAxis
               dataKey="x"
               name={chart.x_label ?? chart.x_key}
-              tick={{ fill: "#9ca3af", fontSize: 11 }}
-              tickCount={8}
-              label={{ value: chart.x_label, position: "insideBottom", offset: -4, fill: "#9ca3af", fontSize: 11 }}
+              tick={{ fill: "#9ca3af", fontSize: isPreview ? 9 : 11 }}
+              tickCount={isPreview ? 4 : 8}
+              label={
+                isPreview
+                  ? undefined
+                  : { value: chart.x_label, position: "insideBottom", offset: -4, fill: "#9ca3af", fontSize: 11 }
+              }
             />
             <YAxis
               dataKey="y"
               name={chart.y_label ?? chart.y_key}
-              tick={{ fill: "#9ca3af", fontSize: 11 }}
-              tickCount={8}
-              label={{ value: chart.y_label, angle: -90, position: "insideLeft", fill: "#9ca3af", fontSize: 11 }}
+              tick={{ fill: "#9ca3af", fontSize: isPreview ? 9 : 11 }}
+              tickCount={isPreview ? 4 : 8}
+              label={
+                isPreview
+                  ? undefined
+                  : { value: chart.y_label, angle: -90, position: "insideLeft", fill: "#9ca3af", fontSize: 11 }
+              }
             />
             <Tooltip {...DARK_TOOLTIP} cursor={{ strokeDasharray: "3 3" }} />
-            <Scatter data={chart.data} fill="#6366f1" fillOpacity={0.5} r={3} />
+            <Scatter data={chart.data} fill="#6366f1" fillOpacity={0.5} r={isPreview ? 2 : 3} />
           </ScatterChart>
         </ResponsiveContainer>
       </div>
@@ -507,9 +643,13 @@ function SingleChart({ chart }: { chart: ChartDef }) {
               nameKey={chart.x_key}
               cx="50%"
               cy="50%"
-              outerRadius={118}
-              label={({ name, percent }: any) => `${name}: ${(percent * 100).toFixed(0)}%`}
-              labelLine={{ stroke: "rgba(255,255,255,0.2)" }}
+              outerRadius={isPreview ? 64 : 118}
+              label={
+                isPreview
+                  ? false
+                  : ({ name, percent }: any) => `${name}: ${(percent * 100).toFixed(0)}%`
+              }
+              labelLine={isPreview ? false : { stroke: "rgba(255,255,255,0.2)" }}
             >
               {chart.data.map((_: unknown, index: number) => (
                 <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
@@ -523,7 +663,240 @@ function SingleChart({ chart }: { chart: ChartDef }) {
   }
 
   // Default: bar (histogram, categorical, binary)
-  return <BarPanels chart={chart} />;
+  return <BarPanels chart={chart} plotHeight={h} variant={variant} />;
+}
+
+function chartDetailTableColumns(chart: ChartDef): string[] {
+  const rows = chart.data ?? [];
+  if (rows.length === 0) return [];
+  const keys = new Set<string>();
+  for (const row of rows.slice(0, 50)) {
+    Object.keys(row).forEach((k) => keys.add(k));
+  }
+  const ordered = [chart.x_key, chart.y_key].filter((k) => k && keys.has(k));
+  const rest = [...keys].filter((k) => !ordered.includes(k)).sort();
+  return [...ordered, ...rest];
+}
+
+function chartDetailCaveatLines(insight?: string, chartType?: ChartDef["type"]): string[] {
+  const lines: string[] = [];
+  const low = (insight ?? "").toLowerCase();
+  if (
+    low.includes("not meaningful") ||
+    low.includes("near-zero baseline") ||
+    low.includes("numerically unstable") ||
+    low.includes("omitted when") ||
+    low.includes("endpoint percentage")
+  ) {
+    lines.push(
+      "Automatic narration may downplay or omit endpoint percentages when baselines are tiny or the series is volatile — use the table and chart for exact values.",
+    );
+  }
+  if (chartType === "line") {
+    lines.push(
+      "This line ties values in calendar order; gaps between dates and seasonality are not modeled automatically.",
+    );
+  }
+  if (chartType === "scatter") {
+    lines.push("A pattern in the scatter plot does not prove causation — consider confounders.");
+  }
+  if (chartType === "pie") {
+    lines.push("Small segments can be hard to read; use the data table for exact shares.");
+  }
+  return lines;
+}
+
+function ChartDetailOverlay({
+  chart,
+  open,
+  onClose,
+  chartExportRef,
+}: {
+  chart: ChartDef | null;
+  open: boolean;
+  onClose: () => void;
+  chartExportRef: RefObject<HTMLDivElement | null>;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open || !chart) return null;
+
+  const tableCols = chartDetailTableColumns(chart);
+  const tableRows = (chart.data ?? []).slice(0, DETAIL_TABLE_MAX_ROWS);
+  const colList = chart.columns?.length
+    ? chart.columns.join(", ")
+    : "—";
+  const caveats = chartDetailCaveatLines(chart.insight, chart.type);
+  const interpretation =
+    [chart.insight, chart.description].filter(Boolean).join(" ") ||
+    "Explore the chart and metrics below to understand this view of your data.";
+
+  const kpis = [
+    { label: "Rows plotted", value: String(chart.data?.length ?? 0) },
+    { label: "X field", value: chart.x_label || chart.x_key },
+    { label: "Y field", value: chart.y_label || chart.y_key },
+    {
+      label: chart.type === "heatmap" ? "Matrix columns (n)" : "Extra columns (n)",
+      value: chart.columns?.length != null ? String(chart.columns.length) : "—",
+    },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[100] flex flex-col justify-end sm:justify-center sm:p-4" role="presentation">
+      <button
+        type="button"
+        aria-label="Close chart detail"
+        className="absolute inset-0 bg-black/65 backdrop-blur-[2px]"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="chart-detail-title"
+        className="relative z-10 flex max-h-[min(94vh,920px)] w-full flex-col rounded-t-2xl border border-white/[0.1] bg-[#0e0e16] shadow-2xl sm:mx-auto sm:max-w-5xl sm:rounded-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex flex-shrink-0 items-start justify-between gap-3 border-b border-white/[0.08] px-4 py-3 sm:px-6">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 id="chart-detail-title" className="text-base font-semibold text-white sm:text-lg">
+                {chart.title}
+              </h2>
+              <span className="rounded-full bg-white/[0.08] px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-white/45">
+                {chart.type}
+              </span>
+              {chart.recommended ? (
+                <span className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-medium text-indigo-300">
+                  Recommended
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <div onClick={(e) => e.stopPropagation()} className="flex items-center">
+              <DownloadMenu
+                onExport={(fmt) => {
+                  const el = chartExportRef.current;
+                  if (el) exportChart(el, chart, fmt);
+                }}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-2 text-white/45 transition-colors hover:bg-white/[0.08] hover:text-white"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 space-y-5">
+          {/* Interpretation — mirrors ColumnCompare banner */}
+          <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/10 px-4 py-3 text-sm leading-relaxed text-indigo-100/95">
+            {interpretation}
+          </div>
+
+          {/* KPI cards — mirrors ColumnCompare metric grid */}
+          <div>
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-white/35">Key metrics</p>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {kpis.map(({ label, value }) => (
+                <div
+                  key={label}
+                  className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-3 text-center"
+                >
+                  <p className="text-xs text-white/40">{label}</p>
+                  <p className="mt-1 break-words text-sm font-semibold text-white">{value}</p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-white/35">
+              <span className="font-medium text-white/45">columns: </span>
+              <span className="font-mono text-[11px] text-white/55">{colList}</span>
+            </p>
+            <p className="mt-1 text-xs text-white/35">
+              <span className="font-medium text-white/45">x_key / y_key: </span>
+              <span className="font-mono text-[11px] text-white/55">
+                {chart.x_key} · {chart.y_key}
+              </span>
+            </p>
+          </div>
+
+          {/* Chart */}
+          <div>
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-white/35">Chart</p>
+            <div
+              ref={chartExportRef}
+              className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 sm:p-4"
+            >
+              <SingleChart chart={chart} plotHeight={DETAIL_CHART_PLOT_HEIGHT} variant="detail" />
+            </div>
+          </div>
+
+          {/* Supporting data */}
+          <div>
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-white/35">
+              Supporting data
+              {chart.data && chart.data.length > DETAIL_TABLE_MAX_ROWS ? (
+                <span className="ml-2 font-normal normal-case text-white/30">
+                  (first {DETAIL_TABLE_MAX_ROWS} of {chart.data.length} rows)
+                </span>
+              ) : null}
+            </p>
+            <div className="overflow-x-auto rounded-xl border border-white/[0.07]">
+              <table className="w-full min-w-[280px] text-left text-xs">
+                <thead>
+                  <tr className="border-b border-white/[0.07] bg-white/[0.03]">
+                    {tableCols.map((col) => (
+                      <th key={col} className="whitespace-nowrap px-3 py-2 font-medium text-white/45">
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {tableRows.map((row, ri) => (
+                    <tr key={ri} className="border-b border-white/[0.04] hover:bg-white/[0.02]">
+                      {tableCols.map((col) => (
+                        <td key={col} className="max-w-[14rem] truncate px-3 py-1.5 text-white/65" title={String(row[col] ?? "")}>
+                          {row[col] == null ? "—" : String(row[col])}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {caveats.length > 0 ? (
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3">
+              <div className="flex items-start gap-2 text-sm text-amber-100/90">
+                <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-400/80" />
+                <div className="space-y-2">
+                  <p className="font-medium text-amber-200/95">Caveats</p>
+                  <ul className="list-disc space-y-1 pl-4 text-xs leading-relaxed text-amber-100/85">
+                    {caveats.map((c) => (
+                      <li key={c}>{c}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function DownloadMenu({
@@ -577,7 +950,20 @@ export function ChartViewer({ projectId, autoLoad }: Props) {
   const [loading, setLoading] = useState(false);
   const [charts, setCharts] = useState<ChartDef[]>([]);
   const [error, setError] = useState("");
+  const [detailChart, setDetailChart] = useState<ChartDef | null>(null);
   const cardRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const detailExportRef = useRef<HTMLDivElement | null>(null);
+
+  const displayCharts = useMemo(() => filterChartsForDisplay(charts), [charts]);
+
+  useEffect(() => {
+    if (!detailChart) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [detailChart]);
 
   const loadCharts = useCallback(async () => {
     setLoading(true);
@@ -600,7 +986,7 @@ export function ChartViewer({ projectId, autoLoad }: Props) {
     return (
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         {[0, 1, 2, 4].map((i) => (
-          <div key={i} className="h-[520px] rounded-2xl bg-white/[0.04] animate-pulse" />
+          <div key={i} className="h-[340px] rounded-2xl bg-white/[0.04] animate-pulse" />
         ))}
       </div>
     );
@@ -620,15 +1006,21 @@ export function ChartViewer({ projectId, autoLoad }: Props) {
     );
   }
 
-  if (charts.length === 0) {
+  if (displayCharts.length === 0) {
     return (
       <div className="space-y-3">
+        {charts.length > 0 && (
+          <p className="text-sm text-amber-400/90">
+            The server returned {charts.length} chart{charts.length === 1 ? "" : "s"}, but none are shown after
+            removing invalid time-series or duplicate entries. Use Regenerate or adjust the dataset.
+          </p>
+        )}
         <button
           onClick={loadCharts}
           disabled={loading}
           className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
         >
-          Generate Charts
+          {charts.length > 0 ? "Regenerate" : "Generate Charts"}
         </button>
       </div>
     );
@@ -636,8 +1028,15 @@ export function ChartViewer({ projectId, autoLoad }: Props) {
 
   return (
     <div className="space-y-4">
+      <ChartDetailOverlay
+        chart={detailChart}
+        open={detailChart != null}
+        onClose={() => setDetailChart(null)}
+        chartExportRef={detailExportRef}
+      />
+
       <div className="flex items-center justify-between">
-        <p className="text-sm text-white/40">{charts.length} charts generated</p>
+        <p className="text-sm text-white/40">{displayCharts.length} charts generated</p>
         <button
           onClick={loadCharts}
           className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
@@ -647,32 +1046,46 @@ export function ChartViewer({ projectId, autoLoad }: Props) {
       </div>
 
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-        {charts.map((chart, i) => {
+        {displayCharts.map((chart, i) => {
           const nBars = chart.type === "bar" ? chart.data.length : 0;
           const prefersWide =
             chart.type === "bar" && (chart.horizontal === true || nBars > 10);
           return (
             <div
-              key={i}
+              key={`${chartDisplaySignature(chart)}-${i}`}
+              role="button"
+              tabIndex={0}
+              aria-label={`Open chart detail: ${chart.title}`}
+              onClick={() => setDetailChart(chart)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setDetailChart(chart);
+                }
+              }}
               ref={(el) => { cardRefs.current[i] = el; }}
-              className={`min-w-0 rounded-2xl border bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-5 shadow-lg shadow-black/25 space-y-3 ${
+              style={{ minHeight: CHART_CARD_MIN_HEIGHT }}
+              className={`group min-w-0 flex flex-col rounded-2xl border bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-4 shadow-lg shadow-black/25 cursor-pointer transition-colors hover:border-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/45 sm:p-5 ${
                 prefersWide ? "xl:col-span-2" : ""
               } ${chart.recommended ? "border-indigo-500/35" : "border-white/[0.08]"}`}
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    {chart.recommended && (
-                      <TrendingUp className="h-3.5 w-3.5 text-indigo-400 flex-shrink-0" />
-                    )}
-                    <h3 className="text-sm font-semibold tracking-tight text-white">{chart.title}</h3>
-                  </div>
-                  {chart.insight && (
-                    <p className="mt-1 text-xs leading-relaxed text-white/45 line-clamp-2">{chart.insight}</p>
-                  )}
+              <div className="flex flex-shrink-0 items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm font-semibold tracking-tight text-white leading-snug">{chart.title}</h3>
+                  {chart.insight ? (
+                    <p className="mt-1 text-xs leading-snug text-white/45 line-clamp-1">{chart.insight}</p>
+                  ) : null}
+                  <p className="mt-2 flex items-center gap-0.5 text-[11px] font-medium text-indigo-400/90 opacity-90 transition group-hover:text-indigo-300 group-hover:opacity-100">
+                    Open chart
+                    <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                  </p>
                 </div>
-                <div className="flex flex-shrink-0 items-center gap-1">
-                  <span className="rounded-full bg-white/[0.07] px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wide text-white/45">
+                <div
+                  className="flex flex-shrink-0 items-center gap-1.5"
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => e.stopPropagation()}
+                >
+                  <span className="rounded-full bg-white/[0.07] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white/45">
                     {chart.type}
                   </span>
                   <DownloadMenu
@@ -684,7 +1097,14 @@ export function ChartViewer({ projectId, autoLoad }: Props) {
                   />
                 </div>
               </div>
-              <SingleChart chart={chart} />
+              <div className="mt-3 flex min-h-0 flex-1 flex-col justify-end">
+                <div
+                  className="w-full flex-shrink-0 overflow-hidden rounded-lg border border-white/[0.05] bg-white/[0.02]"
+                  style={{ height: CHART_PREVIEW_PLOT_HEIGHT, minHeight: CHART_PREVIEW_PLOT_HEIGHT }}
+                >
+                  <SingleChart chart={chart} variant="preview" />
+                </div>
+              </div>
             </div>
           );
         })}

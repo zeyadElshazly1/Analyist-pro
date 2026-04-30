@@ -74,6 +74,7 @@ export default function DemoPage() {
             </div>
             <RunAnalysis
               projectId={0}
+              projectName="Demo analysis"
               initialResult={demoResult}
               initialCompareResult={DEMO_COMPARE_RESULT}
             />

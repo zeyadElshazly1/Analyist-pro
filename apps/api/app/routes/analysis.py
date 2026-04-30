@@ -578,13 +578,19 @@ def generate_story(
     _plan: None = Depends(require_feature("ai_story")),
     db: Session = Depends(get_db),
 ):
-    """Use Claude to generate a 5-slide data story from a stored analysis result."""
+    """Generate a 5-slide data story from stored analysis; persist on first success."""
     analysis = get_analysis_for_user(db, analysis_id, current_user)
 
     try:
         result = json.loads(analysis.result_json)
         from app.services.ai_chat_service import generate_data_story
         story = generate_data_story(result)
+
+        existing = analysis.story_result_json
+        if not (existing and str(existing).strip()):
+            analysis.story_result_json = json.dumps(story)
+            db.commit()
+
         return story
     except Exception as e:
         logger.error(f"Story generation failed for analysis {analysis_id}: {e}", exc_info=True)

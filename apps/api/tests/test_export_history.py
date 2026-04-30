@@ -364,3 +364,31 @@ class TestErrorMessageCap:
         assert len(statuses) == 1
         msg = statuses[0].get("error_message") or ""
         assert 0 < len(msg) <= 500
+
+
+# ── Draft endpoint: export history must not take down the whole response ─────
+
+class TestDraftResilientToAuditExportHistoryFailure:
+    def test_get_draft_200_with_sections_and_insights_when_audit_history_fails(
+        self, client, uploaded_project, consultant_auth_headers, monkeypatch
+    ):
+        """If the audit-log query for export history fails (e.g. schema drift),
+        GET /reports/draft still returns 200 with sections and insights."""
+        from app.routes import reports as reports_mod
+
+        def _boom(*_args, **_kwargs):
+            raise RuntimeError("simulated audit_logs UndefinedColumn")
+
+        monkeypatch.setattr(reports_mod, "_load_export_statuses_from_audit", _boom)
+
+        pid = uploaded_project["id"]
+        _seed_run(pid)
+        _save_draft(client, pid, consultant_auth_headers)
+
+        r = client.get(f"/reports/draft/{pid}", headers=consultant_auth_headers)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        rr = body["report_result"]
+        assert rr["export_statuses"] == []
+        assert len(rr["included_sections"]) >= 1
+        assert len(rr["included_insights"]) >= 1

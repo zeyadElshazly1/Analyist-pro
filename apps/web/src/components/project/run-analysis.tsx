@@ -141,6 +141,7 @@ export type AnalysisResult = {
 
 type Props = {
   projectId: number;
+  projectName?: string;
   initialResult?: AnalysisResult;          // pre-populated from stored run
   initialRunId?: number;                   // run_id for the stored result (used as analysisId)
   initialCompareResult?: CompareResult;    // pre-populated compare (e.g. demo mode)
@@ -256,7 +257,26 @@ function ProgressBar({ progress, step, detail }: ProgressState) {
   );
 }
 
-export function RunAnalysis({ projectId, initialResult, initialRunId, initialCompareResult }: Props) {
+function healthTotalFromResult(result: AnalysisResult | null): number | null {
+  if (!result) return null;
+  const hs = result.health_score;
+  if (hs && typeof hs === "object") {
+    if (typeof hs.total === "number" && Number.isFinite(hs.total)) return hs.total;
+    if (typeof hs.score === "number" && Number.isFinite(hs.score)) return hs.score;
+  }
+  const hr = result.health_result as { health_score?: { total_score?: number } } | null | undefined;
+  const ts = hr?.health_score?.total_score;
+  if (typeof ts === "number" && Number.isFinite(ts)) return ts;
+  return null;
+}
+
+export function RunAnalysis({
+  projectId,
+  projectName,
+  initialResult,
+  initialRunId,
+  initialCompareResult,
+}: Props) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [analysisId, setAnalysisId] = useState<number | null>(null);
@@ -459,21 +479,6 @@ export function RunAnalysis({ projectId, initialResult, initialRunId, initialCom
           )}
         </Button>
 
-        {/* Download cleaned CSV — always available, not gated on analysis result */}
-        <Button
-          onClick={handleDownload}
-          disabled={downloading || loading}
-          variant="ghost"
-          className="gap-2 text-xs text-white/50 hover:text-white border border-white/10 hover:border-white/20"
-        >
-          {downloading ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Download className="h-3.5 w-3.5" />
-          )}
-          Download cleaned CSV
-        </Button>
-
         {result && !loading && (
           <>
             {isStoredResult ? (
@@ -664,7 +669,27 @@ export function RunAnalysis({ projectId, initialResult, initialRunId, initialCom
           {tab === "cleaning" && (
             <SafePanel label="Cleaning Report">
               <TabPanel>
-                <h2 className="mb-4 font-semibold text-white">Cleaning Log</h2>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="font-semibold text-white">Cleaning Review</h2>
+                    <p className="mt-1 max-w-xl text-xs text-white/40">
+                      Download the cleaned dataset after reviewing the cleaning log.
+                    </p>
+                  </div>
+                  <Button
+                    onClick={handleDownload}
+                    disabled={downloading || loading}
+                    variant="ghost"
+                    className="gap-2 text-xs text-white/60 hover:text-white border border-white/10 hover:border-white/20"
+                  >
+                    {downloading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5" />
+                    )}
+                    Download cleaned CSV
+                  </Button>
+                </div>
                 <CleaningReview
                   cleaningResult={result.cleaning_result}
                   items={result.cleaning_report ?? undefined}
@@ -765,6 +790,9 @@ export function RunAnalysis({ projectId, initialResult, initialRunId, initialCom
                   </div>
                   <ReportBuilder
                     projectId={projectId}
+                    projectName={projectName}
+                    datasetSummary={result.dataset_summary}
+                    healthTotal={healthTotalFromResult(result)}
                     insights={result.insights ?? []}
                     insightResults={
                       result.insight_results == null

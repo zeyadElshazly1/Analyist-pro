@@ -368,6 +368,7 @@ export default function ProjectPage() {
             </div>
             <RunAnalysis
               projectId={projectId}
+              projectName={project?.name}
               initialResult={storedResult ?? undefined}
               initialRunId={project?.latest_run?.run_id}
             />

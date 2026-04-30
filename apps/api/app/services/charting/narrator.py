@@ -62,7 +62,12 @@ def _narrate_timeseries(col: str, values: pd.Series, date_col: str) -> str:
         )
     else:
         pct_change = (last_v - first_v) / baseline * 100
-        if not np.isfinite(pct_change) or abs(pct_change) > 1_000_000:
+        if (
+            not np.isfinite(pct_change)
+            or abs(pct_change) > 1_000_000
+            # Endpoint % change explodes for volatile series or arbitrary row order.
+            or abs(pct_change) > 500
+        ):
             trend_note = (
                 "Relative change from the first observation is extreme or numerically unstable — "
                 "use the chart levels rather than a headline percentage."

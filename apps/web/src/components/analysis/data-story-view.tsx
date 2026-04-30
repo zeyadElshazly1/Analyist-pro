@@ -19,7 +19,7 @@ const SLIDE_COLORS = [
   "from-rose-500/20 to-pink-500/10 border-rose-500/20",
 ];
 
-function SlideCard({ slide, index }: { slide: StorySlide; index: number }) {
+function SlideCard({ slide, index, totalSlides }: { slide: StorySlide; index: number; totalSlides: number }) {
   const [copied, setCopied] = useState(false);
 
   function copySlide() {
@@ -36,7 +36,7 @@ function SlideCard({ slide, index }: { slide: StorySlide; index: number }) {
     <div className={`relative h-full rounded-2xl border bg-gradient-to-br p-8 ${colorClass}`}>
       {/* Slide number */}
       <span className="absolute right-5 top-5 text-xs font-mono text-white/25">
-        {slide.slide_num} / 5
+        {slide.slide_num} / {totalSlides}
       </span>
 
       {/* Copy button */}
@@ -161,7 +161,7 @@ export function DataStoryView({ analysisId, storedStory = null }: Props) {
 
       {/* Slide */}
       <div className="h-80">
-        <SlideCard slide={slide} index={currentSlide} />
+        <SlideCard slide={slide} index={currentSlide} totalSlides={story.slides.length} />
       </div>
 
       {/* Navigation */}

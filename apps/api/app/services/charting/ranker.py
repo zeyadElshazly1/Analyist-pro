@@ -7,6 +7,21 @@ from .budget import MAX_CHARTS
 
 
 def rank_and_cap(charts: list[dict]) -> list[dict]:
-    """Sort charts by score descending and cap output at MAX_CHARTS."""
+    """Sort charts by score descending, dedupe by signature, cap at MAX_CHARTS."""
     charts.sort(key=lambda c: c.get("score", 0), reverse=True)
-    return charts[:MAX_CHARTS]
+    seen: set[tuple] = set()
+    deduped: list[dict] = []
+    for c in charts:
+        sig = (
+            str(c.get("type", "")),
+            str(c.get("title", "")).strip().lower(),
+            str(c.get("x_key", "")),
+            str(c.get("y_key", "")),
+        )
+        if sig in seen:
+            continue
+        seen.add(sig)
+        deduped.append(c)
+        if len(deduped) >= MAX_CHARTS:
+            break
+    return deduped
