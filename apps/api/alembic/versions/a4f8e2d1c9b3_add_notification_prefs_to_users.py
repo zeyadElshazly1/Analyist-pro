@@ -16,8 +16,16 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column('users', sa.Column('notification_prefs_json', sa.Text(), nullable=True))
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = {column["name"] for column in inspector.get_columns("users")}
+    if "notification_prefs_json" not in columns:
+        op.add_column('users', sa.Column('notification_prefs_json', sa.Text(), nullable=True))
 
 
 def downgrade() -> None:
-    op.drop_column('users', 'notification_prefs_json')
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = {column["name"] for column in inspector.get_columns("users")}
+    if "notification_prefs_json" in columns:
+        op.drop_column('users', 'notification_prefs_json')

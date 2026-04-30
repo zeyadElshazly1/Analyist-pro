@@ -1,6 +1,8 @@
 """
 Tests for config constants and database/ORM layer (Phase 0).
 """
+import logging
+
 import pytest
 
 
@@ -28,6 +30,18 @@ class TestConfig:
     def test_max_insights(self):
         from app.config import MAX_INSIGHTS
         assert MAX_INSIGHTS > 0
+
+
+class TestDatabaseStartup:
+    def test_init_db_skips_migrations_when_flag_false(self, monkeypatch, caplog):
+        from app.db import init_db
+
+        monkeypatch.setenv("RUN_MIGRATIONS_ON_STARTUP", "false")
+        caplog.set_level(logging.INFO, logger="app.db")
+
+        init_db()
+
+        assert "Skipping Alembic migrations on startup" in caplog.text
 
 
 class TestModels:

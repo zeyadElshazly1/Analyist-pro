@@ -50,6 +50,11 @@ def get_db():
         db.close()
 
 
+def _run_migrations_on_startup() -> bool:
+    value = os.getenv("RUN_MIGRATIONS_ON_STARTUP", "true").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
 def init_db():
     """
     Apply all pending Alembic migrations at startup (upgrade head).
@@ -65,6 +70,10 @@ def init_db():
     """
     import logging
     _log = logging.getLogger(__name__)
+
+    if not _run_migrations_on_startup():
+        _log.info("Skipping Alembic migrations on startup")
+        return
 
     try:
         from alembic.config import Config
