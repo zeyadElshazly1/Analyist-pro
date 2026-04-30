@@ -77,6 +77,93 @@ def _seed_project_children(project_id: int) -> None:
         db.close()
 
 
+def _seed_project_file(project_id: int) -> int:
+    db = TestingSessionLocal()
+    try:
+        project_file = ProjectFile(
+            project_id=project_id,
+            filename="source.csv",
+            stored_path="/tmp/source.csv",
+            size_bytes=12,
+            file_hash="abc123",
+        )
+        db.add(project_file)
+        db.commit()
+        db.refresh(project_file)
+        return project_file.id
+    finally:
+        db.close()
+
+
+def _seed_prepared_dataset(project_id: int) -> int:
+    db = TestingSessionLocal()
+    try:
+        prepared = PreparedDataset(
+            project_id=project_id,
+            file_hash="abc123",
+            stored_path="/tmp/prepared.parquet",
+            rows=10,
+            columns=3,
+        )
+        db.add(prepared)
+        db.commit()
+        db.refresh(prepared)
+        return prepared.id
+    finally:
+        db.close()
+
+
+def _seed_analysis_result(project_id: int) -> int:
+    db = TestingSessionLocal()
+    try:
+        analysis = AnalysisResult(
+            project_id=project_id,
+            file_hash="abc123",
+            result_json=json.dumps({"insights": []}),
+            status="report_ready",
+        )
+        db.add(analysis)
+        db.commit()
+        db.refresh(analysis)
+        return analysis.id
+    finally:
+        db.close()
+
+
+def _seed_report_draft(project_id: int, analysis_result_id: int | None = None) -> int:
+    db = TestingSessionLocal()
+    try:
+        draft = ReportDraft(
+            project_id=project_id,
+            analysis_result_id=analysis_result_id,
+            title="Draft",
+            summary="Saved draft",
+        )
+        db.add(draft)
+        db.commit()
+        db.refresh(draft)
+        return draft.id
+    finally:
+        db.close()
+
+
+def _seed_project_feature(project_id: int) -> int:
+    db = TestingSessionLocal()
+    try:
+        feature = ProjectFeature(
+            project_id=project_id,
+            name="margin",
+            formula="revenue - cost",
+            dtype="number",
+        )
+        db.add(feature)
+        db.commit()
+        db.refresh(feature)
+        return feature.id
+    finally:
+        db.close()
+
+
 def _count_project_children(project_id: int) -> dict[str, int]:
     db = TestingSessionLocal()
     try:
@@ -90,6 +177,24 @@ def _count_project_children(project_id: int) -> dict[str, int]:
         }
     finally:
         db.close()
+
+
+def _assert_project_deleted(client, project_id: int, auth_headers) -> None:
+    r = client.delete(f"/projects/{project_id}", headers=auth_headers)
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "project_id": project_id}
+
+    listed = client.get("/projects", headers=auth_headers)
+    assert listed.status_code == 200
+    assert all(p["id"] != project_id for p in listed.json())
+    assert _count_project_children(project_id) == {
+        "report_drafts": 0,
+        "project_features": 0,
+        "analysis_results": 0,
+        "prepared_datasets": 0,
+        "project_files": 0,
+        "projects": 0,
+    }
 
 
 def test_health(client):
@@ -218,21 +323,43 @@ def test_delete_project_with_child_rows(client, project, auth_headers):
     pid = project["id"]
     _seed_project_children(pid)
 
-    r = client.delete(f"/projects/{pid}", headers=auth_headers)
-    assert r.status_code == 200
-    assert r.json() == {"ok": True, "project_id": pid}
+    _assert_project_deleted(client, pid, auth_headers)
 
-    listed = client.get("/projects", headers=auth_headers)
-    assert listed.status_code == 200
-    assert all(p["id"] != pid for p in listed.json())
-    assert _count_project_children(pid) == {
-        "report_drafts": 0,
-        "project_features": 0,
-        "analysis_results": 0,
-        "prepared_datasets": 0,
-        "project_files": 0,
-        "projects": 0,
-    }
+
+def test_delete_project_with_project_files(client, project, auth_headers):
+    pid = project["id"]
+    _seed_project_file(pid)
+
+    _assert_project_deleted(client, pid, auth_headers)
+
+
+def test_delete_project_with_prepared_datasets(client, project, auth_headers):
+    pid = project["id"]
+    _seed_prepared_dataset(pid)
+
+    _assert_project_deleted(client, pid, auth_headers)
+
+
+def test_delete_project_with_analysis_results(client, project, auth_headers):
+    pid = project["id"]
+    _seed_analysis_result(pid)
+
+    _assert_project_deleted(client, pid, auth_headers)
+
+
+def test_delete_project_with_report_draft_linked_to_analysis_result(client, project, auth_headers):
+    pid = project["id"]
+    analysis_id = _seed_analysis_result(pid)
+    _seed_report_draft(pid, analysis_result_id=analysis_id)
+
+    _assert_project_deleted(client, pid, auth_headers)
+
+
+def test_delete_project_with_project_features(client, project, auth_headers):
+    pid = project["id"]
+    _seed_project_feature(pid)
+
+    _assert_project_deleted(client, pid, auth_headers)
 
 
 def test_cannot_delete_another_users_project(client, project, auth_headers):

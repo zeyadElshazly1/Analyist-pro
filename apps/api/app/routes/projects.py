@@ -181,10 +181,10 @@ def delete_project(
         db.query(PreparedDataset).filter(PreparedDataset.project_id == project_id).delete(
             synchronize_session=False
         )
-        db.query(AnalysisResult).filter(AnalysisResult.project_id == project_id).delete(
+        db.query(ProjectFile).filter(ProjectFile.project_id == project_id).delete(
             synchronize_session=False
         )
-        db.query(ProjectFile).filter(ProjectFile.project_id == project_id).delete(
+        db.query(AnalysisResult).filter(AnalysisResult.project_id == project_id).delete(
             synchronize_session=False
         )
         db.delete(project)
@@ -197,7 +197,7 @@ def delete_project(
         return {"ok": True, "project_id": project_id}
     except SQLAlchemyError as e:
         db.rollback()
-        logger.error(f"Failed to delete project {project_id}: {e}", exc_info=True)
+        logger.exception("Failed to delete project %s", project_id)
         raise HTTPException(
             status_code=503,
             detail="Could not delete the project due to a database error. Please try again.",
