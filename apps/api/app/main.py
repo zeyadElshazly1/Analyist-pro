@@ -151,14 +151,14 @@ async def app_error_handler(request: Request, exc: AppError):
         logger.warning(
             f"req={rid} AppError[{exc.error_code}]: {exc.dev_detail}"
         )
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": exc.user_message,
-            "code": exc.error_code,
-            "request_id": rid,
-        },
-    )
+    payload: dict = {
+        "error": exc.user_message,
+        "code": exc.error_code,
+        "request_id": rid,
+    }
+    if exc.extra:
+        payload.update(exc.extra)
+    return JSONResponse(status_code=exc.status_code, content=payload)
 
 
 @app.exception_handler(RequestValidationError)

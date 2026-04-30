@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { sendChatMessage, ApiError } from "@/lib/api";
-import { Loader2, Send, Bot, User, Code2, Table2, BarChart2 } from "lucide-react";
+import { Loader2, Send, Bot, User, Code2, Table2, BarChart2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { UpgradeWall } from "@/components/ui/upgrade-wall";
 import {
@@ -21,6 +21,16 @@ const DARK_TOOLTIP = {
   },
 };
 
+const AI_ASSISTANT_DOWN_COPY =
+  "AI assistant is temporarily unavailable. Your analysis and report builder still work.";
+
+const AI_CHAT_ERROR_CODES = new Set([
+  "AI_PROVIDER_UNAVAILABLE",
+  "AI_KEY_MISSING",
+  "AI_TIMEOUT",
+  "AI_DISABLED",
+]);
+
 type ChartHint = {
   type: "bar" | "scatter" | "kpi";
   x_col?: string;
@@ -37,35 +47,74 @@ type Message = {
   chartHint?: ChartHint | null;
 };
 
-type Props = { projectId: number };
+function buildLocalSuggestedQuestions(columns: string[], insightTitles: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (s: string) => {
+    const t = s.trim();
+    if (t && !seen.has(t)) {
+      seen.add(t);
+      out.push(t);
+    }
+  };
 
-export function AiChatView({ projectId }: Props) {
+  for (const c of columns.slice(0, 4)) {
+    const safe = c.replace(/`/g, "").slice(0, 48);
+    if (!safe) continue;
+    push(`What are typical values and outliers for \`${safe}\`?`);
+    push(`Summarize the distribution of \`${safe}\`.`);
+  }
+  for (const title of insightTitles.slice(0, 4)) {
+    const t = title.slice(0, 120);
+    push(`Dig deeper on: ${t}`);
+  }
+  return out.slice(0, 8);
+}
+
+type Props = {
+  projectId: number;
+  contextColumns?: string[];
+  contextInsightTitles?: string[];
+};
+
+export function AiChatView({
+  projectId,
+  contextColumns = [],
+  contextInsightTitles = [],
+}: Props) {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: "Hi! I'm your AI data analyst. Ask me anything about your dataset — I can calculate statistics, find patterns, filter data, and more.",
+      content:
+        "Hi! I'm your AI data analyst. Ask me anything about your dataset — I can calculate statistics, find patterns, filter data, and more.",
     },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [blocked, setBlocked] = useState<{ feature: string; message: string } | null>(null);
+  const [availability, setAvailability] = useState<{
+    message: string;
+    code: string;
+    suggestions: string[];
+    retry: { userText: string; historyPayload: { role: string; content: string }[] };
+  } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const localFallbackSuggestions = buildLocalSuggestedQuestions(
+    contextColumns,
+    contextInsightTitles,
+  );
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, availability, loading]);
 
-  async function handleSend() {
-    const msg = input.trim();
-    if (!msg || loading) return;
-    setInput("");
-    const userMsg: Message = { role: "user", content: msg };
-    setMessages((prev) => [...prev, userMsg]);
-    setLoading(true);
-
-    try {
-      const history = messages.map((m) => ({ role: m.role, content: m.content }));
-      const res = await sendChatMessage(projectId, msg, history) as any;
+  const sendToApi = useCallback(
+    async (
+      userText: string,
+      historyPayload: { role: string; content: string }[],
+    ): Promise<void> => {
+      const res = (await sendChatMessage(projectId, userText, historyPayload)) as any;
       const assistantMsg: Message = {
         role: "assistant",
         content: res.answer || "I couldn't generate a response.",
@@ -76,19 +125,96 @@ export function AiChatView({ projectId }: Props) {
         chartHint: res.chart_hint ?? null,
       };
       setMessages((prev) => [...prev, assistantMsg]);
+      setAvailability(null);
+    },
+    [projectId],
+  );
+
+  async function handleSend() {
+    const msg = input.trim();
+    if (!msg || loading) return;
+    setInput("");
+    const userMsg: Message = { role: "user", content: msg };
+
+    const priorThread = messages.filter((m) => m.role === "user" || m.role === "assistant");
+    const historyPayload = priorThread.map((m) => ({ role: m.role, content: m.content }));
+
+    setMessages((prev) => [...prev, userMsg]);
+    setLoading(true);
+    setAvailability(null);
+
+    try {
+      await sendToApi(msg, historyPayload);
     } catch (e) {
       if (e instanceof ApiError && e.isPaymentRequired) {
         const info = e.upgradeInfo;
         setBlocked({ feature: info?.feature ?? "ai_chat", message: info?.message ?? e.userMessage });
-        // Remove the user message we just added since the request was blocked
         setMessages((prev) => prev.slice(0, -1));
-      } else {
-        const userMessage =
-          e instanceof ApiError
-            ? e.userMessage
-            : "Sorry, I couldn't process your request. Please try again.";
-        setMessages((prev) => [...prev, { role: "assistant", content: userMessage }]);
+        return;
       }
+
+      if (e instanceof ApiError && AI_CHAT_ERROR_CODES.has(e.code)) {
+        const serverQs = Array.isArray(e.meta?.suggested_questions)
+          ? (e.meta!.suggested_questions as string[])
+          : [];
+        const merged = [...new Set([...serverQs, ...localFallbackSuggestions])].slice(0, 8);
+        setAvailability({
+          message: e.userMessage?.trim() || AI_ASSISTANT_DOWN_COPY,
+          code: e.code,
+          suggestions: merged,
+          retry: { userText: msg, historyPayload },
+        });
+        return;
+      }
+
+      const userMessage =
+        e instanceof ApiError ? e.userMessage : "Sorry, I couldn't process your request. Please try again.";
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: userMessage || AI_ASSISTANT_DOWN_COPY,
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRetry() {
+    if (!availability?.retry || loading) return;
+    const { userText, historyPayload } = availability.retry;
+    setLoading(true);
+    setAvailability(null);
+    try {
+      await sendToApi(userText, historyPayload);
+    } catch (e) {
+      if (e instanceof ApiError && e.isPaymentRequired) {
+        const info = e.upgradeInfo;
+        setBlocked({ feature: info?.feature ?? "ai_chat", message: info?.message ?? e.userMessage });
+        return;
+      }
+
+      if (e instanceof ApiError && AI_CHAT_ERROR_CODES.has(e.code)) {
+        const serverQs = Array.isArray(e.meta?.suggested_questions)
+          ? (e.meta!.suggested_questions as string[])
+          : [];
+        const merged = [...new Set([...serverQs, ...localFallbackSuggestions])].slice(0, 8);
+        setAvailability({
+          message: e.userMessage?.trim() || AI_ASSISTANT_DOWN_COPY,
+          code: e.code,
+          suggestions: merged,
+          retry: { userText, historyPayload },
+        });
+        return;
+      }
+
+      const userMessage =
+        e instanceof ApiError ? e.userMessage : "Sorry, I couldn't process your request. Please try again.";
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: userMessage || AI_ASSISTANT_DOWN_COPY },
+      ]);
     } finally {
       setLoading(false);
     }
@@ -114,6 +240,60 @@ export function AiChatView({ projectId }: Props) {
         <p className="text-sm text-white/50">Ask questions about your data in plain English.</p>
       </div>
 
+      {availability && (
+        <div className="mb-4 rounded-xl border border-amber-500/25 bg-amber-500/[0.07] px-4 py-3 space-y-3">
+          <p className="text-sm text-amber-100/90 leading-snug">{availability.message}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-white/15 bg-white/[0.06] text-white hover:bg-white/10 gap-1.5"
+              onClick={handleRetry}
+              disabled={loading}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Retry
+            </Button>
+          </div>
+          {availability.suggestions.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[11px] uppercase tracking-wider text-white/35">Try asking</p>
+              <div className="flex flex-wrap gap-2">
+                {availability.suggestions.map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    className="text-left text-xs rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-white/75 hover:bg-white/[0.08] hover:text-white/90 transition-colors max-w-full"
+                    onClick={() => setInput(q)}
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!availability && localFallbackSuggestions.length > 0 && (
+        <div className="mb-4 space-y-1.5">
+          <p className="text-[11px] uppercase tracking-wider text-white/35">Suggested questions</p>
+          <div className="flex flex-wrap gap-2">
+            {localFallbackSuggestions.slice(0, 6).map((q) => (
+              <button
+                key={q}
+                type="button"
+                className="text-left text-xs rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-white/70 hover:bg-white/[0.08] transition-colors max-w-full"
+                onClick={() => setInput(q)}
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Message thread */}
       <div className="flex-1 overflow-y-auto space-y-4 pr-1 mb-4">
         {messages.map((msg, i) => (
@@ -138,7 +318,7 @@ export function AiChatView({ projectId }: Props) {
                 <div className="w-full rounded-lg bg-[#0f172a] border border-white/10 overflow-hidden">
                   <div className="flex items-center gap-2 px-3 py-1.5 bg-white/[0.04] border-b border-white/10">
                     <Code2 className="h-3.5 w-3.5 text-indigo-400" />
-                    <span className="text-xs text-white/50">Generated code</span>
+                    <span className="text-xs text-white/50 select-none">Generated code</span>
                   </div>
                   <pre className="p-3 text-xs text-green-300 overflow-x-auto whitespace-pre-wrap">{msg.code}</pre>
                 </div>

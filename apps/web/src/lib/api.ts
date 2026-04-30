@@ -23,6 +23,8 @@ export class ApiError extends Error {
     public readonly requestId?: string,
     /** Validation field errors (status 422 only) */
     public readonly fields?: Record<string, string>,
+    /** Extra JSON fields from the backend (e.g. suggested_questions) */
+    public readonly meta?: Record<string, unknown>,
   ) {
     super(userMessage);
     this.name = "ApiError";
@@ -69,6 +71,13 @@ async function parseError(res: Response, context: string): Promise<ApiError> {
   const code = String(body.code ?? "UNKNOWN_ERROR");
   const fields = body.fields as Record<string, string> | undefined;
 
+  const meta: Record<string, unknown> = {};
+  if (Array.isArray(body.suggested_questions)) {
+    meta.suggested_questions = body.suggested_questions.filter(
+      (x: unknown) => typeof x === "string",
+    ) as string[];
+  }
+
   // 402: detail is a structured object — preserve it as the userMessage so
   // upgradeInfo getter can parse it
   let userMessage: string;
@@ -79,7 +88,8 @@ async function parseError(res: Response, context: string): Promise<ApiError> {
     if (!userMessage) userMessage = statusToMessage(res.status, context);
   }
 
-  return new ApiError(userMessage, code, res.status, requestId, fields);
+  const metaOut = Object.keys(meta).length ? meta : undefined;
+  return new ApiError(userMessage, code, res.status, requestId, fields, metaOut);
 }
 
 function statusToMessage(status: number, context: string): string {

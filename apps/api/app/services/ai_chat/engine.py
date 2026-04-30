@@ -6,12 +6,11 @@ chat_with_data(df, user_message, conversation_history, insights) → dict
 Pipeline:
   1. detect_intent — classify the query type
   2. build_context — rich structured schema + insights (intent-aware)
-  3. call_llm     — Anthropic → OpenAI → (None, "fallback")
-  4. fallback     — local rule-based engine when no LLM available
-  5. extract code — parse ```python block from LLM response
-  6. execute_query — AST-whitelisted safe exec
-  7. serialise     — convert result to JSON-safe types
-  8. chart_hint    — suggest chart type from result shape
+  3. call_llm     — Anthropic → OpenAI; on failure raises AppError with codes
+  4. extract code — parse ```python block from LLM response
+  5. execute_query — AST-whitelisted safe exec
+  6. serialise     — convert result to JSON-safe types
+  7. chart_hint    — suggest chart type from result shape
 
 Return dict keys (backward-compatible):
     answer, code_used, result_type, table_data, number_result,
@@ -24,12 +23,19 @@ import re
 
 import pandas as pd
 
+from app.exceptions import (
+    AIChatKeyMissingError,
+    AIChatProviderUnavailableError,
+    AIChatTimeoutError,
+)
+
+from .constants import AI_CHAT_UNAVAILABLE_USER_MESSAGE
 from .context import build_context
-from .fallback import _fallback_answer
 from .intent import detect_intent
 from .llm_client import call_llm
 from .result_serializer import _result_to_serializable, _suggest_chart
 from .safe_executor import execute_query
+from .suggestions import suggest_chat_questions
 
 logger = logging.getLogger(__name__)
 
@@ -84,10 +90,37 @@ def chat_with_data(
     # Build message list for LLM (append current turn)
     messages = list(conversation_history) + [{"role": "user", "content": user_message}]
 
-    answer_text, model_used = call_llm(system, messages, intent=intent)
+    suggested = suggest_chat_questions(df, insights)
+    extra = {"suggested_questions": suggested}
+    llm = call_llm(system, messages, intent=intent)
 
-    if answer_text is None:
-        answer_text = _fallback_answer(df, user_message, intent)
+    if llm.error_code == "AI_KEY_MISSING":
+        raise AIChatKeyMissingError(
+            AI_CHAT_UNAVAILABLE_USER_MESSAGE,
+            dev_detail="No ANTHROPIC_API_KEY or OPENAI_API_KEY configured",
+            extra=extra,
+        )
+    if llm.error_code == "AI_TIMEOUT":
+        raise AIChatTimeoutError(
+            AI_CHAT_UNAVAILABLE_USER_MESSAGE,
+            dev_detail="LLM request timed out",
+            extra=extra,
+        )
+    if llm.error_code == "AI_PROVIDER_UNAVAILABLE":
+        raise AIChatProviderUnavailableError(
+            AI_CHAT_UNAVAILABLE_USER_MESSAGE,
+            dev_detail="LLM provider error or empty response",
+            extra=extra,
+        )
+
+    answer_text = llm.text
+    model_used = llm.model
+    if not answer_text:
+        raise AIChatProviderUnavailableError(
+            AI_CHAT_UNAVAILABLE_USER_MESSAGE,
+            dev_detail="LLM returned empty answer",
+            extra=extra,
+        )
 
     # ── Extract and run pandas code from LLM response ─────────────────────────
     code_match = _CODE_RE.search(answer_text)

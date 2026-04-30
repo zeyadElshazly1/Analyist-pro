@@ -30,12 +30,14 @@ class AppError(Exception):
         *,
         dev_detail: str | None = None,
         error_code: str | None = None,
+        extra: dict | None = None,
     ) -> None:
         super().__init__(user_message)
         self.user_message = user_message
         self.dev_detail = dev_detail or user_message
         if error_code:
             self.error_code = error_code
+        self.extra: dict = extra or {}
 
 
 # ── 400-level ─────────────────────────────────────────────────────────────────
@@ -106,6 +108,26 @@ class AIServiceError(AppError):
     """Anthropic / OpenAI / external AI provider error."""
     status_code = 503
     error_code = "AI_SERVICE_ERROR"
+
+
+# ── AI Chat (structured codes for /chat/query) ───────────────────────────────
+
+class AIChatKeyMissingError(AIServiceError):
+    error_code = "AI_KEY_MISSING"
+
+
+class AIChatProviderUnavailableError(AIServiceError):
+    error_code = "AI_PROVIDER_UNAVAILABLE"
+
+
+class AIChatTimeoutError(AIServiceError):
+    status_code = 504
+    error_code = "AI_TIMEOUT"
+
+
+class AIChatDisabledError(AIServiceError):
+    """Operator toggle — AI chat off for all users."""
+    error_code = "AI_DISABLED"
 
 
 class DatasetError(AppError):

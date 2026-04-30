@@ -808,7 +808,13 @@ export function RunAnalysis({
                   />
                   <div className="border-t border-white/[0.06] pt-4">
                     <h3 className="mb-3 text-sm font-semibold text-white/60">Ask AI copilot</h3>
-                    <AiChatView projectId={projectId} />
+                    <AiChatView
+                      projectId={projectId}
+                      contextColumns={(result.profile_result ?? result.profile ?? []).map((p) => p.column)}
+                      contextInsightTitles={(result.insights ?? [])
+                        .map((i) => (i.title || i.finding || "").trim())
+                        .filter(Boolean)}
+                    />
                   </div>
                 </div>
               </TabPanel>
