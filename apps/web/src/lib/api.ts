@@ -162,7 +162,7 @@ async function get<T>(path: string): Promise<T> {
       cache: "no-store",
       headers: await authHeaders(),
     });
-  } catch (e) {
+  } catch {
     // Network-level failure (offline, DNS, CORS, etc.)
     throw new ApiError(
       "Could not reach the server. Please check your connection.",
@@ -199,7 +199,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
       headers: { "Content-Type": "application/json", ...(await authHeaders()) },
       body: body ? JSON.stringify(body) : undefined,
     });
-  } catch (e) {
+  } catch {
     throw new ApiError(
       "Could not reach the server. Please check your connection.",
       "NETWORK_ERROR",
@@ -234,7 +234,7 @@ async function put<T>(path: string, body?: unknown): Promise<T> {
       headers: { "Content-Type": "application/json", ...(await authHeaders()) },
       body: body ? JSON.stringify(body) : undefined,
     });
-  } catch (e) {
+  } catch {
     throw new ApiError(
       "Could not reach the server. Please check your connection.",
       "NETWORK_ERROR",
@@ -259,7 +259,7 @@ async function del(path: string): Promise<void> {
       method: "DELETE",
       headers: { ...(await authHeaders()) },
     });
-  } catch (e) {
+  } catch {
     throw new ApiError(
       "Could not reach the server. Please check your connection.",
       "NETWORK_ERROR",
@@ -280,7 +280,7 @@ async function patch<T>(path: string, body?: unknown): Promise<T> {
       headers: { "Content-Type": "application/json", ...(await authHeaders()) },
       body: JSON.stringify(body),
     });
-  } catch (e) {
+  } catch {
     throw new ApiError(
       "Could not reach the server. Please check your connection.",
       "NETWORK_ERROR",

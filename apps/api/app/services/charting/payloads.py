@@ -21,6 +21,10 @@ from .narrator import (
     _narrate_categorical,
     _narrate_binary,
 )
+from .quality_gates import (
+    datetime_axis_suitable_for_line_chart,
+    numeric_y_suitable_for_timeseries,
+)
 from .stats import _normality_badge
 
 
@@ -112,6 +116,10 @@ def build_timeseries_payload(df: pd.DataFrame, date_col: str, num_col: str) -> d
     ts = df[[date_col, num_col]].dropna().sort_values(date_col)
     if len(ts) < 4:
         return None
+    if not datetime_axis_suitable_for_line_chart(ts[date_col]):
+        return None
+    if not numeric_y_suitable_for_timeseries(ts[num_col], num_col):
+        return None
 
     values  = ts[num_col].to_numpy(dtype=float)
     dates   = ts[date_col].astype(str).str[:10].to_numpy()
@@ -171,7 +179,7 @@ def build_histogram_payload(
         return None
 
     skew   = float(clean.skew())
-    # Fewer bins on smaller series keeps x-axis labels legible.
+    # Histogram bin count 8–12 for readable x-axis labels.
     n_bins = 12 if len(clean) > 500 else (10 if len(clean) > 120 else 8)
     hist_data = _histogram_bins(clean, n_bins=n_bins)
     if not hist_data:

@@ -5,6 +5,7 @@ Each function returns a 2–3 sentence plain-English description of the insight
 shown by a chart.  The narration is attached as the ``insight`` key in every
 chart payload so the frontend can display it without calling an LLM.
 """
+import numpy as np
 import pandas as pd
 
 
@@ -39,12 +40,44 @@ def _narrate_distribution(col: str, clean: pd.Series, skew: float) -> str:
 
 def _narrate_timeseries(col: str, values: pd.Series, date_col: str) -> str:
     """Template-based narration for time series charts."""
-    pct_change = float((values.iloc[-1] - values.iloc[0]) / (abs(values.iloc[0]) + 1e-10) * 100)
-    direction  = "increased" if pct_change > 0 else "decreased"
-    volatility = round(float(values.std() / (abs(values.mean()) + 1e-10) * 100), 1)
+    arr = pd.to_numeric(values, errors="coerce").dropna().to_numpy(dtype=float)
+    if arr.size < 2:
+        return (
+            f"Trend of '{col}' over '{date_col}' does not have enough valid points for an automatic summary."
+        )
+
+    first_v = float(arr[0])
+    last_v = float(arr[-1])
+    med_abs = float(np.median(np.abs(arr[np.isfinite(arr)])))
+    if med_abs <= 0 or not np.isfinite(med_abs):
+        med_abs = 1e-9
+
+    # Avoid absurd % change when the first point is zero or tiny vs typical magnitude.
+    baseline = abs(first_v)
+    tiny_vs_typical = baseline < 0.02 * med_abs
+    if baseline <= 1e-12 or tiny_vs_typical:
+        trend_note = (
+            "Change over the period is easier to read from the chart than from a single headline number — "
+            "percentage change from the first point is not meaningful from a near-zero baseline."
+        )
+    else:
+        pct_change = (last_v - first_v) / baseline * 100
+        if not np.isfinite(pct_change) or abs(pct_change) > 1_000_000:
+            trend_note = (
+                "Relative change from the first observation is extreme or numerically unstable — "
+                "use the chart levels rather than a headline percentage."
+            )
+        else:
+            direction = "increased" if pct_change > 0 else "decreased"
+            trend_note = (
+                f"'{col}' has {direction} by {abs(pct_change):.1f}% between the first and last plotted points. "
+            )
+
+    # Volatility vs median magnitude (stable when the mean is near zero).
+    vol_pct = round(float(np.std(arr) / med_abs * 100), 1)
     return (
-        f"'{col}' has {direction} by {abs(pct_change):.1f}% over the observed period. "
-        f"Volatility is {volatility:.1f}% (coefficient of variation). "
+        f"{trend_note}"
+        f"Scale of variation is about {vol_pct:.1f}% relative to the series' median absolute level. "
         f"Examine the trend line for structural breaks or seasonality."
     )
 

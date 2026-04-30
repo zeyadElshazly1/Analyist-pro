@@ -1,5 +1,31 @@
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type HealthResult = Record<string, any>;
+type MissingnessStats = {
+  missing_cell_pct?: number;
+  columns_with_missing?: Array<{ column: string; missing_pct: number }>;
+};
+
+type DuplicateStats = {
+  duplicate_row_count?: number;
+  duplicate_row_pct?: number;
+};
+
+type HealthWarning = { dimension: string; message: string; severity: string };
+
+type HealthResult = {
+  health_score?: {
+    total_score?: number;
+    grade?: string;
+    breakdown?: Record<string, number>;
+    breakdown_max?: Record<string, number>;
+    dataset_type?: string;
+  };
+  row_count?: number;
+  column_count?: number;
+  health_warnings?: HealthWarning[];
+  missingness_stats?: MissingnessStats;
+  duplicate_stats?: DuplicateStats;
+  key_columns?: string[];
+  column_health?: Array<{ column: string; score: number; issues: string[] }>;
+};
 
 type LegacyScore = {
   total?: number; score?: number;
@@ -77,8 +103,8 @@ function verdictLabel(v: number) {
 type RiskItem = { text: string; risk: boolean; detail?: string };
 
 function deriveClientRisk(
-  missingness: Record<string, any> | undefined,
-  duplicates: Record<string, any> | undefined,
+  missingness: MissingnessStats | undefined,
+  duplicates: DuplicateStats | undefined,
   highWarnings: number,
 ): RiskItem[] {
   const items: RiskItem[] = [];
@@ -134,8 +160,8 @@ function deriveClientRisk(
 
 function derivePositives(
   breakdown: Record<string, number> | undefined,
-  duplicates: Record<string, any> | undefined,
-  missingness: Record<string, any> | undefined,
+  duplicates: DuplicateStats | undefined,
+  missingness: MissingnessStats | undefined,
   highWarnings: number,
   breakdownMax: Record<string, number> | undefined,
 ): string[] {
@@ -170,15 +196,15 @@ export function HealthScore({ score, healthResult }: Props) {
   const breakdown    = hs?.breakdown   ?? score?.breakdown;
   const breakdownMax = hs?.breakdown_max as Record<string, number> | undefined;
   const datasetType  = hs?.dataset_type;
-  const rowCount    = healthResult?.row_count    as number | undefined;
-  const colCount    = healthResult?.column_count as number | undefined;
+  const rowCount    = healthResult?.row_count;
+  const colCount    = healthResult?.column_count;
 
-  const warnings     = (healthResult?.health_warnings ?? []) as Array<{ dimension: string; message: string; severity: string }>;
+  const warnings     = healthResult?.health_warnings ?? [];
   const legacyDeductions = score?.deductions ?? [];
-  const missingness  = healthResult?.missingness_stats  as Record<string, any> | undefined;
-  const duplicates   = healthResult?.duplicate_stats    as Record<string, any> | undefined;
-  const keyColumns   = (healthResult?.key_columns ?? []) as string[];
-  const colHealth    = (healthResult?.column_health ?? []) as Array<{ column: string; score: number; issues: string[] }>;
+  const missingness  = healthResult?.missingness_stats;
+  const duplicates   = healthResult?.duplicate_stats;
+  const keyColumns   = healthResult?.key_columns ?? [];
+  const colHealth    = healthResult?.column_health ?? [];
 
   // Categorise warnings
   const highWarnings   = warnings.filter((w) => w.severity === "high");

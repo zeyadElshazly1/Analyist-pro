@@ -1,5 +1,11 @@
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type HealthResult = Record<string, any>;
+type ProfileColumnStub = { type?: string };
+
+type HealthResultStats = {
+  row_count?: number;
+  column_count?: number;
+  missingness_stats?: { missing_cell_pct?: number };
+  health_score?: { dataset_type?: string };
+};
 
 type LegacySummary = {
   rows?: number;
@@ -11,9 +17,9 @@ type LegacySummary = {
 };
 
 type Props = {
-  healthResult?: HealthResult | null;   // canonical — primary
-  profileResult?: any[] | null;         // canonical — numeric/categorical counts // eslint-disable-line @typescript-eslint/no-explicit-any
-  summary?: LegacySummary | null;       // legacy fallback for old stored results
+  healthResult?: HealthResultStats | null;
+  profileResult?: ProfileColumnStub[] | null;
+  summary?: LegacySummary | null;
 };
 
 const DOMAIN_BADGE: Record<string, string> = {
@@ -42,10 +48,8 @@ export function StatsCards({ healthResult, profileResult, summary }: Props) {
   const rowCount       = healthResult?.row_count    ?? summary?.rows    ?? 0;
   const colCount       = healthResult?.column_count ?? summary?.columns ?? 0;
   const missingPct     = healthResult?.missingness_stats?.missing_cell_pct ?? summary?.missing_pct ?? 0;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const numericCols    = profileResult ? profileResult.filter((c: any) => c.type === "numeric").length    : (summary?.numeric_cols    ?? 0);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const categoricalCols = profileResult ? profileResult.filter((c: any) => c.type === "categorical").length : (summary?.categorical_cols ?? 0);
+  const numericCols    = profileResult ? profileResult.filter((c) => c.type === "numeric").length    : (summary?.numeric_cols    ?? 0);
+  const categoricalCols = profileResult ? profileResult.filter((c) => c.type === "categorical").length : (summary?.categorical_cols ?? 0);
 
   const items = [
     { label: "Rows",        value: (rowCount as number).toLocaleString() },

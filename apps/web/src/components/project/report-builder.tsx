@@ -70,6 +70,12 @@ type Props = {
   onNavigateTo?: (tab: string) => void;
 };
 
+/** Exported for callers that attach loosely-typed analysis payloads. */
+export type ReportInsightItem = InsightItem;
+export type ReportExecutivePanel = ExecutivePanel;
+export type ReportHealthBlock = HealthBlock;
+export type ReportCleaningBlock = CleaningBlock;
+
 // Selection key is normally the canonical ``insight_id`` string, falling
 // back to a numeric positional index only for legacy drafts (or the
 // vanishingly rare insight that lacks an id).  Storing the key — not the

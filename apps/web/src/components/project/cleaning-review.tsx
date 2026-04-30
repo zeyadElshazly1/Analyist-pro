@@ -126,7 +126,6 @@ function AutoRow({ children }: { children: React.ReactNode }) {
 
 // ── Main component ───────────────────────────────────────────────────────────
 export function CleaningReview({ cleaningResult, items: legacyItems }: Props) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cr = cleaningResult as CanonicalCR | null | undefined;
   const cs = cr?.cleaning_summary;
 

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { getAnalysisHistory, getAnalysisDiff, ApiError } from "@/lib/api";
 import type { AnalysisDiff } from "@/lib/api";
-import { GitCompare, TrendingUp, TrendingDown, Minus, AlertCircle, CheckCircle, Plus, Trash2 } from "lucide-react";
+import { GitCompare, TrendingUp, TrendingDown, AlertCircle, CheckCircle, Plus, Trash2 } from "lucide-react";
 
 type HistoryItem = { id: number; created_at: string | null; file_hash: string | null };
 

@@ -70,33 +70,28 @@ type Props = {
   summary?: Record<string, unknown> | null;
 };
 
-// ── Presentation helpers (copy is qualitative by score band, not data) ───────
-
 function confidencePalette(score: number) {
   if (score >= 80) {
     return {
-      border: "border-emerald-500/30",
-      bg: "from-emerald-500/[0.08] to-white/[0.02]",
+      border: "border-emerald-500/25",
       bar: "bg-emerald-400",
       text: "text-emerald-300",
-      badge: "border-emerald-500/35 bg-emerald-500/15 text-emerald-200",
+      badge: "border-emerald-500/30 bg-emerald-500/12 text-emerald-200",
     };
   }
   if (score >= 60) {
     return {
-      border: "border-amber-500/30",
-      bg: "from-amber-500/[0.07] to-white/[0.02]",
+      border: "border-amber-500/25",
       bar: "bg-amber-400",
       text: "text-amber-300",
-      badge: "border-amber-500/35 bg-amber-500/15 text-amber-200",
+      badge: "border-amber-500/30 bg-amber-500/12 text-amber-200",
     };
   }
   return {
-    border: "border-red-500/30",
-    bg: "from-red-500/[0.07] to-white/[0.02]",
+    border: "border-red-500/25",
     bar: "bg-red-400",
     text: "text-red-300",
-    badge: "border-red-500/35 bg-red-500/15 text-red-200",
+    badge: "border-red-500/30 bg-red-500/12 text-red-200",
   };
 }
 
@@ -106,137 +101,141 @@ function confidenceBandLabel(score: number) {
   return "Low confidence";
 }
 
-/** Short explanation tied to score band only — does not invent numeric facts. */
-function confidenceNarration(score: number) {
-  if (score >= 80) {
-    return "The pipeline applied most normalization steps with strong signals. Outputs are a solid starting point for analysis; spot-check the cleaning log if you tighten assumptions.";
-  }
-  if (score >= 60) {
-    return "Most changes applied cleanly, but some columns needed judgment calls. Review flagged items and the full cleaning report before client-facing work.";
-  }
-  return "Several transformations were ambiguous. Treat this dataset as provisional until you have walked through suspicious columns and the detailed cleaning log.";
+/** One short sentence only — no essay copy inside KPI surfaces. */
+function confidenceOneLiner(score: number) {
+  if (score >= 80) return "Strong pipeline fit — spot-check the log if you need strict guarantees.";
+  if (score >= 60) return "Mostly clean — review flagged items before client-ready exports.";
+  return "Ambiguous in places — confirm suspicious columns in the full cleaning report.";
 }
 
-function ConfidenceMainCard({ score }: { score: number }) {
+function CompactConfidenceRow({ score }: { score: number }) {
   const p = confidencePalette(score);
   const label = confidenceBandLabel(score);
+  const hint = confidenceOneLiner(score);
 
   return (
     <div
-      className={`flex h-full min-h-[260px] flex-col rounded-2xl border ${p.border} bg-gradient-to-b ${p.bg} p-6 shadow-lg shadow-black/20 sm:p-8`}
+      className={`col-span-full rounded-xl border ${p.border} bg-white/[0.03] px-4 py-3 sm:px-5`}
     >
-      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/45">
-        Cleaning confidence
-      </p>
-      <div className="mt-5 flex flex-wrap items-baseline gap-2">
-        <span className={`text-4xl font-bold tabular-nums tracking-tight sm:text-5xl ${p.text}`}>
-          {score}
-        </span>
-        <span className="text-base font-medium text-white/35">/100</span>
-      </div>
-      <span
-        className={`mt-3 inline-flex w-fit rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${p.badge}`}
-      >
-        {label}
-      </span>
-      <p className="mt-5 text-sm leading-relaxed text-white/60">{confidenceNarration(score)}</p>
-      <div className="mt-auto pt-8">
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.08]">
-          <div
-            className={`h-full rounded-full ${p.bar} opacity-85 transition-all duration-500`}
-            style={{ width: `${Math.min(100, Math.max(0, score))}%` }}
-          />
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 sm:gap-x-5">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">
+            Cleaning confidence
+          </span>
+          <div className="flex items-baseline gap-1 tabular-nums">
+            <span className={`text-2xl font-bold leading-none sm:text-3xl ${p.text}`}>{score}</span>
+            <span className="text-sm font-medium text-white/35">/100</span>
+          </div>
+          <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${p.badge}`}>
+            {label}
+          </span>
         </div>
+        <p className="max-w-full text-[11px] leading-snug text-white/42 sm:max-w-[min(100%,20rem)] sm:text-right">
+          {hint}
+        </p>
+      </div>
+      <div className="mt-2.5 h-1 w-full overflow-hidden rounded-full bg-white/[0.08]">
+        <div
+          className={`h-full rounded-full ${p.bar} opacity-90 transition-all duration-500`}
+          style={{ width: `${Math.min(100, Math.max(0, score))}%` }}
+        />
       </div>
     </div>
   );
 }
 
-function ShapeTile({
-  variant,
+function ShapeKpiCard({
+  title,
   rows,
   cols,
+  className = "",
 }: {
-  variant: "original" | "final";
+  title: string;
   rows: number;
   cols: number;
+  className?: string;
 }) {
-  const title = variant === "original" ? "Original shape" : "Final shape";
   return (
-    <div className="flex h-full min-h-[148px] flex-col rounded-2xl border border-white/[0.09] bg-white/[0.04] p-5 shadow-md shadow-black/15">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/45">{title}</p>
-      <div className="mt-4 grid grid-cols-2 gap-4 min-w-0">
-        <div className="min-w-0">
-          <p className="text-2xl font-semibold tabular-nums tracking-tight text-white sm:text-3xl whitespace-nowrap overflow-hidden text-ellipsis">
-            {rows.toLocaleString()}
-          </p>
-          <p className="mt-0.5 text-xs font-medium text-white/40">Rows</p>
-        </div>
-        <div className="min-w-0 border-l border-white/[0.06] pl-4">
-          <p className="text-2xl font-semibold tabular-nums tracking-tight text-white sm:text-3xl whitespace-nowrap">
-            {cols.toLocaleString()}
-          </p>
-          <p className="mt-0.5 text-xs font-medium text-white/40">Columns</p>
-        </div>
-      </div>
+    <div
+      className={`flex min-h-[92px] flex-col justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 min-w-0 ${className}`}
+    >
+      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40">{title}</p>
+      <p className="mt-1.5 text-sm font-semibold tabular-nums text-white leading-snug sm:text-base">
+        <span className="whitespace-nowrap">{rows.toLocaleString()} rows</span>
+        <span className="text-white/35"> · </span>
+        <span className="whitespace-nowrap">{cols.toLocaleString()} columns</span>
+      </p>
     </div>
   );
 }
 
-function StepsTile({
+function StepsKpiCard({
   steps,
   timeSaved,
+  className = "",
 }: {
   steps: number;
   timeSaved?: string;
+  className?: string;
 }) {
   return (
-    <div className="flex h-full min-h-[120px] flex-col rounded-2xl border border-white/[0.09] bg-white/[0.04] p-5 shadow-md shadow-black/15">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/45">Cleaning steps</p>
-      <p className="mt-3 text-3xl font-semibold tabular-nums text-white sm:text-4xl">{steps}</p>
-      <p className="mt-1 text-xs text-white/40">Pipeline steps recorded for this run</p>
-      {timeSaved ? (
-        <p className="mt-auto pt-3 text-sm text-indigo-300/90 leading-snug">
-          <span className="text-white/35">Est. time saved · </span>
-          {timeSaved}
-        </p>
-      ) : (
-        <div className="mt-auto pt-3" aria-hidden />
-      )}
-    </div>
-  );
-}
-
-function SuspiciousTile({ count }: { count: number }) {
-  return (
-    <div className="flex h-full min-h-[120px] flex-col rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] p-5 shadow-md shadow-black/15">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-amber-200/80">Suspicious columns</p>
-      <p className="mt-3 text-3xl font-semibold tabular-nums text-amber-100 sm:text-4xl">{count}</p>
-      <p className="mt-1 text-xs text-amber-200/55 leading-relaxed">
-        Flagged for manual review — details below and in the Cleaning tab.
+    <div
+      className={`flex min-h-[92px] flex-col justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 min-w-0 ${className}`}
+    >
+      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/40">Cleaning steps</p>
+      <p className="mt-1.5 text-xl font-semibold tabular-nums text-white sm:text-2xl leading-none">
+        {steps}
       </p>
+      {timeSaved ? (
+        <p className="mt-1.5 min-w-0 truncate text-xs text-indigo-300/85" title={timeSaved}>
+          {timeSaved}
+          <span className="text-white/35"> · est.</span>
+        </p>
+      ) : null}
     </div>
   );
 }
 
-function SecondaryMetricTile({
+function MetricKpiCard({
   label,
   value,
   sub,
+  variant = "default",
+  className = "",
 }: {
   label: string;
   value: string | number;
   sub?: string;
+  variant?: "default" | "amber";
+  className?: string;
 }) {
+  const shell =
+    variant === "amber"
+      ? "border-amber-500/22 bg-amber-500/[0.05]"
+      : "border-white/[0.08] bg-white/[0.03]";
   return (
-    <div className="flex min-h-[108px] flex-col rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4 sm:p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/40">{label}</p>
-      <p className="mt-2 break-normal text-xl font-semibold tabular-nums text-white sm:text-2xl">{value}</p>
+    <div
+      className={`flex min-h-[92px] flex-col justify-center rounded-xl border px-4 py-3 min-w-0 ${shell} ${className}`}
+    >
+      <p
+        className={`text-[10px] font-semibold uppercase tracking-[0.12em] ${
+          variant === "amber" ? "text-amber-200/75" : "text-white/40"
+        }`}
+      >
+        {label}
+      </p>
+      <p
+        className={`mt-1.5 truncate text-xl font-semibold tabular-nums sm:text-2xl leading-none ${
+          variant === "amber" ? "text-amber-100" : "text-white"
+        }`}
+      >
+        {value}
+      </p>
       {sub ? (
-        <p className="mt-auto pt-3 text-xs leading-relaxed text-white/38">{sub}</p>
-      ) : (
-        <div className="mt-auto pt-3" aria-hidden />
-      )}
+        <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-white/38" title={sub}>
+          {sub}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -304,8 +303,8 @@ export function CleaningSummaryCards({ cleaningResult, summary }: Props) {
   const view: CleaningSummaryView | null = cleaningResult
     ? fromCanonical(cleaningResult as CanonicalCR)
     : summary
-    ? fromLegacy(summary as Record<string, unknown>)
-    : null;
+      ? fromLegacy(summary as Record<string, unknown>)
+      : null;
 
   if (!view) {
     return <p className="text-sm text-white/60">No cleaning summary available.</p>;
@@ -320,30 +319,25 @@ export function CleaningSummaryCards({ cleaningResult, summary }: Props) {
       ? view.suspicious_count
       : undefined;
 
-  const secondaryTiles: Array<{ label: string; value: string | number; sub?: string }> = [];
+  const typeFixes =
+    typeof view.type_fixes_count === "number" && view.type_fixes_count > 0
+      ? view.type_fixes_count
+      : undefined;
+  const imputations =
+    typeof view.imputations_count === "number" && view.imputations_count > 0
+      ? view.imputations_count
+      : undefined;
+
+  const extraTiles: Array<{ label: string; value: string | number; sub?: string }> = [];
 
   if (typeof view.rows_removed === "number" && view.rows_removed > 0) {
-    secondaryTiles.push({ label: "Rows removed", value: view.rows_removed.toLocaleString() });
+    extraTiles.push({ label: "Rows removed", value: view.rows_removed.toLocaleString() });
   }
   if (typeof view.cols_removed === "number" && view.cols_removed > 0) {
-    secondaryTiles.push({ label: "Columns removed", value: view.cols_removed.toLocaleString() });
-  }
-  if (typeof view.type_fixes_count === "number" && view.type_fixes_count > 0) {
-    secondaryTiles.push({
-      label: "Type conversions",
-      value: view.type_fixes_count,
-      sub: "currency, %, numeric, date, boolean",
-    });
-  }
-  if (typeof view.imputations_count === "number" && view.imputations_count > 0) {
-    secondaryTiles.push({
-      label: "Missing values filled",
-      value: view.imputations_count,
-      sub: "Columns imputed per pipeline notes",
-    });
+    extraTiles.push({ label: "Columns removed", value: view.cols_removed.toLocaleString() });
   }
   if (typeof view.duplicate_rows_removed === "number" && view.duplicate_rows_removed > 0) {
-    secondaryTiles.push({
+    extraTiles.push({
       label: "Duplicate rows removed",
       value: view.duplicate_rows_removed.toLocaleString(),
     });
@@ -352,7 +346,7 @@ export function CleaningSummaryCards({ cleaningResult, summary }: Props) {
     typeof view.duplicate_cols_removed_count === "number" &&
     view.duplicate_cols_removed_count > 0
   ) {
-    secondaryTiles.push({
+    extraTiles.push({
       label: "Duplicate columns removed",
       value: view.duplicate_cols_removed_count,
     });
@@ -360,48 +354,15 @@ export function CleaningSummaryCards({ cleaningResult, summary }: Props) {
 
   const hasSteps = typeof view.steps === "number";
   const hasConfidence = view.confidence_score !== undefined;
-  const stepsAndSuspicious = hasSteps && suspiciousCount !== undefined;
 
-  const metricsHasContent =
+  const hasDashboardBody =
     hasOriginal ||
     hasFinal ||
     hasSteps ||
+    typeFixes !== undefined ||
+    imputations !== undefined ||
     suspiciousCount !== undefined ||
-    secondaryTiles.length > 0;
-
-  const metricsColumn = (
-    <div className="min-w-0 space-y-4">
-      {(hasOriginal || hasFinal) && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {hasOriginal && (
-            <ShapeTile variant="original" rows={view.original_rows!} cols={view.original_cols!} />
-          )}
-          {hasFinal && <ShapeTile variant="final" rows={view.final_rows!} cols={view.final_cols!} />}
-        </div>
-      )}
-
-      {(hasSteps || suspiciousCount !== undefined) && (
-        <div className={`grid gap-4 ${stepsAndSuspicious ? "sm:grid-cols-2" : "grid-cols-1"}`}>
-          {hasSteps && (
-            <div className={stepsAndSuspicious ? "" : "max-w-xl"}>
-              <StepsTile steps={view.steps!} timeSaved={view.time_saved_estimate} />
-            </div>
-          )}
-          {suspiciousCount !== undefined && <SuspiciousTile count={suspiciousCount} />}
-        </div>
-      )}
-
-      {secondaryTiles.length > 0 && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {secondaryTiles.map((c) => (
-            <SecondaryMetricTile key={c.label} label={c.label} value={c.value} sub={c.sub} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-
-  const hasDashboardBody = metricsHasContent;
+    extraTiles.length > 0;
 
   const hasAnyContent = hasConfidence || hasDashboardBody || issues.length > 0;
 
@@ -411,64 +372,115 @@ export function CleaningSummaryCards({ cleaningResult, summary }: Props) {
     );
   }
 
+  const showStepsTypeRow = hasSteps || typeFixes !== undefined;
+  const showImputeSuspiciousRow = imputations !== undefined || suspiciousCount !== undefined;
+
   return (
-    <div className="space-y-5">
-      <header className="space-y-1">
-        <h2 className="text-xs font-semibold uppercase tracking-[0.16em] text-white/50">
+    <div className="space-y-3 min-w-0">
+      <header className="space-y-0.5">
+        <h2 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/48">
           Cleaning summary
         </h2>
-        <p className="max-w-prose text-[13px] leading-relaxed text-white/38">
-          Shape, step count, and pipeline confidence from this run. Metrics appear only when the backend reported them.
-        </p>
+        <p className="text-[11px] text-white/35">Metrics from this run only.</p>
       </header>
 
-      {hasConfidence ? (
-        <div className="grid gap-5 lg:grid-cols-12 lg:items-stretch lg:gap-6">
-          <div className={`min-w-0 ${metricsHasContent ? "lg:col-span-5" : "lg:col-span-12"}`}>
-            <ConfidenceMainCard score={view.confidence_score!} />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 min-w-0">
+        {hasConfidence ? (
+          <div className="col-span-full min-w-0">
+            <CompactConfidenceRow score={view.confidence_score!} />
           </div>
-          {metricsHasContent && (
-            <div className="min-w-0 lg:col-span-7">{metricsColumn}</div>
-          )}
-        </div>
-      ) : (
-        metricsColumn
-      )}
+        ) : null}
 
-      {issues.length > 0 && (
-        <div className="overflow-hidden rounded-2xl border border-amber-500/20 bg-amber-500/[0.05] shadow-md shadow-black/10">
+        {hasOriginal ? (
+          <ShapeKpiCard
+            title="Original shape"
+            rows={view.original_rows!}
+            cols={view.original_cols!}
+            className={!hasFinal ? "sm:col-span-2" : ""}
+          />
+        ) : null}
+        {hasFinal ? (
+          <ShapeKpiCard
+            title="Final shape"
+            rows={view.final_rows!}
+            cols={view.final_cols!}
+            className={!hasOriginal ? "sm:col-span-2" : ""}
+          />
+        ) : null}
+
+        {showStepsTypeRow && hasSteps ? (
+          <StepsKpiCard
+            steps={view.steps!}
+            timeSaved={view.time_saved_estimate}
+            className={typeFixes === undefined ? "sm:col-span-2" : ""}
+          />
+        ) : null}
+        {showStepsTypeRow && typeFixes !== undefined ? (
+          <MetricKpiCard
+            label="Type conversions"
+            value={typeFixes}
+            sub="Normalized dtypes in pipeline."
+            className={!hasSteps ? "sm:col-span-2" : ""}
+          />
+        ) : null}
+
+        {showImputeSuspiciousRow && imputations !== undefined ? (
+          <MetricKpiCard
+            label="Missing values filled"
+            value={imputations}
+            sub="Columns imputed per notes."
+            className={suspiciousCount === undefined ? "sm:col-span-2" : ""}
+          />
+        ) : null}
+        {showImputeSuspiciousRow && suspiciousCount !== undefined ? (
+          <MetricKpiCard
+            label="Suspicious columns"
+            value={suspiciousCount}
+            sub="Review below or in Cleaning."
+            variant="amber"
+            className={imputations === undefined ? "sm:col-span-2" : ""}
+          />
+        ) : null}
+
+        {extraTiles.map((c) => (
+          <MetricKpiCard key={c.label} label={c.label} value={c.value} sub={c.sub} />
+        ))}
+      </div>
+
+      {issues.length > 0 ? (
+        <div className="overflow-hidden rounded-xl border border-amber-500/20 bg-amber-500/[0.04]">
           <button
             type="button"
-            className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-amber-500/[0.04] sm:px-5"
+            className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-amber-500/[0.04] sm:px-4"
             onClick={() => setShowIssues((v) => !v)}
           >
-            <AlertTriangle className="h-4 w-4 flex-shrink-0 text-amber-400" />
-            <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-amber-100/90">
-              {issues.length} suspicious issue{issues.length > 1 ? "s" : ""} remaining (not auto-fixed)
+            <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 text-amber-400" />
+            <span className="min-w-0 flex-1 text-xs font-medium leading-snug text-amber-100/90">
+              {issues.length} suspicious issue{issues.length > 1 ? "s" : ""} (not auto-fixed)
             </span>
             {showIssues ? (
-              <ChevronDown className="h-4 w-4 flex-shrink-0 text-amber-400/70" />
+              <ChevronDown className="h-3.5 w-3.5 flex-shrink-0 text-amber-400/70" />
             ) : (
-              <ChevronRight className="h-4 w-4 flex-shrink-0 text-amber-400/70" />
+              <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-amber-400/70" />
             )}
           </button>
 
-          {showIssues && (
-            <div className="space-y-3 border-t border-amber-500/15 px-4 py-4 sm:px-5">
+          {showIssues ? (
+            <div className="space-y-2 border-t border-amber-500/12 px-3 py-3 sm:px-4">
               {issues.map((issue, i) => (
-                <div key={i} className="rounded-xl border border-white/[0.06] bg-black/15 px-3 py-2.5">
-                  {issue.column && (
-                    <p className="font-mono text-xs font-semibold text-amber-200/90">{issue.column}</p>
-                  )}
-                  {issue.detail && (
-                    <p className="mt-1 text-xs leading-relaxed text-white/55">{issue.detail}</p>
-                  )}
+                <div key={i} className="rounded-lg border border-white/[0.06] bg-black/20 px-3 py-2">
+                  {issue.column ? (
+                    <p className="font-mono text-[11px] font-semibold text-amber-200/90">{issue.column}</p>
+                  ) : null}
+                  {issue.detail ? (
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-white/50">{issue.detail}</p>
+                  ) : null}
                 </div>
               ))}
             </div>
-          )}
+          ) : null}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

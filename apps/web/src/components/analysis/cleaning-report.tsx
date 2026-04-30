@@ -1,16 +1,38 @@
-type CleaningItem = {
+export type CleaningItem = {
   step: string;
   detail: string;
   impact: "high" | "medium" | "low";
 };
 
-type Props = {
-  cleaningResult?: Record<string, unknown> | null;  // canonical — primary
-  items?: CleaningItem[];                           // legacy fallback
+/** Canonical cleaning block (subset matching API / cleaning-review). */
+export type CanonicalCleaningResult = {
+  renamed_columns?: Array<{ original: string; cleaned: string }>;
+  dropped_columns?: string[];
+  type_fixes?: Array<{ column: string; to_dtype: string; n_values_converted: number }>;
+  missingness_notes?: Array<{
+    column: string;
+    missing_count: number;
+    missing_pct: number;
+    mechanism: string;
+    strategy_applied: string;
+  }>;
+  duplicate_notes?: {
+    duplicate_rows_found: number;
+    duplicate_rows_removed: number;
+    duplicate_columns?: string[];
+  };
+  suspicious_columns?: Array<{ column: string; detail: string; issue_type?: string }>;
 };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function cleaningItemsFromCanonical(cr: Record<string, any>): CleaningItem[] {
+type Props = {
+  cleaningResult?: CanonicalCleaningResult | null;
+  items?: CleaningItem[];
+};
+
+export function cleaningItemsFromCanonical(
+  cr: CanonicalCleaningResult | null | undefined,
+): CleaningItem[] {
+  if (!cr) return [];
   const items: CleaningItem[] = [];
   for (const r of cr.renamed_columns ?? [])
     items.push({ step: `Rename: ${r.original} → ${r.cleaned}`, detail: "Column name normalised", impact: "low" });
@@ -39,9 +61,8 @@ const IMPACT_STYLE = {
 };
 
 export function CleaningReport({ cleaningResult, items: legacyItems }: Props) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const items: CleaningItem[] = cleaningResult
-    ? cleaningItemsFromCanonical(cleaningResult as Record<string, any>)
+    ? cleaningItemsFromCanonical(cleaningResult)
     : (legacyItems ?? []);
 
   if (items.length === 0) {

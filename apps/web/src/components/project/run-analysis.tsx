@@ -7,9 +7,13 @@ import { Clock, Loader2, Play, CheckCircle2, Share2, Copy, Check, Download } fro
 import { StatsCards } from "@/components/analysis/stats-cards";
 import { InsightsList } from "@/components/analysis/insights-list";
 import { HealthScore } from "@/components/analysis/health-score";
+import {
+  cleaningItemsFromCanonical,
+  type CleaningItem,
+  type CanonicalCleaningResult,
+} from "@/components/analysis/cleaning-report";
 import { ProjectTabs, getStepForTab, DEFAULT_LANDING_TAB } from "./project-tabs";
 import type { StepStatus } from "./project-tabs";
-import { CleaningReport } from "@/components/analysis/cleaning-report";
 import { CleaningReview } from "./cleaning-review";
 import { IntakeReview, type IntakeResult } from "./intake-review";
 import { CleaningSummaryCards } from "@/components/analysis/cleaning-summary-cards";
@@ -26,7 +30,7 @@ import { MultifileCompare } from "@/components/analysis/multifile-compare";
 import { JoinView } from "@/components/analysis/join-view";
 import { PredictionsView } from "@/components/analysis/predictions-view";
 import { AiChatView } from "@/components/analysis/ai-chat-view";
-import { ReportBuilder } from "./report-builder";
+import { ReportBuilder, type ReportInsightItem, type ReportExecutivePanel, type ReportHealthBlock, type ReportCleaningBlock } from "./report-builder";
 import { PivotView } from "@/components/analysis/pivot-view";
 import { SegmentsView } from "@/components/analysis/segments-view";
 import { AbTestsView } from "@/components/analysis/ab-tests-view";
@@ -92,43 +96,6 @@ type ColProfile = {
   most_common_pct?: number;
   recommended_chart?: string;
 };
-
-type CleaningItem = {
-  step: string;
-  detail: string;
-  impact: "high" | "medium" | "low";
-};
-
-// Reconstruct flat CleaningItem list from canonical CleaningResult block.
-// Used by CleaningReview when cleaning_report is absent from the result
-// (removed from API response — canonical cleaning_result is the source of truth).
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function cleaningItemsFromCanonical(cr: Record<string, any> | null | undefined): CleaningItem[] {
-  if (!cr) return [];
-  const items: CleaningItem[] = [];
-  for (const r of cr.renamed_columns ?? []) {
-    items.push({ step: `Rename: ${r.original} → ${r.cleaned}`, detail: "Column name normalised", impact: "low" });
-  }
-  for (const col of cr.dropped_columns ?? []) {
-    items.push({ step: `Drop column: ${col}`, detail: "Removed — high missingness or no content", impact: "medium" });
-  }
-  for (const fix of cr.type_fixes ?? []) {
-    const count = fix.n_values_converted > 0 ? ` (${fix.n_values_converted} values)` : "";
-    items.push({ step: `Type fix: ${fix.column}`, detail: `Converted to ${fix.to_dtype}${count}`, impact: "medium" });
-  }
-  for (const note of cr.missingness_notes ?? []) {
-    const isSuggestion = note.strategy_applied === "safe_suggestion";
-    items.push({ step: `${isSuggestion ? "[SUGGESTION] Impute missing" : "Impute missing"}: ${note.column}`, detail: `${note.missing_count} missing (${note.missing_pct}%), mechanism: ${note.mechanism}`, impact: isSuggestion ? "low" : "medium" });
-  }
-  const dn = cr.duplicate_notes;
-  if (dn?.duplicate_rows_removed > 0) {
-    items.push({ step: "Remove duplicate rows", detail: `Removed ${dn.duplicate_rows_removed} of ${dn.duplicate_rows_found} duplicates`, impact: "medium" });
-  }
-  for (const susp of cr.suspicious_columns ?? []) {
-    items.push({ step: `[FLAG] ${susp.column}`, detail: susp.detail, impact: "medium" });
-  }
-  return items;
-}
 
 export type AnalysisResult = {
   analysis_id?: number;
@@ -320,7 +287,6 @@ export function RunAnalysis({ projectId, initialResult, initialRunId, initialCom
       setVisitedSteps(new Set<string>([DEFAULT_LANDING_TAB]));
     }
   }, [initialResult, initialRunId]);
-  const [useCleaned, setUseCleaned] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [compareResult, setCompareResult] = useState<CompareResult | null>(null);
 
@@ -371,7 +337,7 @@ export function RunAnalysis({ projectId, initialResult, initialRunId, initialCom
       setProgress(null);
       return;
     }
-    const tokenParam = `?token=${encodeURIComponent(token)}&use_cleaned=${useCleaned}`;
+    const tokenParam = `?token=${encodeURIComponent(token)}&use_cleaned=true`;
     const es = new EventSource(`${API_BASE_URL}/analysis/stream/${projectId}${tokenParam}`);
     esRef.current = es;
 
@@ -395,7 +361,7 @@ export function RunAnalysis({ projectId, initialResult, initialRunId, initialCom
           const adapted: AnalysisResult = {
             ...raw,
             profile_result: raw.profile_result ?? raw.profile,
-            cleaning_report: raw.cleaning_report ?? cleaningItemsFromCanonical(raw.cleaning_result),
+            cleaning_report: raw.cleaning_report ?? cleaningItemsFromCanonical(raw.cleaning_result as CanonicalCleaningResult | null | undefined),
             insights: raw.insights ?? raw.insight_results ?? [],
           } as AnalysisResult;
           setResult(adapted);
@@ -424,7 +390,7 @@ export function RunAnalysis({ projectId, initialResult, initialRunId, initialCom
       }
     };
 
-    es.onerror = (event) => {
+    es.onerror = () => {
       // Only show error if we were actively loading (not a clean close)
       if (loading) {
         setError(
@@ -475,32 +441,6 @@ export function RunAnalysis({ projectId, initialResult, initialRunId, initialCom
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
-        {/* Data mode toggle */}
-        <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1 text-xs">
-          <button
-            onClick={() => setUseCleaned(true)}
-            disabled={loading}
-            className={`rounded-md px-3 py-1.5 transition-colors ${
-              useCleaned
-                ? "bg-indigo-600 text-white"
-                : "text-white/50 hover:text-white/80"
-            }`}
-          >
-            Cleaned data
-          </button>
-          <button
-            onClick={() => setUseCleaned(false)}
-            disabled={loading}
-            className={`rounded-md px-3 py-1.5 transition-colors ${
-              !useCleaned
-                ? "bg-indigo-600 text-white"
-                : "text-white/50 hover:text-white/80"
-            }`}
-          >
-            Raw data
-          </button>
-        </div>
-
         <Button
           onClick={handleRun}
           disabled={loading}
@@ -826,12 +766,16 @@ export function RunAnalysis({ projectId, initialResult, initialRunId, initialCom
                   <ReportBuilder
                     projectId={projectId}
                     insights={result.insights ?? []}
-                    insightResults={(result.insight_results as any[]) ?? undefined}
+                    insightResults={
+                      result.insight_results == null
+                        ? undefined
+                        : (result.insight_results as ReportInsightItem[])
+                    }
                     narrative={result.narrative}
-                    executivePanel={result.executive_panel as any ?? undefined}
+                    executivePanel={result.executive_panel as ReportExecutivePanel | null | undefined}
                     compareResult={compareResult}
-                    healthResult={result.health_result as any ?? undefined}
-                    cleaningResult={result.cleaning_result as any ?? undefined}
+                    healthResult={result.health_result as ReportHealthBlock | null | undefined}
+                    cleaningResult={result.cleaning_result as ReportCleaningBlock | null | undefined}
                     onNavigateTo={handleTabChange}
                   />
                   <div className="border-t border-white/[0.06] pt-4">

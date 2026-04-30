@@ -42,6 +42,7 @@ from .payloads import (
     build_heatmap_payload,
 )
 from .payloads import build_binary_bar_payload  # noqa: F401 (re-export for tests)
+from .quality_gates import datetime_axis_suitable_for_line_chart
 from .ranker import rank_and_cap
 
 # Semantic types that identify a column as an identifier/key field.
@@ -56,6 +57,8 @@ _ID_NAME_CANONICAL: frozenset[str] = frozenset({
     "customerid", "userid", "user_id", "accountid", "account_id", "custid",
     "subscriberid", "subscriber_id", "memberid", "member_id", "clientid",
     "client_id", "primarykey", "primary_key",
+    "policyholderid", "policy_holder_id", "policyholder_id",
+    "policyid", "policy_id",
 })
 _ID_NAME_SUFFIX = re.compile(
     r"(customer|account|member|user|subscriber|client)(id)$",
@@ -143,7 +146,12 @@ def build_chart_data(df: pd.DataFrame) -> list[dict]:
     # ── Column classification ─────────────────────────────────────────────────
     all_numeric   = df.select_dtypes(include=["number"]).columns.tolist()
     all_cat_str   = df.select_dtypes(include=["object", "category"]).columns.tolist()
-    datetime_cols = df.select_dtypes(include=["datetime64"]).columns.tolist()
+    datetime_cols = [
+        c
+        for c in df.columns
+        if pd.api.types.is_datetime64_any_dtype(df[c])
+        and datetime_axis_suitable_for_line_chart(df[c])
+    ]
 
     # Binary numeric: exactly 2 distinct values (e.g. SeniorCitizen 0/1)
     binary_numeric = [
