@@ -425,6 +425,11 @@ def clean_dataset(
         col_data = df_clean[col].dropna()
         if len(col_data) < 20:
             continue
+        # Skip binary flag columns (e.g. SeniorCitizen 0/1, boolean indicators).
+        # Outlier winsorisation on a binary column collapses the minority class
+        # to the majority value, destroying the column's signal entirely.
+        if col_data.nunique() <= 2:
+            continue
 
         semantic_type = semantic_map.get(col)
         strategy = choose_outlier_strategy(col, semantic_type)

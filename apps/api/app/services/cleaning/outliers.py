@@ -16,19 +16,29 @@ OutlierStrategy = str  # "winsorize" | "cap" | "flag_only" | "preserve" | "isola
 
 
 def _detect_outlier_bounds(series: pd.Series) -> tuple[float, float, str]:
-    """Compute (lower, upper, method_desc) using IQR for skewed data, ±4σ for normal."""
+    """Compute (lower, upper, method_desc) using IQR for skewed data, ±4σ for normal.
+
+    When IQR=0 (e.g. binary flags 0/1 or heavily constant distributions), the
+    3×IQR fence collapses to a single point and would clip all non-modal values
+    to that point.  In this case we fall back to the ±4σ method which produces
+    sensible bounds even for such degenerate distributions.
+    """
     skew = abs(float(series.skew()))
     if skew > 1.0:
         q1, q3 = float(series.quantile(0.25)), float(series.quantile(0.75))
         iqr = q3 - q1
-        lower = q1 - 3.0 * iqr
-        upper = q3 + 3.0 * iqr
-        method_desc = "3×IQR fence (skewed distribution)"
-    else:
-        mean, std = float(series.mean()), float(series.std())
-        lower = mean - 4 * std
-        upper = mean + 4 * std
-        method_desc = "±4σ clip (normal distribution)"
+        if iqr > 0:
+            lower = q1 - 3.0 * iqr
+            upper = q3 + 3.0 * iqr
+            return lower, upper, "3×IQR fence (skewed distribution)"
+        # IQR=0 (e.g. binary 0/1 column): fall through to ±4σ below
+    mean, std = float(series.mean()), float(series.std())
+    if std == 0:
+        # Truly constant column — return identity bounds (no clipping)
+        return mean, mean, "identity (zero variance)"
+    lower = mean - 4 * std
+    upper = mean + 4 * std
+    method_desc = "±4σ clip (normal distribution)"
     return lower, upper, method_desc
 
 

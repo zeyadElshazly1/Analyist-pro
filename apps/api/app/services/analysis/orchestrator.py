@@ -47,7 +47,7 @@ def analyze_dataset(df: pd.DataFrame) -> tuple[list[dict], str]:
     Columns recognised as high-cardinality ID columns (> 95% unique, name
     contains 'id') are excluded from analysis.
     """
-    # Drop pure-ID columns up front
+    # Drop pure-ID columns up front — name contains "id" AND > 95% unique values
     id_cols = [
         col for col in df.columns
         if "id" in col.lower() and df[col].nunique() / max(len(df), 1) > 0.95
@@ -60,6 +60,19 @@ def analyze_dataset(df: pd.DataFrame) -> tuple[list[dict], str]:
         col for col in df.select_dtypes(include=["object", "category"]).columns
         if df[col].nunique() < 50
     ]
+
+    # Binary integer columns (0/1 flags like SeniorCitizen) behave as categorical
+    # for rate/segment analysis but are typed as numeric after cleaning.  Include
+    # them in categorical_cols so detect_binary_rates and detect_segment_gaps can
+    # produce meaningful segment insights (e.g. SeniorCitizen churn rate).
+    binary_int_cols = [
+        col for col in df.select_dtypes(include=[np.number]).columns
+        if df[col].nunique() == 2
+    ]
+    # Deduplicate preserving order.  Binary int cols are placed BEFORE string
+    # categoricals so they fall within the MAX_SEG_CATS budget slice and are
+    # actually visited by detect_binary_rates / detect_segment_gaps.
+    categorical_cols = list(dict.fromkeys(binary_int_cols + categorical_cols))
 
     # Budget-capped column slices
     numeric_cols   = all_numeric[:MAX_UNIVARIATE_COLS]

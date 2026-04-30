@@ -42,6 +42,12 @@ from .payloads import (
 from .ranker import rank_and_cap
 
 
+def _is_id_col(col: str, df: pd.DataFrame) -> bool:
+    """True when a column is effectively an identifier and should not be charted."""
+    n_rows = max(len(df), 1)
+    return df[col].nunique() / n_rows > 0.8 and df[col].nunique() > 50
+
+
 def build_chart_data(df: pd.DataFrame) -> list[dict]:
     """
     Return a list of chart payload dicts (up to MAX_CHARTS) sorted by score.
@@ -50,12 +56,34 @@ def build_chart_data(df: pd.DataFrame) -> list[dict]:
         type, title, description, insight, x_key, y_key,
         x_label, y_label, data, recommended, score
     Plus chart-type-specific fields.
+
+    ID and high-cardinality columns (> 80% unique values AND > 50 distinct values)
+    are excluded from categorical charts — they produce useless per-value bars.
+
+    Binary numeric columns (nunique <= 2) are excluded from histogram generation
+    because a 2-bin histogram carries no distributional insight; they are added
+    to the categorical column list instead so they get bar/pie treatment.
     """
     charts: list[dict] = []
 
-    numeric_cols     = df.select_dtypes(include=["number"]).columns.tolist()
-    categorical_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
+    all_numeric      = df.select_dtypes(include=["number"]).columns.tolist()
+    categorical_cols = [
+        col for col in df.select_dtypes(include=["object", "category"]).columns
+        if not _is_id_col(col, df)
+    ]
     datetime_cols    = df.select_dtypes(include=["datetime64"]).columns.tolist()
+
+    # Binary numeric columns (0/1 flags, encoded categoricals) → treat as categorical
+    binary_numeric = [
+        col for col in all_numeric
+        if df[col].nunique() <= 2 and len(df[col].dropna()) >= 5
+    ]
+    # Numeric columns for histograms/scatter/heatmap — exclude binary flags
+    numeric_cols = [col for col in all_numeric if col not in binary_numeric]
+
+    # Merge binary numerics into categorical list (deduplicated, binary flags first
+    # so they appear in the more informative bar/pie position)
+    categorical_cols = list(dict.fromkeys(binary_numeric + categorical_cols))
 
     # ── 1. Time-series line charts ────────────────────────────────────────────
     for date_col in datetime_cols[:MAX_TIMESERIES_DATES]:

@@ -38,11 +38,17 @@ PROTECTED_TYPES = {"id", "phone", "postal", "sku", "account_number", "email", "i
 
 
 def _has_keyword(col_lower: str, keywords: set[str]) -> bool:
-    """Return True if any keyword appears as a word-boundary match in col_lower."""
-    for kw in keywords:
-        if kw in col_lower:
-            return True
-    return False
+    """Return True if any keyword appears as a complete token in col_lower.
+
+    Tokens are the parts of the column name separated by underscores or spaces.
+    This prevents partial-word matches such as 'phone' matching 'phoneservice'.
+    Examples:
+        'phone_number'  → tokens {'phone','number'} → matches 'phone' ✓
+        'phoneservice'  → tokens {'phoneservice'}   → does NOT match 'phone' ✓
+        'customer_id'   → tokens {'customer','id'}  → matches 'id' ✓
+    """
+    tokens = set(re.split(r"[_\s]+", col_lower))
+    return bool(tokens & keywords)
 
 
 def _value_match_rate(series: pd.Series, pattern: re.Pattern, n: int = 200) -> float:
@@ -54,8 +60,21 @@ def _value_match_rate(series: pd.Series, pattern: re.Pattern, n: int = 200) -> f
 
 
 def _is_id_column(col_lower: str, series: pd.Series) -> bool:
-    """True if column name contains an ID keyword AND values have high uniqueness."""
-    if not _has_keyword(col_lower, _ID_KEYWORDS):
+    """True if column looks like an identifier AND values have high uniqueness.
+
+    Name heuristics (any one is sufficient):
+    - A token exactly equals an ID keyword (e.g. 'customer_id' → token 'id')
+    - Column name ends with 'id'  (e.g. 'customerid', 'orderid')
+    - Column name starts with 'id_' (e.g. 'id_customer')
+    Combined with a > 85% uniqueness ratio to avoid flagging binary 0/1 columns
+    whose names happen to end in 'id'.
+    """
+    name_looks_like_id = (
+        _has_keyword(col_lower, _ID_KEYWORDS)
+        or col_lower.endswith("id")
+        or col_lower.startswith("id_")
+    )
+    if not name_looks_like_id:
         return False
     non_null = series.dropna()
     if len(non_null) < 5:
