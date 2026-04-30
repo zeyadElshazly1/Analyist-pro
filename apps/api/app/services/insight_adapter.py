@@ -7,7 +7,8 @@ builder, run model) should read InsightResult, not the raw pipeline dicts.
 
 Key normalization applied here:
   - confidence  : 0–100 (pipeline) → 0.0–1.0 (schema)
-  - insight_id  : deterministic md5 hash of (category + sorted columns)
+  - insight_id  : deterministic md5 hash of (category + sorted columns + title);
+                  globally unique within a run via _deduplicate_ids post-pass
   - columns_used: consolidated from col_a/col_b + title-pattern extraction
   - method_used : category → method lookup + evidence string parsing
   - report_safe : severity/confidence/category gate
@@ -77,8 +78,14 @@ _UNSAFE_CATEGORIES: frozenset[str] = frozenset({"data_quality"})
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def build_insight_results(raw_insights: list[dict]) -> list[InsightResult]:
-    """Convert a list of raw pipeline insight dicts to canonical InsightResult objects."""
-    return [build_insight_result(ins) for ins in raw_insights]
+    """Convert a list of raw pipeline insight dicts to canonical InsightResult objects.
+
+    Every insight_id in the returned list is guaranteed to be unique within the
+    run via _deduplicate_ids post-pass.  This prevents React "duplicate key"
+    warnings on the frontend and ensures Report Builder selections are stable.
+    """
+    results = [build_insight_result(ins) for ins in raw_insights]
+    return _deduplicate_ids(results)
 
 
 def build_insight_result(ins: dict) -> InsightResult:
@@ -97,8 +104,9 @@ def build_insight_result(ins: dict) -> InsightResult:
     raw_conf  = float(ins.get("confidence", 50.0))
     confidence = round(raw_conf / 100.0, 4)
 
+    title        = ins.get("title", "")
     columns_used = _extract_columns(ins)
-    insight_id   = _make_id(category, columns_used)
+    insight_id   = _make_id(category, columns_used, title)
     method_used  = _extract_method(category, ins.get("evidence", ""))
     caveats      = _build_caveats(category, ins.get("evidence", ""))
     chart        = _CHART_SUGGESTION.get(category, "none")
@@ -106,7 +114,7 @@ def build_insight_result(ins: dict) -> InsightResult:
 
     return InsightResult(
         insight_id=insight_id,
-        title=ins.get("title", ""),
+        title=title,
         explanation=ins.get("finding", ""),
         category=category,                    # type: ignore[arg-type]
         severity=severity,                    # type: ignore[arg-type]
@@ -124,10 +132,41 @@ def build_insight_result(ins: dict) -> InsightResult:
 
 # ── Extraction helpers ────────────────────────────────────────────────────────
 
-def _make_id(category: str, columns_used: list[str]) -> str:
-    """Deterministic 12-char hex ID stable across re-runs on the same data."""
-    key = f"{category}:{'|'.join(sorted(columns_used))}"
+def _make_id(category: str, columns_used: list[str], title: str = "") -> str:
+    """Deterministic 12-char hex ID stable across re-runs on the same data.
+
+    Includes category, sorted columns, AND title in the hash so that two
+    insights with identical (category, columns) but different titles produce
+    distinct IDs — e.g. "Constant column: age" vs "High-cardinality column: age"
+    are both data_quality+[age] but must be different findings with different IDs.
+    """
+    key = f"{category}:{'|'.join(sorted(columns_used))}:{title}"
     return hashlib.md5(key.encode()).hexdigest()[:12]
+
+
+def _deduplicate_ids(results: list[InsightResult]) -> list[InsightResult]:
+    """Guarantee every insight_id in the list is globally unique within this run.
+
+    When the hash still collides (e.g. two insights that share category + columns
+    + title after any trimming), the second occurrence becomes ``<base>_2``, the
+    third ``<base>_3``, and so on.
+
+    The *first* occurrence always keeps the original ID so that Report Builder
+    selections previously saved against that insight are not invalidated.
+    """
+    seen: dict[str, int] = {}
+    out: list[InsightResult] = []
+    for ins in results:
+        base = ins.insight_id
+        count = seen.get(base, 0)
+        if count == 0:
+            seen[base] = 1
+            out.append(ins)
+        else:
+            seen[base] = count + 1
+            suffix_id = f"{base}_{count + 1}"
+            out.append(ins.model_copy(update={"insight_id": suffix_id}))
+    return out
 
 
 def _extract_columns(ins: dict) -> list[str]:

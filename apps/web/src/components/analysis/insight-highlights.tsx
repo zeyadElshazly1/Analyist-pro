@@ -69,7 +69,11 @@ export function InsightHighlights({ insights }: Props) {
         const body  = insight.explanation ?? insight.finding ?? "";
 
         return (
-          <div key={insight.insight_id ?? i} className={`rounded-xl border p-4 ${style.card}`}>
+          // key combines insight_id + index so duplicate IDs (backend regression)
+          // never trigger the "two children with the same key" React warning.
+          // The insight_id itself is NOT changed — it remains the stable identity
+          // for any selection or persistence logic upstream.
+          <div key={`highlight::${insight.insight_id ?? ""}::${i}`} className={`rounded-xl border p-4 ${style.card}`}>
             <div className="flex items-start justify-between gap-2 mb-2">
               <div className="flex items-center gap-2">
                 <span className={`h-2 w-2 flex-shrink-0 rounded-full ${style.dot}`} />

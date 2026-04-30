@@ -96,6 +96,28 @@ function sortByPriority(arr: Insight[]): Insight[] {
   });
 }
 
+/**
+ * Produce a React reconciler key that is guaranteed unique within the rendered
+ * list even if the backend emits duplicate insight_id values.
+ *
+ * Format: `<section>::<insight_id>::<index>`
+ *
+ * - Section name scopes keys so an insight that appears in "report" and
+ *   "review" at the same time (theoretically impossible, but defensive) never
+ *   collides across buckets.
+ * - insight_id is the stable business identity used by the Report Builder for
+ *   selection persistence — it is NOT replaced by this key.
+ * - Array index is appended as a final collision-breaker when insight_id is
+ *   missing or happens to be duplicated (backend regression).
+ *
+ * The Report Builder must continue to read `insight.insight_id` directly for
+ * selection — this key is only for React's reconciler and is not exposed
+ * outside this component.
+ */
+function makeInsightKey(section: string, insight: Insight, index: number): string {
+  return `${section}::${insight.insight_id ?? ""}::${index}`;
+}
+
 function makeCopyText(i: Insight): string {
   const lines: string[] = [];
   const cat = i.category ?? i.type ?? "";
@@ -316,7 +338,7 @@ export function InsightsList({ insights }: Props) {
             sub="Safe to include without manual review"
           />
           {forReport.map((insight, i) => (
-            <InsightCard key={insight.insight_id ?? i} insight={insight} />
+            <InsightCard key={makeInsightKey("report", insight, i)} insight={insight} />
           ))}
         </div>
       )}
@@ -332,7 +354,7 @@ export function InsightsList({ insights }: Props) {
           />
           {needsReview.map((insight, i) => (
             <InsightCard
-              key={insight.insight_id ?? i}
+              key={makeInsightKey("review", insight, i)}
               insight={insight}
               reviewNote={reviewReason(insight)}
             />
@@ -351,7 +373,7 @@ export function InsightsList({ insights }: Props) {
             {showInfo ? "Hide" : "Show"} {info.length} informational {info.length === 1 ? "finding" : "findings"}
           </button>
           {showInfo && info.map((insight, i) => (
-            <InsightCard key={insight.insight_id ?? i} insight={insight} />
+            <InsightCard key={makeInsightKey("info", insight, i)} insight={insight} />
           ))}
         </div>
       )}
