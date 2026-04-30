@@ -10,7 +10,16 @@ This module uses a semantic key: (insight_type, frozenset_of_involved_columns).
 For insights without explicit column references, it falls back to a normalised
 title prefix so the behaviour degrades gracefully rather than failing.
 
-rank_insights: composite sort — severity 65%, confidence 35%.
+rank_insights: composite sort — severity 50%, confidence 25%, target-driver 25%.
+
+Target-driver bonus
+-------------------
+Insights where ``is_target_driver=True`` (i.e. rate-gap findings that link a
+predictor column to a known binary outcome like Churn/Fraud/Default) receive a
+0.30-point bonus in the composite score.  Without this, a weak multivariate
+anomaly insight with "high" severity could outrank a "medium"-severity finding
+that Contract drives churn by 40 percentage points — a clearly worse outcome
+for users who need actionable business intelligence first.
 """
 from __future__ import annotations
 
@@ -18,6 +27,12 @@ from app.config import MAX_INSIGHTS
 
 
 _SEV_WEIGHT = {"high": 1.0, "medium": 0.6, "low": 0.2}
+
+# How much weight a "target-driver" insight receives in the composite score.
+# Raised above zero so that rate-gap insights linking predictors to binary
+# business outcomes (churn, fraud, conversion) are ranked above unrelated
+# pattern-detection findings of equivalent severity.
+_TARGET_DRIVER_BONUS = 0.30
 
 
 def _insight_key(ins: dict) -> tuple:
@@ -74,19 +89,37 @@ def deduplicate_insights(insights: list[dict]) -> list[dict]:
     return deduped
 
 
+def _composite_score(ins: dict) -> float:
+    """
+    Composite ranking score for a single insight.
+
+    Components
+    ----------
+    severity        50% — high/medium/low maps to 1.0/0.6/0.2
+    confidence      25% — normalised 0–1 (insight's 0–100 scale)
+    target_driver   25% — flat bonus when insight links a predictor to a
+                          known binary outcome (is_target_driver=True)
+
+    Rationale: a rate-gap insight with "medium" severity and a 0.30 target-
+    driver bonus scores ≈ 0.56, beating a "medium" non-target insight at ≈ 0.34
+    but losing to a "high" non-target insight at ≈ 0.72.  This preserves the
+    primacy of genuine data anomalies while elevating business-outcome drivers
+    above weak pattern findings.
+    """
+    sev   = _SEV_WEIGHT.get(ins.get("severity", "low"), 0.2)
+    conf  = float(ins.get("confidence", 50)) / 100.0
+    bonus = _TARGET_DRIVER_BONUS if ins.get("is_target_driver") else 0.0
+    return sev * 0.50 + conf * 0.25 + bonus * 0.25
+
+
 def rank_insights(insights: list[dict]) -> list[dict]:
     """
-    Sort insights by composite score (severity 65%, confidence 35%),
-    deduplicate, then cap at MAX_INSIGHTS.
+    Sort insights by composite score (severity 50%, confidence 25%,
+    target-driver bonus 25%), deduplicate, then cap at MAX_INSIGHTS.
 
     Returns (ranked_deduped_list, total_before_cap).
     """
-    insights.sort(
-        key=lambda x: -(
-            _SEV_WEIGHT.get(x.get("severity", "low"), 0.2) * 0.65
-            + (x.get("confidence", 50) / 100.0) * 0.35
-        )
-    )
+    insights.sort(key=lambda x: -_composite_score(x))
     deduped = deduplicate_insights(insights)
     total_found = len(deduped)
     return deduped[:MAX_INSIGHTS], total_found

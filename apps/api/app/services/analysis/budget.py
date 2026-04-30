@@ -13,6 +13,10 @@ MAX_CORR_COLS = 15          # numeric cols considered for pairwise correlation
 MAX_SEG_CATS = 8            # categorical cols scanned for segment gaps
 MAX_SEG_NUMS = 10           # numeric cols scanned per categorical col
 
+# Binary-rate analysis: O(n) per column (no nested numeric loop), so we can
+# afford a much wider scan than the O(n²) segment-gap detector.
+MAX_BINARY_RATE_CATS = 20   # categorical cols scanned for binary rate gaps
+
 # Univariate detectors (anomaly, distribution): linear in cols
 MAX_UNIVARIATE_COLS = 20    # numeric cols for univariate anomaly / skewness
 
