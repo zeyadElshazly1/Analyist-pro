@@ -256,9 +256,18 @@ async def _run_analysis_stream(
                 yield _sse({"error": "Dataset became empty after cleaning."})
                 return
 
-            cleaning_result = build_cleaning_result(
-                original_cols, df_clean.columns.tolist(), cleaning_report, cleaning_summary
-            ).model_dump()
+            try:
+                cleaning_result = build_cleaning_result(
+                    original_cols, df_clean.columns.tolist(), cleaning_report, cleaning_summary
+                ).model_dump()
+            except Exception as e:
+                logger.error(
+                    f"build_cleaning_result failed for project {project_id}: {e}", exc_info=True
+                )
+                fail_run(db, run, f"cleaning adapter failed: {e}")
+                yield _sse({"error": "Data cleaning produced an unexpected result. Please try again."})
+                return
+
             yield emit("Checking data quality", 35, f"{cleaning_summary.get('steps', 0)} issues resolved")
         else:
             df_clean = df
@@ -349,6 +358,21 @@ async def _run_analysis_stream(
 
         yield emit("Building your brief", 100, "Ready to review")
         yield _sse({"step": "result", "progress": 100, "result": result})
+
+    except Exception as exc:
+        # Catch-all: any exception that escapes the per-stage handlers must be
+        # converted to an SSE error event rather than surfacing as an unhandled
+        # Starlette exception ("Caught handled exception, but response already started").
+        logger.error(
+            f"Unhandled exception in analysis stream for project {project_id}: {exc}",
+            exc_info=True,
+        )
+        try:
+            if run:
+                fail_run(db, run, f"unexpected error: {exc}")
+            yield _sse({"error": "An unexpected error occurred during analysis. Please try again."})
+        except Exception:
+            pass
 
     finally:
         db.close()
