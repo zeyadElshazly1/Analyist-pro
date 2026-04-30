@@ -236,7 +236,7 @@ We should finish this pass knowing:
 
 ---
 
-## Final Totals (all 10 areas)
+## Final Totals (all 10 areas — pre-reconciliation)
 
 | Severity | Count | Description |
 |----------|-------|-------------|
@@ -245,12 +245,70 @@ We should finish this pass knowing:
 | P2 | 15 | Polish / UX gap |
 | **Total** | **40** | |
 
-## Safe for Demo?
+---
 
-The `/demo` page bypasses upload and analysis — **the demo itself is safe** as long as none of the P0 components are rendered. The 3 P0 issues only trigger when real data flows through the cleaning/health pipeline:
-- P0 #1 (cleaning-report "(0 values)") — triggered during Cleaning Review with real file
-- P0 #2 (cleaning_result contract) — triggered during Cleaning Review with real file
-- P0 #3 (health-score crash) — triggered during Health Check with real file
+## Reconciliation Pass (post-Tasks 1–11)
+
+*Branch: `claude/audit-toolkit-positioning-ADYPw` — clean working tree, up to date with origin.*
+*TypeScript compile: zero errors.*
+
+### Stale findings — already fixed in current code
+
+| Issue | Was | Now |
+|-------|-----|-----|
+| P0-1 cleaning-report "(0 values)" | `n_values_converted` always rendered | `> 0` guard — `cleaning-report.tsx:20` |
+| P0-2 Backend missing canonical `cleaning_result` | Raw report list emitted | `build_cleaning_result().model_dump()` stored as `"cleaning_result"` — `analysis.py:124` |
+| P0-3 health-score null crash on `columns_with_missing` | Unguarded dereference | `missingness?.columns_with_missing ?? []` — `health-score.tsx:63` |
+| P1 SSE endpoint missing | Not in analysis.py | Exists in `analysis_stream.py:60` — `@router.get("/stream/{project_id}")` |
+| P1 `diff_pct` null crash in compare | Unguarded arithmetic | `diffPct != null ? ...diffPct.toFixed(1)... : ""` — `multifile-compare.tsx:199` |
+| P1 `create_run_stub` None not handled | No fallback | `if run is None:` fallback path — `analysis.py:138` |
+| `confPct()` negative confidence | No clamp | Normalises 0–1 → 0–100 correctly — `insights-list.tsx:53–56` |
+| CleaningSummaryCards fake zeroes | Showed `NaN` | All values guarded with `?? 0` |
+| IntakeReview not wired | Missing | `UploadDataset` renders `<IntakeReview>` after upload |
+
+### Confirmed real issues (current code)
+
+#### P0 — Blocks demo / pilot
+**None.** All three original P0s are stale/fixed.
+
+#### P1 — Must fix before pilot
+
+| # | File | Line | Issue |
+|---|------|------|-------|
+| R1 | `apps/api/app/routes/analysis.py` | 594 | `GET /analysis/diff` — no `require_feature` dep; free users can compare runs |
+| R2 | `apps/api/app/routes/analysis.py` | 895 | `GET /analysis/download-cleaned` — no `require_feature` dep; free users can export cleaned CSV |
+| R3 | `apps/web/src/components/ui/upgrade-wall.tsx` | 13–33 | `FEATURE_LABELS` says `"Pro"` / `"Team"` — brand is `"Consultant"` / `"Studio"` |
+| R4 | `apps/web/src/components/ui/upgrade-wall.tsx` | 30–33 | Upgrade wall cites MB limits (`"10 MB"` / `"100 MB"`) — pricing page shows row counts |
+| R5 | `apps/web/src/components/project/report-builder.tsx` | 339–358 | `saveTimer` never cleared on unmount — `setSaved`/`setSaving` fire on unmounted component |
+| R6 | `apps/web/src/components/project/report-builder.tsx` | 76, 349 | Draft saves array indices as `selected_insight_ids` — wrong insights recalled if order changes |
+| R7 | `apps/web/src/components/project/upload-dataset.tsx` | 118 | Upload hint hardcodes `"Max 100 MB"` — not plan-aware, contradicts pricing page |
+
+#### NEEDS_RUNTIME
+
+| # | Issue | Why |
+|---|-------|-----|
+| NR1 | Reopen on non-`report_ready` run shows blank page | Backend returns all-null blocks; `RunStateBanner` guards entry; `RunAnalysis` null-block rendering not verified statically |
+| NR2 | `finalise_run` swallows DB errors | Intentional best-effort design; real impact depends on Redis availability |
+
+### Corrected final counts
+
+| Severity | Count |
+|----------|-------|
+| P0 | **0** |
+| P1 | **7** (R1–R7) |
+| Needs Runtime | 2 |
+| Stale / resolved | 9 |
+
+### Recommendation
+
+**Demo is safe to run.** No P0s in current code.
+
+**Fix order before pilot:**
+1. UpgradeWall label names + MB vs rows (R3, R4) — 2-line change
+2. Autosave timer cleanup (R5) — one `useEffect` cleanup
+3. Plan gates on diff + download-cleaned (R1, R2) — add `require_feature` to two routes
+4. Report draft index vs ID (R6) — insight ID mapping in draft save/load
+5. Upload hint plan-awareness (R7) — pass plan context to upload component
 
 **Recommend fixing all 3 P0s before showing the product to a pilot user with a real file.**
 
