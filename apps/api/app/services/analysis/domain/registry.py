@@ -10,7 +10,7 @@ three public helpers used by the analysis orchestrator:
 
 V1 registrations
 ----------------
-  financial_markets_snapshot   → SnapshotFinancePlaceholderPack  (placeholder)
+  financial_markets_snapshot   → SnapshotFinanceInsightPack
   financial_markets_timeseries → (not registered — V1.5)
   generic_tabular              → (not registered — uses generic pipeline)
 
@@ -31,22 +31,13 @@ from app.services.dataset_context.schema import (
     GENERIC_TABULAR,
 )
 from .base import DomainInsightPack
+from .snapshot_finance import SnapshotFinanceInsightPack
 
 logger = logging.getLogger(__name__)
 
 
 # ── Placeholder pack ──────────────────────────────────────────────────────────
 
-class SnapshotFinancePlaceholderPack(DomainInsightPack):
-    """
-    Placeholder for the financial_markets_snapshot domain pack.
-
-    Returns no insights and suppresses nothing.  This stub is registered
-    so that the registry infrastructure can be tested end-to-end before
-    the real detectors (V1B) are implemented.
-    """
-
-    dataset_type = FINANCIAL_MARKETS_SNAPSHOT
 
 
 # ── Registry ──────────────────────────────────────────────────────────────────
@@ -55,7 +46,7 @@ class SnapshotFinancePlaceholderPack(DomainInsightPack):
 # financial_markets_timeseries is intentionally absent in V1.
 # generic_tabular is intentionally absent — it uses the generic pipeline.
 DOMAIN_PACKS: dict[str, DomainInsightPack] = {
-    FINANCIAL_MARKETS_SNAPSHOT: SnapshotFinancePlaceholderPack(),
+    FINANCIAL_MARKETS_SNAPSHOT: SnapshotFinanceInsightPack(),
 }
 
 
