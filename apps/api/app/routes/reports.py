@@ -610,6 +610,7 @@ def get_report_draft(
     """
     from app.services.reporting.default_draft import (
         build_fallback_executive_summary,
+        select_default_chart_selection_for_result,
         select_default_insight_selection_for_result,
     )
 
@@ -637,6 +638,7 @@ def get_report_draft(
 
     summary = build_fallback_executive_summary(result_data)
     selected = select_default_insight_selection_for_result(result_data)
+    selected_charts = select_default_chart_selection_for_result(result_data)
 
     draft = ReportDraft(
         project_id=project_id,
@@ -644,6 +646,7 @@ def get_report_draft(
         title=project.name,
         summary=summary,
         selected_insight_ids_json=json.dumps(selected),
+        selected_chart_ids_json=json.dumps(selected_charts),
     )
     db.add(draft)
     db.commit()

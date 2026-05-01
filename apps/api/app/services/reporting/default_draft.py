@@ -3,8 +3,9 @@ Default Report Builder draft materialisation.
 
 When a project has a finished analysis but no persisted ``ReportDraft`` yet,
 ``GET /reports/draft/{project_id}`` auto-creates a sensible starting draft:
-executive summary text derived from ``result_json``, and 3–5 recommended
-findings (report-safe first, then severity- and category-aware fallbacks).
+executive summary text derived from ``result_json``, 3–5 recommended
+findings, and—on ``financial_markets_snapshot`` runs—chart picks when payloads
+already exist under standard chart keys on ``result_json``.
 """
 from __future__ import annotations
 
@@ -13,7 +14,20 @@ from typing import Any
 from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT
 from app.services.reporting.executive_summary_draft import build_fallback_executive_summary
 
-# Priority order for default Report Builder selection on ``financial_markets_snapshot`` runs.
+# Chart gallery titles preferred on auto-draft (must match payloads under ``charts`` / etc.).
+_FINANCE_SNAPSHOT_CHART_PRIORITY_TITLES: tuple[str, ...] = (
+    "Top assets by return",
+    "Risk vs return",
+    "Average return by asset class",
+    "Average return by sector",
+    "Highest volatility assets",
+    "Highest analyst-implied upside",
+    "Assets by 52-week position",
+    "Largest return laggards",
+)
+
+
+# Insight titles preferred on ``financial_markets_snapshot`` default draft selection.
 _FINANCE_SNAPSHOT_PRIORITY_TITLES: tuple[str, ...] = (
     "Top return leaders",
     "Largest return laggards",
@@ -42,6 +56,32 @@ def _insight_key(idx: int, ins: dict) -> str | int:
     if isinstance(iid, str) and iid:
         return iid
     return idx
+
+
+def _chart_key(idx: int, chart: dict[str, Any]) -> str | int:
+    for field in ("chart_id", "id"):
+        v = chart.get(field)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+        if isinstance(v, bool):
+            continue
+        if isinstance(v, int):
+            return v
+        if isinstance(v, float) and v == int(v):
+            return int(v)
+    return idx
+
+
+def _chart_dicts_from_result(result_data: dict[str, Any]) -> list[dict[str, Any]]:
+    if not isinstance(result_data, dict):
+        return []
+    for key in ("charts", "chart_results", "suggested_charts", "chart_gallery"):
+        blk = result_data.get(key)
+        if isinstance(blk, list):
+            vals = [c for c in blk if isinstance(c, dict)]
+            if vals:
+                return vals
+    return []
 
 
 def select_default_insight_selection(raw: list[dict], *, min_sel: int = 3, max_sel: int = 5) -> list[str | int]:
@@ -134,6 +174,41 @@ def _is_financial_markets_snapshot_result(result_data: dict[str, Any]) -> bool:
     return isinstance(dc, dict) and dc.get("dataset_type") == FINANCIAL_MARKETS_SNAPSHOT
 
 
+def select_default_chart_selection_for_result(
+    result_data: dict[str, Any],
+    *,
+    max_sel: int = 4,
+) -> list[str | int]:
+    """Pick chart keys when stored payloads exist — finance snapshot runs only."""
+    if not _is_financial_markets_snapshot_result(result_data):
+        return []
+    charts = _chart_dicts_from_result(result_data)
+    if not charts:
+        return []
+
+    picked_idx: set[int] = set()
+    chosen_keys: set[str | int] = set()
+    out: list[str | int] = []
+
+    for wanted_title in _FINANCE_SNAPSHOT_CHART_PRIORITY_TITLES:
+        if len(out) >= max_sel:
+            break
+        for idx, ch in enumerate(charts):
+            if idx in picked_idx:
+                continue
+            if str(ch.get("title") or "").strip() != wanted_title:
+                continue
+            key = _chart_key(idx, ch)
+            if key in chosen_keys:
+                continue
+            picked_idx.add(idx)
+            chosen_keys.add(key)
+            out.append(key)
+            break
+
+    return out
+
+
 def select_default_insight_selection_for_result(
     result_data: dict[str, Any],
     *,
@@ -192,6 +267,7 @@ def select_default_insight_selection_for_result(
 
 __all__ = [
     "build_fallback_executive_summary",
+    "select_default_chart_selection_for_result",
     "select_default_insight_selection",
     "select_default_insight_selection_for_result",
 ]

@@ -127,6 +127,9 @@ def test_get_draft_auto_creates_when_analysis_exists(client, uploaded_project, a
     assert len(rr["included_sections"]) >= 1
     assert len(rr["included_insights"]) >= 1
     assert rr["included_charts"] == []
+    assert data["selected_chart_ids"] == []
+
+    db = TestingSessionLocal()
     try:
         n = db.query(ReportDraft).filter(ReportDraft.project_id == pid).count()
         assert n == 1
@@ -191,7 +194,78 @@ def test_get_draft_auto_create_uses_finance_aware_insight_order(client, project,
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["selected_insight_ids"] == ["id_top", "id_lag", "id_vol"]
+    assert data["selected_chart_ids"] == []
     assert data["report_result"]["included_charts"] == []
+
+
+def test_get_draft_finance_auto_selects_default_charts_when_payload_present(client, project, auth_headers):
+    pid = project["id"]
+    insights = [
+        {
+            "domain": FINANCIAL_MARKETS_SNAPSHOT,
+            "title": "Highest volatility assets",
+            "insight_id": "id_vol",
+            "severity": "medium",
+        },
+        {
+            "domain": FINANCIAL_MARKETS_SNAPSHOT,
+            "title": "Top return leaders",
+            "insight_id": "id_top",
+            "severity": "medium",
+        },
+        {
+            "domain": FINANCIAL_MARKETS_SNAPSHOT,
+            "title": "Largest return laggards",
+            "insight_id": "id_lag",
+            "severity": "medium",
+        },
+    ]
+    charts = [
+        {"chart_id": "c_sector", "title": "Average return by sector", "type": "bar"},
+        {"chart_id": "c_top", "title": "Top assets by return", "type": "bar"},
+        {"chart_id": "c_rr", "title": "Risk vs return", "type": "scatter"},
+        {"chart_id": "c_vol", "title": "Highest volatility assets", "type": "bar"},
+        {"chart_id": "c_cls", "title": "Average return by asset class", "type": "bar"},
+        {"chart_id": "c_an", "title": "Highest analyst-implied upside", "type": "bar"},
+        {"chart_id": "c52", "title": "Assets by 52-week position", "type": "bar"},
+        {"chart_id": "c_lag", "title": "Largest return laggards", "type": "bar"},
+    ]
+    body = {
+        "narrative": "Short.",
+        "dataset_summary": {
+            "rows": 12,
+            "columns": 8,
+            "dataset_context": {
+                "dataset_type": FINANCIAL_MARKETS_SNAPSHOT,
+                "confidence": 0.9,
+                "warnings": [],
+            },
+        },
+        "health_score": {"total": 75},
+        "insight_results": insights,
+        "charts": charts,
+    }
+    db = TestingSessionLocal()
+    try:
+        run = AnalysisResult(
+            project_id=pid,
+            file_hash="finance-chart-default-hash",
+            result_json=json.dumps(body),
+            status="report_ready",
+        )
+        db.add(run)
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.get(f"/reports/draft/{pid}", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    payload = r.json()
+    assert payload["selected_chart_ids"] == ["c_top", "c_rr", "c_cls", "c_sector"]
+    inc = payload["report_result"]["included_charts"]
+    assert len(inc) == 4
+    assert [c["chart_id"] for c in inc] == ["c_top", "c_rr", "c_cls", "c_sector"]
+    assert inc[2]["chart_type"] == "bar"
 
 
 def test_get_draft_populates_included_charts_from_selection_and_run(client, project, auth_headers):

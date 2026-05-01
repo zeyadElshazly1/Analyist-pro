@@ -1,4 +1,4 @@
-"""Report Builder draft behaviour — executive summary (75A) and default insight selection (75B)."""
+"""Report Builder draft behaviour — summary (75A), insight & chart default selection (75B/75D)."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import pytest
 
 from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT, GENERIC_TABULAR
 from app.services.reporting.default_draft import (
+    select_default_chart_selection_for_result,
     select_default_insight_selection,
     select_default_insight_selection_for_result,
 )
@@ -309,6 +310,60 @@ def test_generic_result_delegates_to_original_selector() -> None:
         "insight_results": raw,
     }
     assert select_default_insight_selection_for_result(result) == select_default_insight_selection(raw)
+
+
+def test_finance_chart_selection_reads_known_blocks_prioritizes_titles_caps_four() -> None:
+    res = {
+        "dataset_summary": {"rows": 1, "dataset_context": _ds_context_snapshot()},
+        "chart_results": [
+            {"chart_id": "lag", "title": "Largest return laggards"},
+            {"chart_id": "top", "title": "Top assets by return"},
+            {"chart_id": "sector", "title": "Average return by sector"},
+            {"chart_id": "rr", "title": "Risk vs return"},
+            {"chart_id": "cls", "title": "Average return by asset class"},
+            {"chart_id": "vol", "title": "Highest volatility assets"},
+            {"chart_id": "an", "title": "Highest analyst-implied upside"},
+            {"chart_id": "w52", "title": "Assets by 52-week position"},
+        ],
+    }
+    sel = select_default_chart_selection_for_result(res)
+    assert sel == ["top", "rr", "cls", "sector"]
+
+
+def test_finance_chart_selection_uses_legacy_index_when_no_chart_id() -> None:
+    res = {
+        "dataset_summary": {"rows": 1, "dataset_context": _ds_context_snapshot()},
+        "charts": [
+            {"title": "Risk vs return", "type": "scatter"},
+            {"title": "Average return by sector"},
+            {"title": "Average return by asset class"},
+            {"title": "Top assets by return"},
+        ],
+    }
+    assert select_default_chart_selection_for_result(res, max_sel=4) == [3, 0, 2, 1]
+
+
+def test_chart_selection_returns_empty_for_non_finance_even_if_charts_exist() -> None:
+    res = {
+        "dataset_summary": {
+            "rows": 1,
+            "dataset_context": {
+                "dataset_type": GENERIC_TABULAR,
+                "confidence": 1.0,
+                "warnings": [],
+            },
+        },
+        "charts": [{"chart_id": "only", "title": "Top assets by return"}],
+    }
+    assert select_default_chart_selection_for_result(res) == []
+
+
+def test_finance_chart_selection_empty_when_no_chart_payload() -> None:
+    res = {
+        "dataset_summary": {"dataset_context": _ds_context_snapshot()},
+        "insight_results": [],
+    }
+    assert select_default_chart_selection_for_result(res) == []
 
 
 def test_direct_financial_builder_surfaces_price_overlap_insight() -> None:
