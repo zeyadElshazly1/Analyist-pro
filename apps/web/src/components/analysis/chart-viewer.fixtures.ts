@@ -2,20 +2,9 @@
  * Demo / snapshot fixtures mirroring `getSuggestedCharts` payloads.
  * Use in design review or future Storybook; not wired into production routes.
  */
-export type ChartFixture = {
-  type: "bar" | "line" | "pie" | "scatter" | "boxplot" | "heatmap";
-  title: string;
-  description?: string;
-  insight?: string;
-  x_key: string;
-  y_key: string;
-  x_label?: string;
-  y_label?: string;
-  data: Array<Record<string, unknown>>;
-  recommended?: boolean;
-  horizontal?: boolean;
-  is_binary?: boolean;
-};
+import type { SuggestedChartPayload } from "@/lib/chart-payload";
+
+export type ChartFixture = SuggestedChartPayload;
 
 /** Telco-style tenure histogram (integer-like bin labels). */
 export const FIXTURE_TENURE_HISTOGRAM: ChartFixture = {

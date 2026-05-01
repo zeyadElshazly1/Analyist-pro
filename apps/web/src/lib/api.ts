@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import type { PlanName } from "./plans";
+import type { SuggestedChartPayload } from "./chart-payload";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000";
@@ -750,8 +751,12 @@ export function generateStory(analysisId: number) {
 
 // ── Charts ────────────────────────────────────────────────────────────────────
 
+export type { ChartFinanceFormattingMeta, SuggestedChartPayload } from "./chart-payload";
+
 export function getSuggestedCharts(projectId: number) {
-  return post<{ charts: unknown[] }>("/charts/suggest", { project_id: projectId });
+  return post<{ charts: SuggestedChartPayload[] }>("/charts/suggest", {
+    project_id: projectId,
+  });
 }
 
 /** @deprecated use getSuggestedCharts */

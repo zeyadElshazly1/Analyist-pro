@@ -2,6 +2,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo, type RefObject } from "react";
+import type { SuggestedChartPayload as ChartDef } from "@/lib/chart-payload";
+import { formatChartValue } from "@/lib/chart-format";
 import { getSuggestedCharts } from "@/lib/api";
 import { Download, X, Info, ChevronRight } from "lucide-react";
 import {
@@ -36,25 +38,6 @@ type HeatmapEntry = {
   x: string;
   y: string;
   value: number;
-};
-
-type ChartDef = {
-  type: "bar" | "line" | "pie" | "scatter" | "boxplot" | "heatmap";
-  title: string;
-  description?: string;
-  insight?: string;
-  x_key: string;
-  y_key: string;
-  x_label?: string;
-  y_label?: string;
-  data: Array<Record<string, unknown>>;
-  regression?: Array<{ x: number; y_hat: number }>;
-  columns?: string[];
-  recommended?: boolean;
-  /** Server hint: render as horizontal bars (category on Y). */
-  horizontal?: boolean;
-  /** Numeric 0/1 flag column — prefer short, unrotated category labels. */
-  is_binary?: boolean;
 };
 
 /** Backend time-series payloads use x_key `date` and ISO-ish strings in data rows. */
@@ -127,8 +110,13 @@ const DARK_TOOLTIP = {
 };
 
 /** Recharts Tooltip formatter: `value` may be undefined per library typings. */
-function barCountTooltipFormatter(yLabel: string | undefined) {
-  return (value: unknown) => [String(value ?? "—"), yLabel ?? "Count"] as const;
+function barTooltipFormatter(chart: ChartDef) {
+  const yLab = chart.y_label ?? "Value";
+  if (chart.value_format === "percent") {
+    const scale = chart.value_scale ?? "decimal";
+    return (value: unknown) => [formatChartValue(value, "percent", scale), yLab] as const;
+  }
+  return (value: unknown) => [String(value ?? "—"), yLab] as const;
 }
 
 const PIE_COLORS = ["#6366f1", "#8b5cf6", "#a78bfa", "#c4b5fd", "#818cf8", "#4f46e5", "#7c3aed", "#6d28d9"];
@@ -224,7 +212,17 @@ function HorizontalBarPanel({
           margin={{ left: 8, right: isPreview ? 8 : 16, top: 8, bottom: 8 }}
         >
           <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.12} horizontal />
-          <XAxis type="number" tick={{ fill: "#9ca3af", fontSize: isPreview ? 9 : 11 }} tickCount={isPreview ? 4 : 6} />
+          <XAxis
+            type="number"
+            tick={{ fill: "#9ca3af", fontSize: isPreview ? 9 : 11 }}
+            tickCount={isPreview ? 4 : 6}
+            tickFormatter={
+              chart.value_format === "percent"
+                ? (v: number | string) =>
+                    formatChartValue(v, chart.value_format, chart.value_scale === "unit" ? "unit" : "decimal")
+                : undefined
+            }
+          />
           <YAxis
             type="category"
             dataKey={chart.x_key}
@@ -238,7 +236,7 @@ function HorizontalBarPanel({
           />
           <Tooltip
             {...DARK_TOOLTIP}
-            formatter={barCountTooltipFormatter(chart.y_label)}
+            formatter={barTooltipFormatter(chart)}
             labelFormatter={(label) => String(label)}
           />
           <Bar
@@ -309,10 +307,16 @@ function VerticalBarPanel({
             tick={{ fill: "#9ca3af", fontSize: isPreview ? 9 : 11 }}
             axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
             tickLine={{ stroke: "rgba(255,255,255,0.06)" }}
+            tickFormatter={
+              chart.value_format === "percent"
+                ? (v: number | string) =>
+                    formatChartValue(v, chart.value_format, chart.value_scale === "unit" ? "unit" : "decimal")
+                : undefined
+            }
           />
           <Tooltip
             {...DARK_TOOLTIP}
-            formatter={barCountTooltipFormatter(chart.y_label)}
+            formatter={barTooltipFormatter(chart)}
             labelFormatter={(label) => String(label)}
           />
           <Bar
@@ -538,6 +542,60 @@ function HeatmapChart({ chart, variant = "detail" }: { chart: ChartDef; variant?
   );
 }
 
+function ScatterFinanceTooltip({
+  active,
+  payload,
+  chart,
+}: {
+  active?: boolean;
+  payload?: ReadonlyArray<{ payload?: Record<string, unknown> }>;
+  chart: ChartDef;
+}) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload ?? {};
+  const xv = row.x;
+  const yv = row.y;
+  const gv = row.group;
+  const xLab = chart.x_label ?? chart.x_key;
+  const yLab = chart.y_label ?? chart.y_key;
+  const xScale = chart.x_scale === "unit" ? "unit" : "decimal";
+  const yScale = chart.y_scale === "unit" ? "unit" : "decimal";
+  const xStr =
+    chart.x_format === "percent"
+      ? formatChartValue(xv, "percent", xScale)
+      : formatChartValue(xv, undefined, undefined);
+  const yStr =
+    chart.y_format === "percent"
+      ? formatChartValue(yv, "percent", yScale)
+      : formatChartValue(yv, undefined, undefined);
+  const groupKey = chart.color_key ?? "Category";
+  const showGroup = gv != null && String(gv).trim() !== "";
+
+  return (
+    <div
+      className="rounded-lg border border-white/[0.08] px-3 py-2 text-[12px] shadow-xl"
+      style={{
+        background: "#111118",
+        color: "#fff",
+      }}
+    >
+      <div className="text-white/85">
+        <span className="text-white/50">{xLab}: </span>
+        {xStr}
+      </div>
+      <div className="mt-0.5 text-white/85">
+        <span className="text-white/50">{yLab}: </span>
+        {yStr}
+      </div>
+      {showGroup ? (
+        <div className="mt-1 border-t border-white/[0.06] pt-1 text-[11px] text-white/45">
+          {groupKey}: {String(gv)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SingleChart({
   chart,
   plotHeight,
@@ -597,6 +655,8 @@ function SingleChart({
   }
 
   if (chart.type === "scatter") {
+    const useFinanceScatterTooltip =
+      chart.x_format === "percent" || chart.y_format === "percent";
     return (
       <div className="w-full min-w-0" style={plotBoxStyle}>
         <ResponsiveContainer width="100%" height="100%">
@@ -607,6 +667,12 @@ function SingleChart({
               name={chart.x_label ?? chart.x_key}
               tick={{ fill: "#9ca3af", fontSize: isPreview ? 9 : 11 }}
               tickCount={isPreview ? 4 : 8}
+              tickFormatter={
+                chart.x_format === "percent"
+                  ? (v: number | string) =>
+                      formatChartValue(v, "percent", chart.x_scale === "unit" ? "unit" : "decimal")
+                  : undefined
+              }
               label={
                 isPreview
                   ? undefined
@@ -618,13 +684,32 @@ function SingleChart({
               name={chart.y_label ?? chart.y_key}
               tick={{ fill: "#9ca3af", fontSize: isPreview ? 9 : 11 }}
               tickCount={isPreview ? 4 : 8}
+              tickFormatter={
+                chart.y_format === "percent"
+                  ? (v: number | string) =>
+                      formatChartValue(v, "percent", chart.y_scale === "unit" ? "unit" : "decimal")
+                  : undefined
+              }
               label={
                 isPreview
                   ? undefined
                   : { value: chart.y_label, angle: -90, position: "insideLeft", fill: "#9ca3af", fontSize: 11 }
               }
             />
-            <Tooltip {...DARK_TOOLTIP} cursor={{ strokeDasharray: "3 3" }} />
+            {useFinanceScatterTooltip ? (
+              <Tooltip
+                cursor={{ strokeDasharray: "3 3" }}
+                content={(props) => (
+                  <ScatterFinanceTooltip
+                    active={props.active}
+                    payload={props.payload as ReadonlyArray<{ payload?: Record<string, unknown> }> | undefined}
+                    chart={chart}
+                  />
+                )}
+              />
+            ) : (
+              <Tooltip {...DARK_TOOLTIP} cursor={{ strokeDasharray: "3 3" }} />
+            )}
             <Scatter data={chart.data} fill="#6366f1" fillOpacity={0.5} r={isPreview ? 2 : 3} />
           </ScatterChart>
         </ResponsiveContainer>
@@ -970,7 +1055,7 @@ export function ChartViewer({ projectId, autoLoad }: Props) {
     setError("");
     try {
       const res = await getSuggestedCharts(projectId);
-      setCharts((res.charts ?? []) as ChartDef[]);
+      setCharts(res.charts ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load charts.");
     } finally {
