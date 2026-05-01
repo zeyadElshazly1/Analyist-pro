@@ -5,6 +5,7 @@ import logging
 import pandas as pd
 
 from app.services.analysis.domain.base import DomainInsightPack
+
 from app.services.dataset_context import DatasetContext, FINANCIAL_MARKETS_SNAPSHOT, _normalise_col
 from app.services.dataset_context import (
     DatasetContext,
@@ -51,6 +52,7 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
                 f"{name} ({_format_percent(value, scale)})" for name, value in top_named
             ) + ".",
 
+
         values = pd.to_numeric(df[selected_return_col], errors="coerce")
         valid = values.dropna()
         if valid.shape[0] < 3:
@@ -81,6 +83,7 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
                 "selected_return_column": selected_return_col,
                 "top_values": [{"asset": n, "return": _format_percent(v, scale)} for n, v in top_named],
 
+
                 "top_values": [
                     {"asset": name, "return": _format_percent(value, scale)}
                     for name, value in top_named
@@ -110,6 +113,7 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
             "finding": "Bottom 3 names showing downside pressure to flag for review: " + ", ".join(
                 f"{name} ({_format_percent(value, scale)})" for name, value in bottom_named
             ) + ".",
+
 
         values = pd.to_numeric(df[selected_return_col], errors="coerce")
         valid = values.dropna()
@@ -227,7 +231,7 @@ def _select_by_role_with_priority(df: pd.DataFrame, context: DatasetContext, rol
 
 def _select_return_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
     return _select_by_role_with_priority(df, context, "return_period", [
-=======
+
 
 def _select_return_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
     return_cols = [
@@ -318,4 +322,5 @@ def _format_percent(value: float, scale: str) -> str:
 
 def _format_number(value: float) -> str:
     return f"{value:.2f}"
-=======
+
+

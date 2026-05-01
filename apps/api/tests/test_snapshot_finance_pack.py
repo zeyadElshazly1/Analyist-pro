@@ -101,6 +101,7 @@ def test_detectors_return_empty_with_fewer_than_three_valid_numeric_rows():
         }
     )
     assert pack.run(df, _context(_full_roles())) == []
+
 def test_run_returns_two_insights_for_valid_snapshot_df():
     pack = SnapshotFinanceInsightPack()
     insights = pack.run(_valid_df(), _context({"ticker": "asset_id", "ytd_return": "return_period"}))
@@ -153,6 +154,7 @@ def test_all_insights_include_required_fields():
 def test_no_buy_or_sell_language():
     pack = SnapshotFinanceInsightPack()
     insights = pack.run(_valid_df(), _context(_full_roles()))
+
 
     insights = pack.run(_valid_df(), _context({"ticker": "asset_id", "ytd_return": "return_period"}))
     combined = " ".join(f"{ins['finding']} {ins.get('action', '')}".lower() for ins in insights)
