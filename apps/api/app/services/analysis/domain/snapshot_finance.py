@@ -262,8 +262,6 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
 
         work = df[[asset_class_col, selected_return_col]].copy()
         work["_ret"] = pd.to_numeric(work[selected_return_col], errors="coerce")
-        work = df[[asset_class_col, selected_return_col]].copy()
-        work["_ret"] = pd.to_numeric(work[selected_return_col], errors="coerce")
         work["_cls"] = work[asset_class_col].map(_stringify_asset_class)
         work = work.dropna(subset=["_ret", "_cls"])
         if work.empty:
@@ -405,7 +403,7 @@ def _label_for_row(df: pd.DataFrame, idx: object, label_col: str | None) -> str:
 
 
 def _stringify_asset_class(value: object) -> str | None:
-    """Return a strippped group label, or None when the row should be excluded."""
+    """Return a stripped group label, or None when the row should be excluded."""
     if pd.isna(value):
         return None
     text = str(value).strip()
