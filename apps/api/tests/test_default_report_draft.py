@@ -6,7 +6,7 @@ import io
 import json
 
 from app.models import AnalysisResult, ReportDraft
-from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT
+from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT, GENERIC_TABULAR
 from app.services.reporting.default_draft import (
     build_fallback_executive_summary,
     select_default_insight_selection,
@@ -266,6 +266,189 @@ def test_get_draft_finance_auto_selects_default_charts_when_payload_present(clie
     assert len(inc) == 4
     assert [c["chart_id"] for c in inc] == ["c_top", "c_rr", "c_cls", "c_sector"]
     assert inc[2]["chart_type"] == "bar"
+    titles_in_order = [c["title"] for c in inc]
+    assert titles_in_order == ["Top assets by return", "Risk vs return", "Average return by asset class", "Average return by sector"]
+
+
+def test_get_draft_finance_chart_results_populates_selected_and_included_charts(client, project, auth_headers):
+    """Chart payloads under ``chart_results`` (without ``charts``) auto-select exactly like canonical ``charts``."""
+    pid = project["id"]
+    insights = [
+        {
+            "domain": FINANCIAL_MARKETS_SNAPSHOT,
+            "title": "Highest volatility assets",
+            "insight_id": "id_vol",
+            "severity": "medium",
+        },
+        {
+            "domain": FINANCIAL_MARKETS_SNAPSHOT,
+            "title": "Top return leaders",
+            "insight_id": "id_top",
+            "severity": "medium",
+        },
+        {
+            "domain": FINANCIAL_MARKETS_SNAPSHOT,
+            "title": "Largest return laggards",
+            "insight_id": "id_lag",
+            "severity": "medium",
+        },
+    ]
+    charts = [
+        {"chart_id": "c_sector", "title": "Average return by sector", "type": "bar"},
+        {"chart_id": "c_top", "title": "Top assets by return", "type": "bar"},
+        {"chart_id": "c_rr", "title": "Risk vs return", "type": "scatter"},
+        {"chart_id": "c_vol", "title": "Highest volatility assets", "type": "bar"},
+        {"chart_id": "c_cls", "title": "Average return by asset class", "type": "bar"},
+        {"chart_id": "c_an", "title": "Highest analyst-implied upside", "type": "bar"},
+        {"chart_id": "c52", "title": "Assets by 52-week position", "type": "bar"},
+        {"chart_id": "c_lag", "title": "Largest return laggards", "type": "bar"},
+    ]
+    body = {
+        "narrative": "Short.",
+        "dataset_summary": {
+            "rows": 12,
+            "columns": 8,
+            "dataset_context": {
+                "dataset_type": FINANCIAL_MARKETS_SNAPSHOT,
+                "confidence": 0.9,
+                "warnings": [],
+            },
+        },
+        "health_score": {"total": 75},
+        "insight_results": insights,
+        "chart_results": charts,
+    }
+    db = TestingSessionLocal()
+    try:
+        run = AnalysisResult(
+            project_id=pid,
+            file_hash="finance-chart-results-key-hash",
+            result_json=json.dumps(body),
+            status="report_ready",
+        )
+        db.add(run)
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.get(f"/reports/draft/{pid}", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    payload = r.json()
+    assert payload["selected_chart_ids"] == ["c_top", "c_rr", "c_cls", "c_sector"]
+    inc = payload["report_result"]["included_charts"]
+    assert [c["chart_id"] for c in inc] == ["c_top", "c_rr", "c_cls", "c_sector"]
+
+
+def test_get_draft_finance_legacy_chart_indices_in_included_charts(client, project, auth_headers):
+    """No ``chart_id`` / ``id`` on payloads → stored selection uses indices; ``included_charts`` carries idx_* + titles."""
+    pid = project["id"]
+    insights = [
+        {
+            "domain": FINANCIAL_MARKETS_SNAPSHOT,
+            "title": "Highest volatility assets",
+            "insight_id": "id_vol",
+            "severity": "medium",
+        },
+        {
+            "domain": FINANCIAL_MARKETS_SNAPSHOT,
+            "title": "Top return leaders",
+            "insight_id": "id_top",
+            "severity": "medium",
+        },
+        {
+            "domain": FINANCIAL_MARKETS_SNAPSHOT,
+            "title": "Largest return laggards",
+            "insight_id": "id_lag",
+            "severity": "medium",
+        },
+    ]
+    charts = [
+        {"title": "Risk vs return", "type": "scatter"},
+        {"title": "Average return by sector"},
+        {"title": "Average return by asset class"},
+        {"title": "Top assets by return"},
+    ]
+    body = {
+        "narrative": "Short.",
+        "dataset_summary": {
+            "rows": 8,
+            "columns": 4,
+            "dataset_context": {
+                "dataset_type": FINANCIAL_MARKETS_SNAPSHOT,
+                "confidence": 0.9,
+                "warnings": [],
+            },
+        },
+        "health_score": {"total": 75},
+        "insight_results": insights,
+        "charts": charts,
+    }
+    db = TestingSessionLocal()
+    try:
+        run = AnalysisResult(
+            project_id=pid,
+            file_hash="finance-legacy-chart-idx-hash",
+            result_json=json.dumps(body),
+            status="report_ready",
+        )
+        db.add(run)
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.get(f"/reports/draft/{pid}", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    payload = r.json()
+    assert payload["selected_chart_ids"] == [3, 0, 2, 1]
+    inc = payload["report_result"]["included_charts"]
+    assert [c["chart_id"] for c in inc] == ["idx_3", "idx_0", "idx_2", "idx_1"]
+    assert inc[0]["title"] == "Top assets by return"
+    assert inc[0]["chart_type"] == "unknown"
+    assert inc[1]["title"] == "Risk vs return"
+    assert inc[1]["chart_type"] == "scatter"
+
+
+def test_get_draft_generic_does_not_auto_select_charts_even_with_finance_like_titles(client, project, auth_headers):
+    pid = project["id"]
+    body = {
+        "narrative": "n",
+        "dataset_summary": {
+            "rows": 5,
+            "columns": 3,
+            "dataset_context": {
+                "dataset_type": GENERIC_TABULAR,
+                "confidence": 1.0,
+                "warnings": [],
+            },
+        },
+        "health_score": {"total": 70},
+        "insight_results": [
+            {"insight_id": "g1", "title": "Insight one", "severity": "high", "report_safe": True},
+            {"insight_id": "g2", "title": "Insight two", "severity": "medium", "report_safe": True},
+            {"insight_id": "g3", "title": "Insight three", "severity": "low", "report_safe": True},
+        ],
+        "charts": [
+            {"chart_id": "bogus", "title": "Top assets by return", "type": "bar"},
+        ],
+    }
+    db = TestingSessionLocal()
+    try:
+        run = AnalysisResult(
+            project_id=pid,
+            file_hash="generic-with-finance-chart-titles",
+            result_json=json.dumps(body),
+            status="report_ready",
+        )
+        db.add(run)
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.get(f"/reports/draft/{pid}", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["selected_chart_ids"] == []
+    assert data["report_result"]["included_charts"] == []
 
 
 def test_get_draft_populates_included_charts_from_selection_and_run(client, project, auth_headers):

@@ -179,7 +179,13 @@ def select_default_chart_selection_for_result(
     *,
     max_sel: int = 4,
 ) -> list[str | int]:
-    """Pick chart keys when stored payloads exist — finance snapshot runs only."""
+    """Pick chart keys from stored payloads — ``financial_markets_snapshot`` only.
+
+    Reads the first non-empty list among
+    ``charts`` / ``chart_results`` / ``suggested_charts`` / ``chart_gallery``.
+    Match by exact ``title`` strings in ``_FINANCE_SNAPSHOT_CHART_PRIORITY_TITLES``;
+    emit ``chart_id`` / ``id`` when set, else legacy list index; dedupe keys; cap ``max_sel``.
+    """
     if not _is_financial_markets_snapshot_result(result_data):
         return []
     charts = _chart_dicts_from_result(result_data)

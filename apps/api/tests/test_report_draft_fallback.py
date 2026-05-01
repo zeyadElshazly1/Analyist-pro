@@ -366,6 +366,54 @@ def test_finance_chart_selection_empty_when_no_chart_payload() -> None:
     assert select_default_chart_selection_for_result(res) == []
 
 
+def test_finance_chart_skips_empty_charts_list_uses_chart_results() -> None:
+    """First non-empty canonical block wins — empty ``charts`` must not shadow ``chart_results``."""
+    res = {
+        "dataset_summary": {"dataset_context": _ds_context_snapshot()},
+        "charts": [],
+        "chart_results": [
+            {"chart_id": "top", "title": "Top assets by return"},
+            {"chart_id": "rr", "title": "Risk vs return"},
+        ],
+    }
+    assert select_default_chart_selection_for_result(res, max_sel=4) == ["top", "rr"]
+
+
+def test_finance_chart_reads_suggested_charts_block() -> None:
+    res = {
+        "dataset_summary": {"dataset_context": _ds_context_snapshot()},
+        "suggested_charts": [{"chart_id": "s_top", "title": "Top assets by return", "type": "bar"}],
+    }
+    assert select_default_chart_selection_for_result(res) == ["s_top"]
+
+
+def test_finance_chart_reads_chart_gallery_block() -> None:
+    res = {
+        "dataset_summary": {"dataset_context": _ds_context_snapshot()},
+        "chart_gallery": [
+            {"chart_id": "gal_rr", "title": "Risk vs return", "type": "scatter"},
+            {"chart_id": "gal_top", "title": "Top assets by return"},
+        ],
+    }
+    assert select_default_chart_selection_for_result(res, max_sel=4) == ["gal_top", "gal_rr"]
+
+
+def test_finance_chart_selection_deduplicates_duplicate_chart_ids() -> None:
+    """Same ``chart_id`` twice: first row consumes the key; later duplicate-id rows are skipped."""
+    res = {
+        "dataset_summary": {"dataset_context": _ds_context_snapshot()},
+        "charts": [
+            {"chart_id": "dup", "title": "Top assets by return"},
+            {"chart_id": "dup", "title": "Risk vs return"},
+            {"chart_id": "rr_alt", "title": "Risk vs return"},
+            {"chart_id": "cls", "title": "Average return by asset class"},
+        ],
+    }
+    sel = select_default_chart_selection_for_result(res, max_sel=4)
+    assert sel == ["dup", "rr_alt", "cls"]
+    assert len(sel) == len(set(sel))
+
+
 def test_direct_financial_builder_surfaces_price_overlap_insight() -> None:
     base = _snapshot_result()
     ins = list(base["insight_results"])
