@@ -472,7 +472,7 @@ def get_report_draft(
     """
     from app.services.reporting.default_draft import (
         build_fallback_executive_summary,
-        select_default_insight_selection,
+        select_default_insight_selection_for_result,
     )
 
     project = get_project_for_user(db, project_id, current_user)
@@ -496,13 +496,9 @@ def get_report_draft(
         return None
 
     result_data = json.loads(analysis.result_json)
-    raw = result_data.get("insight_results") or result_data.get("insights") or []
-    if not isinstance(raw, list):
-        raw = []
-    raw_dicts = [x for x in raw if isinstance(x, dict)]
 
     summary = build_fallback_executive_summary(result_data)
-    selected = select_default_insight_selection(raw_dicts)
+    selected = select_default_insight_selection_for_result(result_data)
 
     draft = ReportDraft(
         project_id=project_id,

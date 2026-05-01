@@ -6,6 +6,7 @@ import io
 import json
 
 from app.models import AnalysisResult, ReportDraft
+from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT
 from app.services.reporting.default_draft import (
     build_fallback_executive_summary,
     select_default_insight_selection,
@@ -136,6 +137,60 @@ def test_get_draft_auto_creates_when_analysis_exists(client, uploaded_project, a
     r2 = client.get(f"/reports/draft/{pid}", headers=auth_headers)
     assert r2.status_code == 200
     assert r2.json()["id"] == data["id"]
+
+
+def test_get_draft_auto_create_uses_finance_aware_insight_order(client, project, auth_headers):
+    """finance_markets_snapshot analyses get default selection in finance title priority."""
+    pid = project["id"]
+    body = {
+        "narrative": "Short.",
+        "dataset_summary": {
+            "rows": 10,
+            "columns": 5,
+            "dataset_context": {
+                "dataset_type": FINANCIAL_MARKETS_SNAPSHOT,
+                "confidence": 0.9,
+                "warnings": [],
+            },
+        },
+        "health_score": {"total": 75},
+        "insight_results": [
+            {
+                "domain": FINANCIAL_MARKETS_SNAPSHOT,
+                "title": "Highest volatility assets",
+                "insight_id": "id_vol",
+                "severity": "medium",
+            },
+            {
+                "domain": FINANCIAL_MARKETS_SNAPSHOT,
+                "title": "Top return leaders",
+                "insight_id": "id_top",
+                "severity": "medium",
+            },
+            {
+                "domain": FINANCIAL_MARKETS_SNAPSHOT,
+                "title": "Largest return laggards",
+                "insight_id": "id_lag",
+                "severity": "medium",
+            },
+        ],
+    }
+    db = TestingSessionLocal()
+    try:
+        run = AnalysisResult(
+            project_id=pid,
+            file_hash="finance-sel-hash",
+            result_json=json.dumps(body),
+            status="report_ready",
+        )
+        db.add(run)
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.get(f"/reports/draft/{pid}", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["selected_insight_ids"] == ["id_top", "id_lag", "id_vol"]
 
 
 def test_get_draft_still_null_without_analysis(client, project, auth_headers):
