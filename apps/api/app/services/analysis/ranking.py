@@ -10,7 +10,8 @@ This module uses a semantic key: (insight_type, frozenset_of_involved_columns).
 For insights without explicit column references, it falls back to a normalised
 title prefix so the behaviour degrades gracefully rather than failing.
 
-rank_insights: composite sort — severity 50%, confidence 25%, target-driver 25%.
+rank_insights: composite sort — severity 50%, confidence 25%, target-driver 25%,
+plus optional financial snapshot domain boosts (Task 73C).
 
 Target-driver bonus
 -------------------
@@ -23,10 +24,54 @@ for users who need actionable business intelligence first.
 """
 from __future__ import annotations
 
+from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT
 from app.config import MAX_INSIGHTS
 
 
 _SEV_WEIGHT = {"high": 1.0, "medium": 0.6, "low": 0.2}
+
+# ── Snapshot domain boosts (additive on composite, ~0–1 scale) ────────────────
+_PRICE_OVERLAP_CAVEAT_TITLE = "Price fields are highly overlapping"
+
+# Headline SnapshotFinanceInsightPack tiles — strongest boost (~+17 composite).
+_SNAPSHOT_FINANCE_PREMIUM_TITLES: frozenset[str] = frozenset(
+    {
+        "Top return leaders",
+        "Largest return laggards",
+        "Highest volatility assets",
+        "Best risk-adjusted performers",
+        "Asset classes show different return profiles",
+        "Sectors show different return profiles",
+        "Highest analyst-implied upside",
+        "Assets cluster at different 52-week positions",
+    }
+)
+
+_BOOST_SNAPSHOT_DEFAULT = 0.11       # modest lift for other domain-labelled insights
+_BOOST_SNAPSHOT_PREMIUM = 0.17        # headline finance tiles (+12–18pt-style lift)
+_BOOST_SNAPSHOT_CAVEAT = 0.035        # keep caveat below headline domain insights
+
+
+def _snapshot_domain_rank_bonus(ins: dict) -> float:
+    """
+    Ranking bonus for confidently labelled financial-market snapshot insights only.
+
+    Returns 0 unless ``domain`` matches ``financial_markets_snapshot``.
+    Caveat overlap insight receives a minimal boost so it can appear without
+    outranking main finance narratives.
+    """
+    if ins.get("domain") != FINANCIAL_MARKETS_SNAPSHOT:
+        return 0.0
+
+    title = str(ins.get("title", "") or "").strip()
+
+    if title == _PRICE_OVERLAP_CAVEAT_TITLE:
+        return _BOOST_SNAPSHOT_CAVEAT
+
+    if title in _SNAPSHOT_FINANCE_PREMIUM_TITLES:
+        return _BOOST_SNAPSHOT_PREMIUM
+
+    return _BOOST_SNAPSHOT_DEFAULT
 
 # How much weight a "target-driver" insight receives in the composite score.
 # Raised above zero so that rate-gap insights linking predictors to binary
@@ -105,11 +150,16 @@ def _composite_score(ins: dict) -> float:
     but losing to a "high" non-target insight at ≈ 0.72.  This preserves the
     primacy of genuine data anomalies while elevating business-outcome drivers
     above weak pattern findings.
+
+    financial_markets_snapshot (domain-tagged) insights receive a small additive
+    bonus so cross-sectional finance tiles can compete with generic correlations
+    without overruling strong high-severity generic findings.
     """
     sev   = _SEV_WEIGHT.get(ins.get("severity", "low"), 0.2)
     conf  = float(ins.get("confidence", 50)) / 100.0
     bonus = _TARGET_DRIVER_BONUS if ins.get("is_target_driver") else 0.0
-    return sev * 0.50 + conf * 0.25 + bonus * 0.25
+    base = sev * 0.50 + conf * 0.25 + bonus * 0.25
+    return min(1.0, base + _snapshot_domain_rank_bonus(ins))
 
 
 def rank_insights(insights: list[dict]) -> list[dict]:
