@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT
+
 
 # Phrases that read as empty “AI report speak” — trigger structured rewrite.
 _GENERIC_SUBSTRINGS: tuple[str, ...] = (
@@ -28,6 +30,253 @@ _GENERIC_SUBSTRINGS: tuple[str, ...] = (
 )
 
 MIN_STRONG_NARRATIVE_CHARS = 160
+
+# Known SnapshotFinanceInsightPack titles (financial_markets_snapshot domain).
+_PERF_RISK_SNAPSHOT_TITLES: tuple[str, ...] = (
+    "Top return leaders",
+    "Largest return laggards",
+    "Highest volatility assets",
+    "Best risk-adjusted performers",
+)
+_SEGMENT_SNAPSHOT_TITLES: tuple[str, ...] = (
+    "Asset classes show different return profiles",
+    "Sectors show different return profiles",
+)
+_EXPECTATIONS_SNAPSHOT_TITLES: tuple[str, ...] = (
+    "Highest analyst-implied upside",
+    "Assets cluster at different 52-week positions",
+    "Price fields are highly overlapping",
+)
+
+# Narrative phrases counted toward “reuse pipeline narrative” for snapshot runs.
+_FINANCE_NARRATIVE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\breturn\b", re.I), "return"),
+    (re.compile(r"\bvolatility\b", re.I), "volatility"),
+    (re.compile(r"\bsharpe\b", re.I), "sharpe"),
+    (re.compile(r"asset\s+class", re.I), "asset_class"),
+    (re.compile(r"\bsector\b", re.I), "sector"),
+    (re.compile(r"\banalyst\b", re.I), "analyst"),
+    (re.compile(r"52[-\s]?week", re.I), "52_week"),
+    (re.compile(r"risk[-\s]?adjusted", re.I), "risk_adjusted"),
+)
+
+_FORBIDDEN_CLIENT_WORDS_RE = re.compile(
+    r"\b(buy|sell|hold|undervalued|overvalued)\b",
+    re.I,
+)
+
+
+def _dataset_context_dict(result_data: dict[str, Any]) -> dict[str, Any] | None:
+    ds = result_data.get("dataset_summary")
+    if not isinstance(ds, dict):
+        return None
+    dc = ds.get("dataset_context")
+    return dc if isinstance(dc, dict) else None
+
+
+def _is_financial_markets_snapshot_result(result_data: dict[str, Any]) -> bool:
+    dc = _dataset_context_dict(result_data)
+    if not dc:
+        return False
+    return dc.get("dataset_type") == FINANCIAL_MARKETS_SNAPSHOT
+
+
+def _finance_narrative_marker_count(low: str) -> int:
+    """How many distinct finance-term groups appear (used for narrative reuse gate)."""
+    seen: set[str] = set()
+    for rx, tag in _FINANCE_NARRATIVE_PATTERNS:
+        if rx.search(low):
+            seen.add(tag)
+    return len(seen)
+
+
+def _insight_primary_text(ins: dict) -> str:
+    """Prefer finding, then explanation, then title."""
+    for key in ("finding", "explanation"):
+        v = ins.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    t = ins.get("title")
+    return t.strip() if isinstance(t, str) and t.strip() else ""
+
+
+def _snapshot_finance_insights_by_title(insights_raw: Any) -> dict[str, dict]:
+    rows = insights_raw if isinstance(insights_raw, list) else []
+    out: dict[str, dict] = {}
+    for ins in rows:
+        if not isinstance(ins, dict):
+            continue
+        if ins.get("domain") != FINANCIAL_MARKETS_SNAPSHOT:
+            continue
+        title = str(ins.get("title") or "").strip()
+        if title:
+            out[title] = ins
+    return out
+
+
+def _paragraph_perf_and_risk(by_title: dict[str, dict]) -> str | None:
+    parts: list[str] = []
+    for title in _PERF_RISK_SNAPSHOT_TITLES:
+        ins = by_title.get(title)
+        if not ins:
+            continue
+        body = _insight_primary_text(ins)
+        if not body:
+            body = title
+        parts.append(f"{title}: {body}".strip())
+        if len(parts) >= 4:
+            break
+    if not parts:
+        return None
+    return (
+        "Performance and risk: " + " ".join(parts[:4])[:3600].rstrip()
+        + ("…" if len(" ".join(parts[:4])) > 3600 else "")
+    )
+
+
+def _paragraph_segmentation(by_title: dict[str, dict]) -> str | None:
+    sentences: list[str] = []
+    for title in _SEGMENT_SNAPSHOT_TITLES:
+        ins = by_title.get(title)
+        if not ins:
+            continue
+        txt = _insight_primary_text(ins)
+        if txt:
+            sentences.append(f"{title} — {txt}")
+        else:
+            sentences.append(title + ".")
+    if not sentences:
+        return None
+    return "Segmentation: " + "; ".join(sentences)[:2000]
+
+
+def _paragraph_expectations(by_title: dict[str, dict]) -> str | None:
+    sentences: list[str] = []
+    for title in _EXPECTATIONS_SNAPSHOT_TITLES:
+        ins = by_title.get(title)
+        if not ins:
+            continue
+        txt = _insight_primary_text(ins)
+        if txt:
+            sentences.append(f"{title}: {txt}")
+        else:
+            sentences.append(title + ".")
+    if not sentences:
+        return None
+    return "Market context & positioning: " + " ".join(sentences)[:2400]
+
+
+def _snapshot_dataset_intro(result_data: dict[str, Any], dc: dict[str, Any]) -> str:
+    ds = result_data.get("dataset_summary")
+    rows = cols = None
+    if isinstance(ds, dict):
+        rows = ds.get("rows") if isinstance(ds.get("rows"), int) else None
+        cols = ds.get("columns") if isinstance(ds.get("columns"), int) else None
+
+    roles = dc.get("semantic_roles") if isinstance(dc, dict) else None
+    has_asset_class = has_sector = False
+    if isinstance(roles, dict):
+        vals = roles.values()
+        has_asset_class = any(v == "asset_class" for v in vals if isinstance(v, str))
+        has_sector = any(v == "sector" for v in vals if isinstance(v, str))
+
+    if isinstance(rows, int):
+        row_core = f"{rows:,} instruments"
+    else:
+        row_core = "instruments in this upload"
+
+    col_tail = f" across {cols} columns" if isinstance(cols, int) else ""
+
+    segments: list[str] = []
+    if has_asset_class and has_sector:
+        segments.append("labelled asset classes and sectors for cross-sectional comparison")
+    elif has_asset_class:
+        segments.append("labelled asset classes for segmentation")
+    elif has_sector:
+        segments.append("labelled sectors for segmentation")
+
+    base = (
+        "This analysis reviews a financial market snapshot of "
+        + row_core
+        + col_tail
+        + (" with " + " and ".join(segments) if segments else "")
+        + ". These results are descriptive and suited to institutional screening—not forecasts of future outcomes."
+    )
+    return base
+
+
+def _mixed_asset_classes_warning_sentence(warnings: Any) -> str | None:
+    if not isinstance(warnings, (list, tuple)):
+        return None
+    for w in warnings:
+        if isinstance(w, str) and "mixed asset classes" in w.lower():
+            return (
+                "Because the dataset mixes asset classes, compare results within similar asset "
+                "groups before drawing broad conclusions."
+            )
+    return None
+
+
+def build_financial_snapshot_executive_summary(result_data: dict[str, Any]) -> str:
+    """
+    Client-ready structured summary tuned for ``financial_markets_snapshot``.
+    Screening language only; avoids buy/sell/hold style terms.
+    """
+    dc = _dataset_context_dict(result_data)
+    paragraphs: list[str] = []
+
+    if not isinstance(dc, dict):
+        paragraphs.append(_snapshot_dataset_intro(result_data, {}))
+    else:
+        paragraphs.append(_snapshot_dataset_intro(result_data, dc))
+
+    raw_ins = result_data.get("insight_results") or result_data.get("insights") or []
+    by_title = _snapshot_finance_insights_by_title(raw_ins)
+
+    p_perf = _paragraph_perf_and_risk(by_title)
+    if p_perf:
+        paragraphs.append(p_perf)
+    elif isinstance(raw_ins, list) and any(isinstance(x, dict) for x in raw_ins):
+        paragraphs.append(
+            "Performance and risk: Ranked insights were sparse in the export—open the findings "
+            "panel for return, volatility, and risk-adjusted views once the analysis finishes."
+        )
+    else:
+        paragraphs.append(
+            "Performance and risk: Cross-section return and volatility signals were not available "
+            "for automatic narration in this artifact."
+        )
+
+    p_seg = _paragraph_segmentation(by_title)
+    if p_seg:
+        paragraphs.append(p_seg)
+
+    p_exp = _paragraph_expectations(by_title)
+    if p_exp:
+        paragraphs.append(p_exp)
+
+    reco_bits: list[str] = [
+        "Use these views to screen issuers or universes and flag outliers for governance review-only follow-up; "
+        "compare names within asset class buckets where classifications are trustworthy, validate metric "
+        "definitions with your market data steward, and treat extremes as hypotheses rather than decisive labels.",
+        "This is a screening analysis, not investment advice.",
+    ]
+    if isinstance(dc, dict):
+        mix_note = _mixed_asset_classes_warning_sentence(dc.get("warnings"))
+        if mix_note:
+            reco_bits.insert(1, mix_note)
+    reco_body = " ".join(reco_bits)
+
+    grade, score = _health_grade_and_score(result_data)
+    q_tail = _quality_verdict_sentence(grade, score)
+    clean = _cleaning_clause(result_data)
+    qual_suffix = q_tail + (" " + clean if clean else "")
+    paragraphs.append(reco_body + " " + qual_suffix)
+
+    out = "\n\n".join(p for p in paragraphs if p.strip())
+    if _FORBIDDEN_CLIENT_WORDS_RE.search(out):
+        out = _FORBIDDEN_CLIENT_WORDS_RE.sub("[redacted]", out)
+    return out[:8000]
 
 
 def _narrative_should_use_as_is(narrative: str) -> bool:
@@ -334,10 +583,20 @@ def build_structured_executive_summary(result_data: dict[str, Any]) -> str:
 
 def build_fallback_executive_summary(result_data: dict[str, Any]) -> str:
     """
-    Prefer a strong pipeline narrative; otherwise build a structured summary
+    Prefer a strong pipeline narrative when appropriate; otherwise build a structured summary
     from analysis blocks.
+
+    Financial market snapshots default to the finance-specific draft unless the pipeline
+    narrative is already strong and contains multiple finance-specific terms.
     """
     narrative = (result_data.get("narrative") or "").strip()
+    low = narrative.lower()
+
+    if _is_financial_markets_snapshot_result(result_data):
+        if _narrative_should_use_as_is(narrative) and _finance_narrative_marker_count(low) >= 2:
+            return narrative[:8000]
+        return build_financial_snapshot_executive_summary(result_data)
+
     if _narrative_should_use_as_is(narrative):
         return narrative[:8000]
     return build_structured_executive_summary(result_data)
