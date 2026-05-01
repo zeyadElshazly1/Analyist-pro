@@ -641,3 +641,137 @@ class TestResolveSemanticRoles:
         ctx = detect_dataset_context(df)
         direct = resolve_semantic_roles(df, ctx.dataset_type)
         assert ctx.semantic_roles == direct
+
+
+# ── get_dataset_summary — dataset_context field ───────────────────────────────
+
+class TestGetDatasetSummaryContext:
+    """
+    Verify that get_dataset_summary() includes a well-formed dataset_context
+    field and that all pre-existing summary keys are still present.
+    """
+
+    def setup_method(self):
+        from app.services.analysis.orchestrator import get_dataset_summary
+        self._get = get_dataset_summary
+
+    # ── Backward-compatibility: existing keys survive ─────────────────────────
+
+    def test_existing_key_rows(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert "rows" in s
+
+    def test_existing_key_columns(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert "columns" in s
+
+    def test_existing_key_numeric_cols(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert "numeric_cols" in s
+
+    def test_existing_key_categorical_cols(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert "categorical_cols" in s
+
+    def test_existing_key_datetime_cols(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert "datetime_cols" in s
+
+    def test_existing_key_missing_pct(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert "missing_pct" in s
+
+    def test_existing_key_domain(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert "domain" in s
+
+    # ── New key present ───────────────────────────────────────────────────────
+
+    def test_dataset_context_key_present(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert "dataset_context" in s
+
+    def test_dataset_context_is_dict(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert isinstance(s["dataset_context"], dict)
+
+    # ── dataset_context sub-fields ────────────────────────────────────────────
+
+    def test_dataset_type_field_present(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert "dataset_type" in s["dataset_context"]
+
+    def test_confidence_field_present(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert "confidence" in s["dataset_context"]
+
+    def test_matched_signals_field_present(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert "matched_signals" in s["dataset_context"]
+
+    def test_semantic_roles_field_present(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert "semantic_roles" in s["dataset_context"]
+
+    def test_warnings_field_present(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert "warnings" in s["dataset_context"]
+
+    # ── Yahoo snapshot classification ─────────────────────────────────────────
+
+    def test_snapshot_dataset_type(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert s["dataset_context"]["dataset_type"] == FINANCIAL_MARKETS_SNAPSHOT
+
+    def test_snapshot_confidence_above_threshold(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert s["dataset_context"]["confidence"] >= CONFIDENCE_THRESHOLD
+
+    def test_snapshot_semantic_roles_covers_all_columns(self):
+        df = _yahoo_snapshot_df()
+        s = self._get(df)
+        assert set(s["dataset_context"]["semantic_roles"].keys()) == set(df.columns)
+
+    # ── Generic tabular classification ────────────────────────────────────────
+
+    def test_generic_dataset_type(self):
+        df = pd.DataFrame({"age": [25, 30], "income": [50000, 70000]})
+        s = self._get(df)
+        assert s["dataset_context"]["dataset_type"] == GENERIC_TABULAR
+
+    def test_generic_semantic_roles_covers_all_columns(self):
+        df = pd.DataFrame({"age": [25, 30], "income": [50000, 70000]})
+        s = self._get(df)
+        assert set(s["dataset_context"]["semantic_roles"].keys()) == set(df.columns)
+
+    # ── JSON-friendliness (no tuples) ─────────────────────────────────────────
+
+    def test_matched_signals_is_list(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert isinstance(s["dataset_context"]["matched_signals"], list)
+
+    def test_warnings_is_list(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert isinstance(s["dataset_context"]["warnings"], list)
+
+    def test_semantic_roles_is_dict(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert isinstance(s["dataset_context"]["semantic_roles"], dict)
+
+    def test_confidence_is_float(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert isinstance(s["dataset_context"]["confidence"], float)
+
+    def test_dataset_type_is_str(self):
+        s = self._get(_yahoo_snapshot_df())
+        assert isinstance(s["dataset_context"]["dataset_type"], str)
+
+    # ── Edge cases ────────────────────────────────────────────────────────────
+
+    def test_empty_dataframe_no_raise(self):
+        s = self._get(pd.DataFrame())
+        assert s["dataset_context"]["dataset_type"] == GENERIC_TABULAR
+
+    def test_single_column_no_raise(self):
+        s = self._get(pd.DataFrame({"x": [1, 2, 3]}))
+        assert "dataset_context" in s

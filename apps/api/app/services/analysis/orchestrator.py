@@ -12,6 +12,8 @@ Public API (backward-compatible with app.services.analyzer):
 import numpy as np
 import pandas as pd
 
+from app.services.dataset_context import detect_dataset_context
+
 from .budget import (
     MAX_CORR_COLS,
     MAX_SEG_CATS,
@@ -170,6 +172,7 @@ def generate_executive_panel(insights: list[dict]) -> dict:
 
 def get_dataset_summary(df: pd.DataFrame) -> dict:
     """Return a lightweight summary dict describing the dataset's shape."""
+    ctx = detect_dataset_context(df)
     return {
         "rows": len(df),
         "columns": len(df.columns),
@@ -180,4 +183,11 @@ def get_dataset_summary(df: pd.DataFrame) -> dict:
             df.isnull().sum().sum() / max(len(df) * len(df.columns), 1) * 100, 1
         ),
         "domain": _detect_domain(df.columns.tolist()),
+        "dataset_context": {
+            "dataset_type":    ctx.dataset_type,
+            "confidence":      ctx.confidence,
+            "matched_signals": list(ctx.matched_signals),
+            "semantic_roles":  dict(ctx.semantic_roles),
+            "warnings":        list(ctx.warnings),
+        },
     }
