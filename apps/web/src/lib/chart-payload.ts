@@ -30,3 +30,14 @@ export type SuggestedChartPayload = ChartFinanceFormattingMeta & {
   is_binary?: boolean;
   color_key?: string | null;
 };
+
+/** True when the payload carries finance percent-display hints (Task 74D). */
+export function isFinanceFormattedChart(
+  chart: Pick<ChartFinanceFormattingMeta, "value_format" | "x_format" | "y_format">,
+): boolean {
+  return (
+    chart.value_format === "percent" ||
+    chart.x_format === "percent" ||
+    chart.y_format === "percent"
+  );
+}

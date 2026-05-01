@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo, type RefObject } from "react";
 import type { SuggestedChartPayload as ChartDef } from "@/lib/chart-payload";
+import { isFinanceFormattedChart } from "@/lib/chart-payload";
 import { formatChartValue } from "@/lib/chart-format";
 import { getSuggestedCharts } from "@/lib/api";
 import { Download, X, Info, ChevronRight } from "lucide-react";
@@ -126,6 +127,10 @@ const BG_COLOR = "#0c0c14";
 const CHART_PLOT_HEIGHT = 440;
 /** Compact plot inside grid cards (preview). */
 const CHART_PREVIEW_PLOT_HEIGHT = 220;
+/** Taller finance leaderboard preview (horizontal bars) — Task 74D. */
+const CHART_PREVIEW_FINANCE_BAR_HEIGHT = 260;
+/** Max rows shown in finance bar preview cards; detail modal keeps full data. */
+const FINANCE_PREVIEW_BAR_MAX_ROWS = 8;
 /** Minimum card height so the grid aligns cleanly. */
 const CHART_CARD_MIN_HEIGHT = 336;
 /** Taller plot in Chart Detail modal / drawer. */
@@ -618,9 +623,16 @@ function SingleChart({
   }
 
   const isPreview = variant === "preview";
+  const financeBarPreview =
+    isPreview && chart.type === "bar" && isFinanceFormattedChart(chart);
+
   const h =
     plotHeight ??
-    (isPreview ? CHART_PREVIEW_PLOT_HEIGHT : CHART_PLOT_HEIGHT);
+    (isPreview
+      ? financeBarPreview
+        ? CHART_PREVIEW_FINANCE_BAR_HEIGHT
+        : CHART_PREVIEW_PLOT_HEIGHT
+      : CHART_PLOT_HEIGHT);
   const plotBoxStyle = { height: h, minHeight: h };
 
   if (chart.type === "line") {
@@ -655,6 +667,7 @@ function SingleChart({
   }
 
   if (chart.type === "scatter") {
+    const suppressScatterAxisNames = isPreview && isFinanceFormattedChart(chart);
     const useFinanceScatterTooltip =
       chart.x_format === "percent" || chart.y_format === "percent";
     return (
@@ -664,7 +677,7 @@ function SingleChart({
             <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.12} />
             <XAxis
               dataKey="x"
-              name={chart.x_label ?? chart.x_key}
+              name={suppressScatterAxisNames ? undefined : chart.x_label ?? chart.x_key}
               tick={{ fill: "#9ca3af", fontSize: isPreview ? 9 : 11 }}
               tickCount={isPreview ? 4 : 8}
               tickFormatter={
@@ -681,7 +694,7 @@ function SingleChart({
             />
             <YAxis
               dataKey="y"
-              name={chart.y_label ?? chart.y_key}
+              name={suppressScatterAxisNames ? undefined : chart.y_label ?? chart.y_key}
               tick={{ fill: "#9ca3af", fontSize: isPreview ? 9 : 11 }}
               tickCount={isPreview ? 4 : 8}
               tickFormatter={
@@ -747,8 +760,19 @@ function SingleChart({
     );
   }
 
-  // Default: bar (histogram, categorical, binary)
-  return <BarPanels chart={chart} plotHeight={h} variant={variant} />;
+  const barChartResolved =
+    financeBarPreview
+      ? ({
+          ...chart,
+          horizontal: true,
+          data:
+            chart.data.length > FINANCE_PREVIEW_BAR_MAX_ROWS
+              ? chart.data.slice(0, FINANCE_PREVIEW_BAR_MAX_ROWS)
+              : chart.data,
+        } satisfies ChartDef)
+      : chart;
+
+  return <BarPanels chart={barChartResolved} plotHeight={h} variant={variant} />;
 }
 
 function chartDetailTableColumns(chart: ChartDef): string[] {
@@ -1133,8 +1157,18 @@ export function ChartViewer({ projectId, autoLoad }: Props) {
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         {displayCharts.map((chart, i) => {
           const nBars = chart.type === "bar" ? chart.data.length : 0;
+          const financeFmt = isFinanceFormattedChart(chart);
           const prefersWide =
-            chart.type === "bar" && (chart.horizontal === true || nBars > 10);
+            chart.type === "bar" &&
+            (chart.horizontal === true || nBars > 10 || financeFmt);
+          const previewPlotH =
+            chart.type === "bar" && financeFmt
+              ? CHART_PREVIEW_FINANCE_BAR_HEIGHT
+              : CHART_PREVIEW_PLOT_HEIGHT;
+          const truncateFinancePreview =
+            chart.type === "bar" &&
+            financeFmt &&
+            chart.data.length > FINANCE_PREVIEW_BAR_MAX_ROWS;
           return (
             <div
               key={`${chartDisplaySignature(chart)}-${i}`}
@@ -1185,10 +1219,15 @@ export function ChartViewer({ projectId, autoLoad }: Props) {
               <div className="mt-3 flex min-h-0 flex-1 flex-col justify-end">
                 <div
                   className="w-full flex-shrink-0 overflow-hidden rounded-lg border border-white/[0.05] bg-white/[0.02]"
-                  style={{ height: CHART_PREVIEW_PLOT_HEIGHT, minHeight: CHART_PREVIEW_PLOT_HEIGHT }}
+                  style={{ height: previewPlotH, minHeight: previewPlotH }}
                 >
                   <SingleChart chart={chart} variant="preview" />
                 </div>
+                {truncateFinancePreview ? (
+                  <p className="mt-1.5 text-center text-[10px] leading-snug text-white/35">
+                    Showing top 8 in preview. Open chart for full detail.
+                  </p>
+                ) : null}
               </div>
             </div>
           );
