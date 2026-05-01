@@ -100,6 +100,113 @@ def _full_roles_with_analyst_sector_and_asset_class() -> dict[str, str]:
     return r
 
 
+def _full_df_with_52w_analyst_sector_and_asset_class() -> pd.DataFrame:
+    df = _full_df_with_analyst_sector_and_asset_class().copy()
+    df["pct_of_52w_high"] = [
+        0.98,
+        0.95,
+        0.90,
+        0.55,
+        0.52,
+        0.50,
+        0.20,
+        0.12,
+        0.10,
+    ]
+    return df
+
+
+def _full_roles_with_52w_analyst_sector_and_asset_class() -> dict[str, str]:
+    r = dict(_full_roles_with_analyst_sector_and_asset_class())
+    r["pct_of_52w_high"] = "position_52w"
+    return r
+
+
+def test_run_returns_eight_insights_when_52w_analyst_sector_asset_class_and_metrics_present():
+    pack = SnapshotFinanceInsightPack()
+    insights = pack.run(
+        _full_df_with_52w_analyst_sector_and_asset_class(),
+        _context(_full_roles_with_52w_analyst_sector_and_asset_class()),
+    )
+    assert len(insights) == 8
+    assert {i["title"] for i in insights} == {
+        "Top return leaders",
+        "Largest return laggards",
+        "Highest volatility assets",
+        "Best risk-adjusted performers",
+        "Asset classes show different return profiles",
+        "Sectors show different return profiles",
+        "Highest analyst-implied upside",
+        "Assets cluster at different 52-week positions",
+    }
+
+
+def test_52w_position_insight_present():
+    pack = SnapshotFinanceInsightPack()
+    insights = pack.run(
+        _full_df_with_52w_analyst_sector_and_asset_class(),
+        _context(_full_roles_with_52w_analyst_sector_and_asset_class()),
+    )
+    assert "Assets cluster at different 52-week positions" in {i["title"] for i in insights}
+
+
+def test_52w_position_finding_names_near_high_and_low_assets():
+    pack = SnapshotFinanceInsightPack()
+    insights = pack.run(
+        _full_df_with_52w_analyst_sector_and_asset_class(),
+        _context(_full_roles_with_52w_analyst_sector_and_asset_class()),
+    )
+    w = next(i for i in insights if i["title"] == "Assets cluster at different 52-week positions")
+    assert "T0" in w["finding"] and "T1" in w["finding"]
+    assert "T8" in w["finding"] and "T7" in w["finding"]
+
+
+def test_52w_position_evidence_structure():
+    pack = SnapshotFinanceInsightPack()
+    insights = pack.run(
+        _full_df_with_52w_analyst_sector_and_asset_class(),
+        _context(_full_roles_with_52w_analyst_sector_and_asset_class()),
+    )
+    ev = next(i for i in insights if i["title"] == "Assets cluster at different 52-week positions")["evidence"]
+    assert ev["selected_52w_position_column"] == "pct_of_52w_high"
+    assert len(ev["near_high_assets"]) == 3
+    assert len(ev["low_position_assets"]) == 3
+    assert "valid_row_count" in ev
+
+
+def test_no_52w_insight_when_position_role_missing():
+    pack = SnapshotFinanceInsightPack()
+    roles = {
+        k: v
+        for k, v in _full_roles_with_52w_analyst_sector_and_asset_class().items()
+        if k != "pct_of_52w_high"
+    }
+    insights = pack.run(_full_df_with_52w_analyst_sector_and_asset_class(), _context(roles))
+    assert "Assets cluster at different 52-week positions" not in {i["title"] for i in insights}
+    assert len(insights) == 7
+
+
+def test_no_52w_insight_when_fewer_than_three_valid_rows():
+    pack = SnapshotFinanceInsightPack()
+    df = _full_df_with_52w_analyst_sector_and_asset_class().copy()
+    df["pct_of_52w_high"] = [0.9, None, "x", None, None, None, None, None, None]
+    insights = pack.run(df, _context(_full_roles_with_52w_analyst_sector_and_asset_class()))
+    assert "Assets cluster at different 52-week positions" not in {i["title"] for i in insights}
+
+
+def test_position_52w_column_priority_prefers_pct_of_52w_high():
+    pack = SnapshotFinanceInsightPack()
+    df = _full_df_with_52w_analyst_sector_and_asset_class().copy()
+    df["week52_position"] = df["pct_of_52w_high"] * 0.5
+    roles = dict(_full_roles_with_52w_analyst_sector_and_asset_class())
+    roles["week52_position"] = "position_52w"
+    insights = pack.run(df, _context(roles))
+    ev = next(i for i in insights if i["title"] == "Assets cluster at different 52-week positions")[
+        "evidence"
+    ]
+    assert ev["selected_52w_position_column"] == "pct_of_52w_high"
+
+
 def test_run_returns_seven_insights_when_analyst_sector_asset_class_and_full_metrics_present():
     pack = SnapshotFinanceInsightPack()
     insights = pack.run(
@@ -487,6 +594,7 @@ def test_all_insights_include_required_fields():
         (_full_df_with_asset_class(), _full_roles_with_asset_class()),
         (_full_df_with_sector_and_asset_class(), _full_roles_with_sector_and_asset_class()),
         (_full_df_with_analyst_sector_and_asset_class(), _full_roles_with_analyst_sector_and_asset_class()),
+        (_full_df_with_52w_analyst_sector_and_asset_class(), _full_roles_with_52w_analyst_sector_and_asset_class()),
     ):
         insights = pack.run(df, _context(roles))
         assert insights
@@ -509,6 +617,7 @@ def test_no_forbidden_investment_advice_language():
         (_full_df_with_asset_class(), _full_roles_with_asset_class()),
         (_full_df_with_sector_and_asset_class(), _full_roles_with_sector_and_asset_class()),
         (_full_df_with_analyst_sector_and_asset_class(), _full_roles_with_analyst_sector_and_asset_class()),
+        (_full_df_with_52w_analyst_sector_and_asset_class(), _full_roles_with_52w_analyst_sector_and_asset_class()),
     )
     for df, roles in rows:
         insights = pack.run(df, _context(roles))

@@ -2,7 +2,7 @@
 Insight pack for financial markets snapshot datasets (cross-section of assets).
 
 Includes return movers, volatility concentration, risk-adjusted leaders, asset-class and sector contrasts,
-plus analyst-implied upside screens.
+plus analyst-implied upside screens and 52-week positioning context.
 """
 from __future__ import annotations
 
@@ -55,6 +55,14 @@ _ANALYST_UPSIDE_PRIORITY_GROUPS: list[frozenset[str]] = [
     frozenset({"impliedupside"}),
 ]
 
+_POSITION_52W_PRIORITY_GROUPS: list[frozenset[str]] = [
+    frozenset({"pctof52whigh"}),
+    frozenset({"week52positionpct"}),
+    frozenset({"week52position"}),
+    frozenset({"52weekposition"}),
+    frozenset({"pctfrom52whigh"}),
+]
+
 
 class SnapshotFinanceInsightPack(DomainInsightPack):
     dataset_type = FINANCIAL_MARKETS_SNAPSHOT
@@ -69,6 +77,7 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
             self._detect_asset_class_return_comparison,
             self._detect_sector_return_comparison,
             self._detect_analyst_upside_leaders,
+            self._detect_52w_position_extremes,
         ):
             try:
                 insights.extend(detector(df, context))
@@ -462,6 +471,65 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
             }
         ]
 
+    def _detect_52w_position_extremes(self, df: pd.DataFrame, context: DatasetContext) -> list[dict]:
+        pos_col = _select_52w_position_column(df, context)
+        if not pos_col:
+            return []
+
+        values = pd.to_numeric(df[pos_col], errors="coerce")
+        valid = values.dropna()
+        if valid.shape[0] < 3:
+            return []
+
+        scale = _detect_percent_scale(valid)
+        label_col = _select_label_column(df, context)
+        near_named = _named_extremes(df, valid, label_col, k=3, largest=True)
+        low_named = _named_extremes(df, valid, label_col, k=3, largest=False)
+
+        near_pair = near_named[:2]
+        low_pair = low_named[:2]
+        high_names = near_pair[0][0], near_pair[1][0]
+        low_names = low_pair[0][0], low_pair[1][0]
+
+        finding = (
+            f"52-week positioning is split: {high_names[0]} and {high_names[1]} are closest to their highs, "
+            f"while {low_names[0]} and {low_names[1]} sit furthest from their highs."
+        )
+
+        columns_used = _columns_used(pos_col, label_col)
+
+        return [
+            {
+                "type": "segment",
+                "title": "Assets cluster at different 52-week positions",
+                "finding": finding,
+                "severity": "medium",
+                "confidence": 79,
+                "evidence": {
+                    "selected_52w_position_column": pos_col,
+                    "near_high_assets": [
+                        {"asset": name, "position_52w": _format_percent(value, scale)}
+                        for name, value in near_named
+                    ],
+                    "low_position_assets": [
+                        {"asset": name, "position_52w": _format_percent(value, scale)}
+                        for name, value in low_named
+                    ],
+                    "valid_row_count": int(valid.shape[0]),
+                },
+                "action": (
+                    "Use 52-week position as a momentum/context screen, then compare it with return, "
+                    "volatility, and asset class."
+                ),
+                "why_it_matters": (
+                    "52-week position summarises where price sits versus its trailing high–low corridor, "
+                    "so extremes surface relative momentum context without naming causes or confirming trend quality."
+                ),
+                "columns_used": columns_used,
+                "domain": FINANCIAL_MARKETS_SNAPSHOT,
+            }
+        ]
+
 
 def _select_return_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
     return_cols = [
@@ -510,6 +578,12 @@ def _select_sharpe_column(df: pd.DataFrame, context: DatasetContext) -> str | No
 def _select_analyst_upside_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
     return _select_by_role_with_priority(
         df, context, "analyst_upside", _ANALYST_UPSIDE_PRIORITY_GROUPS
+    )
+
+
+def _select_52w_position_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
+    return _select_by_role_with_priority(
+        df, context, "position_52w", _POSITION_52W_PRIORITY_GROUPS
     )
 
 
