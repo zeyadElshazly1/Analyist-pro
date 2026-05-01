@@ -1,9 +1,12 @@
 # Dataset Intelligence Plan — Analyst Pro
 
-**Status:** Pre-implementation planning document  
+**Status:** Revised pre-implementation planning document  
 **Author:** Senior Data Platform Architect  
 **Date:** 2026-05-01  
-**Scope:** v1 — financial_markets domain only  
+**Scope:** V1 — financial_markets_snapshot (Yahoo global markets cross-sectional data)  
+**Revision note:** Split original `financial_markets` type into `financial_markets_snapshot`
+(cross-sectional, per-asset metrics) and `financial_markets_timeseries` (OHLC price history).
+V1 targets snapshot only. OHLC/time-series detectors moved to V1.5/V2.
 
 ---
 
@@ -26,37 +29,34 @@
 
 ### 1.1 Generic Correlations Dominate and Mislead
 
-The current `analyze_dataset()` pipeline in `orchestrator.py` treats every DataFrame identically. It fires every detector — correlations, anomalies, segments, trends — regardless of what the data actually represents. On a financial markets dataset, this produces findings like:
+The current `analyze_dataset()` pipeline in `orchestrator.py` treats every DataFrame identically. It fires every detector — correlations, anomalies, segments, trends — regardless of what the data actually represents. On a Yahoo global markets snapshot dataset this produces findings like:
 
-- "Strong correlation: open & close (r=0.99)" — statistically true, analytically worthless. Of course open and close prices correlate; any financial analyst knows this is a structural property of OHLC data, not an insight.
-- "Strong correlation: high & low (r=0.97)" — same problem.
-- "Skewed distribution: volume" — volume is always right-skewed in markets. Flagging it as a finding wastes the user's attention.
-- "Concentration risk in ticker" — a ticker column with 500 stocks will always look concentrated; this is not risk, it is cardinality.
+- "Strong correlation: ytd_return & one_year_return (r=0.91)" — true but trivially expected; multi-period return columns are constructed from the same price series. Not an insight.
+- "Strong correlation: composite_score & sharpe_ratio (r=0.88)" — composite scores are typically *built from* constituent metrics; flagging this is circular.
+- "Skewed distribution: market_cap" — market cap is always right-skewed across a broad asset universe. Flagging it as a finding wastes attention.
+- "High-cardinality column: ticker" — tickers are identifiers, not a data quality problem.
+- "Concentration risk in sector" — a snapshot with 10 sectors will always look concentrated; this is schema design, not risk.
 
-The ranking function `rank_insights()` in `ranking.py` scores insights by statistical severity (65%) and confidence (35%). It has no concept of domain relevance. A generic high-confidence correlation between two price columns will always outrank a low-confidence but genuinely important cross-asset leading indicator. The user sees noise first.
+The ranking function `rank_insights()` scores by statistical severity and confidence. It has no concept of domain relevance. A high-confidence but trivially-expected correlation between two return columns will outrank a genuinely important Sharpe/return divergence across asset classes. The user sees noise first.
 
 ### 1.2 Charts Are Misleading Without Domain Context
 
-The chart builder (`charting/orchestrator.py`) generates charts in a fixed priority order:
+The generic chart builder produces charts in a fixed priority order: time-series lines, histograms, heatmaps, boxplots, bar charts, scatter plots. On a snapshot dataset there are no datetime columns, so time-series charts are skipped. What the builder does produce:
 
-1. Time-series line charts
-2. Histograms
-3. Correlation heatmap
-4. Boxplots
-5. Categorical bars
-6. Scatter plots
+- **Histogram of composite_score** — marginally useful but not the first thing an analyst needs.
+- **Scatter: ytd_return vs one_year_return** — ranks highly because r≈0.9. Tells the analyst nothing they do not already know.
+- **Heatmap** — all return and score columns light up as correlated. The heatmap actively misleads by suggesting redundancy rather than confirming multi-period structure.
+- **Bar: sector counts** — counts assets per sector, not returns per sector. Wrong aggregation.
 
-For financial markets data, the scatter plot of `open` vs `close` will rank highly because `_pearson()` returns r≈0.99. This chart will appear prominently in the report despite communicating nothing. Meanwhile, the chart that actually matters — cumulative return over time, drawdown, rolling volatility — will never be built because those computed series are not in the raw DataFrame and the chart builder has no domain awareness.
+The charts the analyst actually wants — top 10 returns, risk vs. return scatter, volatility by asset class, analyst upside leaders — are never built because they require domain-aware column selection and computed aggregations.
 
-The same heatmap showing perfect correlation between all OHLC columns actively misleads: a user unfamiliar with finance might conclude the dataset is redundant and drop columns that are structurally necessary.
+### 1.3 Reports and Narratives Are Weak Without Domain Context
 
-### 1.3 Reports Are Weak Without Domain Context
+`generate_narrative()` produces a generic 3-paragraph summary that leads with correlations and anomalies. For a finance snapshot, the executive summary should lead with performance leaders and laggards, risk-adjusted standings, and cross-asset comparisons. The word "finance" may appear in the domain label returned by `_detect_domain()` but it is never used to change the narrative structure or content.
 
-`generate_narrative()` in `narrative.py` and `_detect_domain()` perform a simple keyword scan over column names and produce a generic 3-paragraph executive summary. `_detect_domain()` can detect "Finance / Sales" from the word "price" but does nothing with that label — it is returned in `get_dataset_summary()` and never used to alter the narrative or insight selection.
+`insight_adapter.py` assigns identical caveats to all insights of a given category. A "correlation" insight on a snapshot dataset gets "Correlation does not imply causation" — generically correct but domain-useless. The finance-aware caveat would be: "Multi-period return columns are constructed from overlapping price series; their correlation is structural, not informative."
 
-`insight_adapter.py` assigns the same `caveats`, `chart_suggestion`, and `method_used` to every insight of a given category regardless of domain. A "correlation" insight on a financial dataset gets the same caveat ("Correlation does not imply causation") as one on a survey dataset, even though the financial context warrants "OHLC price columns are structurally correlated by market microstructure; exclude from general correlation analysis."
-
-The report builder consumes `InsightResult` objects filtered by `report_safe=True`. With no domain awareness, the report for a financial dataset will be littered with trivially-true OHLC correlations and miss the genuinely actionable signals: volatility clustering, momentum effects, volume-price divergence.
+Mixed-asset-class datasets (equities + ETFs + bonds + crypto in one snapshot) require an explicit caveat in every insight: risk metrics, Sharpe ratios, and volatility figures are not directly comparable across asset classes with different return profiles.
 
 ---
 
@@ -71,76 +71,78 @@ Raw upload (CSV/Excel/etc.)
   cleaning/pipeline.py → cleaned df
         │
         ▼
-┌─────────────────────────────────┐
-│  dataset_context.detector       │  ← NEW
-│  detect_dataset_context(df)     │
-│  → DatasetContext               │
-└─────────────────────────────────┘
+┌──────────────────────────────────────┐
+│  dataset_context/detector.py          │  ← NEW (V1A)
+│  detect_dataset_context(df)           │
+│  → DatasetContext                     │
+│    .dataset_type                      │
+│    .confidence                        │
+│    .matched_signals                   │
+│    .semantic_roles                    │
+│    .warnings                          │
+└──────────────────────────────────────┘
         │
-        ▼
-┌─────────────────────────────────┐
-│  dataset_context.roles          │  ← NEW
-│  resolve_semantic_roles(df,ctx) │
-│  → SemanticRoles                │
-└─────────────────────────────────┘
-        │
-        ├─── confidence >= threshold?
-        │         YES                        NO
-        ▼                                    ▼
-┌──────────────────────┐       ┌──────────────────────────┐
-│  Domain Insight Pack  │       │  Generic orchestrator    │
-│  (e.g. financial_     │       │  (current analyze_       │
-│   markets pack)       │       │   dataset() unchanged)   │
-└──────────────────────┘       └──────────────────────────┘
-        │                                    │
-        └────────────────┬───────────────────┘
-                         ▼
-             ┌─────────────────────┐
-             │  Domain-aware        │
-             │  rank_insights()     │  ← MODIFIED
-             │  + suppression rules │
-             └─────────────────────┘
-                         │
-                         ▼
-             ┌─────────────────────┐
-             │  insight_adapter.py │  ← MODIFIED
-             │  domain context      │
-             │  injected into       │
-             │  caveats/charts/     │
-             │  chart_suggestion    │
-             └─────────────────────┘
-                         │
-                         ▼
-             ┌─────────────────────┐
-             │  Domain chart        │  ← MODIFIED
-             │  strategy            │
-             │  build_chart_data()  │
-             └─────────────────────┘
-                         │
-                         ▼
-             ┌─────────────────────┐
-             │  Domain narrative    │  ← MODIFIED
-             │  generate_narrative()│
-             └─────────────────────┘
-                         │
-                         ▼
-             canonical InsightResult list
-             + domain-aware charts
-             + domain narrative
-             → frontend / report builder
+        ├─── confidence >= 0.65?
+        │         YES                          NO
+        ▼                                      ▼
+┌────────────────────────┐       ┌──────────────────────────────┐
+│  Domain Insight Pack   │       │  Generic orchestrator         │
+│  (V1B snapshot pack)   │       │  analyze_dataset() unchanged  │
+└────────────────────────┘       └──────────────────────────────┘
+        │                                      │
+        └──────────────────┬────────────────────┘
+                           ▼
+               ┌─────────────────────────┐
+               │  Domain-aware ranking    │  ← MODIFIED (V1C)
+               │  + suppression rules     │
+               └─────────────────────────┘
+                           │
+                           ▼
+               ┌─────────────────────────┐
+               │  insight_adapter.py      │  ← MODIFIED (V1E)
+               │  domain caveats injected │
+               └─────────────────────────┘
+                           │
+                           ▼
+               ┌─────────────────────────┐
+               │  Domain chart strategy   │  ← MODIFIED (V1D)
+               │  build_chart_data()      │
+               └─────────────────────────┘
+                           │
+                           ▼
+               ┌─────────────────────────┐
+               │  Domain narrative        │  ← MODIFIED (V1E)
+               │  generate_narrative()    │
+               └─────────────────────────┘
+                           │
+                           ▼
+               canonical InsightResult list
+               + domain charts
+               + finance executive summary
+               → frontend / report builder
 ```
 
-### 2.2 Integration Points
+### 2.2 V1 Sub-Phases
 
-The domain-awareness layer is injected at **five** touch points in the existing stack. No existing public API signatures change in v1.
+| Phase | Label | Deliverable |
+|---|---|---|
+| V1A | Dataset context detector | `detect_dataset_context()` returning `financial_markets_snapshot`, `financial_markets_timeseries` (stub), or `generic_tabular` |
+| V1B | Snapshot finance insight pack | 8 domain-specific insight detectors for snapshot data |
+| V1C | Ranking and suppression | Suppress repetitive return correlations, fake time-series, ID/name chart noise |
+| V1D | Finance chart strategy | 5 domain-aware charts replacing generic defaults |
+| V1E | Finance report summary | Domain narrative template + domain caveats in InsightResult |
+
+### 2.3 Integration Points
+
+No existing public API signatures change. All new parameters are optional with safe defaults.
 
 | Touch Point | Current Behaviour | New Behaviour |
 |---|---|---|
-| `orchestrator.analyze_dataset(df)` | Always runs all detectors | If context confidence ≥ threshold, runs domain pack first, then optionally generic detectors for gap-fill |
-| `ranking.rank_insights()` | Severity + confidence sort only | Domain boost/suppress weights applied before sort |
-| `insight_adapter.build_insight_result()` | Category-only caveats/charts | Domain context passed in; domain-specific caveats and chart suggestions injected |
-| `charting/orchestrator.build_chart_data()` | Fixed priority order | Domain strategy selects chart types and columns before generic builder runs |
-| `narrative.generate_narrative()` | Generic 3-paragraph summary | Domain narrative template used when context confidence ≥ threshold |
+| `orchestrator.analyze_dataset(df)` | Always runs all generic detectors | If snapshot context detected, runs domain pack; generic detectors fill remaining slots |
+| `ranking.rank_insights()` | Severity + confidence sort only | Domain suppression keys applied before sort |
+| `insight_adapter.build_insight_result()` | Category-only caveats | Domain caveats and mixed-asset-class caveat injected |
+| `charting/orchestrator.build_chart_data()` | Fixed priority order | Domain strategy runs first; ID/name charts and structural-correlation scatters suppressed |
+| `narrative.generate_narrative()` | Generic 3-paragraph summary | Finance executive summary template used when snapshot context fires |
 
 ---
 
@@ -151,201 +153,252 @@ The domain-awareness layer is injected at **five** touch points in the existing 
 ```
 DatasetContext
 ├── dataset_type: str
-│     The detected domain label. One of the values defined in §4.
-│     Default: "generic_tabular"
+│     Detected domain. One of:
+│       "financial_markets_snapshot"   ← V1, fully implemented
+│       "financial_markets_timeseries" ← V1 stub; detects but defers to generic
+│       "generic_tabular"              ← always-available fallback
 │
 ├── confidence: float  [0.0 – 1.0]
-│     How confident the detector is in the dataset_type assignment.
-│     Computed as: sum(signal_weights_matched) / sum(all_signal_weights_for_type)
-│     Threshold for activating domain pack: 0.65 (configurable constant)
+│     Normalised signal match score.
+│     confidence = sum(matched_signal_weights) / sum(all_signal_weights_for_type)
+│     Domain pack activates only when confidence >= 0.65.
+│     generic_tabular is always assigned confidence = 1.0 (it is the fallback, not detected).
 │
 ├── matched_signals: list[str]
-│     Human-readable list of the signals that contributed to this detection.
-│     Example for financial_markets:
-│       ["OHLC column group detected (open, high, low, close)",
-│        "volume column detected",
-│        "date column with trading-day frequency detected",
-│        "ticker/symbol column detected"]
-│     Used in: UI debug panel, test assertions, warnings generation
+│     Human-readable list of signals that fired.
+│     Example for financial_markets_snapshot:
+│       ["Return column detected (ytd_return)",
+│        "Volatility column detected (volatility)",
+│        "Sharpe ratio column detected (sharpe_ratio)",
+│        "Asset class column detected (asset_class)",
+│        "Sector column detected (sector)",
+│        "Analyst upside column detected (analyst_upside)",
+│        "52-week position column detected (week_52_position)"]
+│     Used in: debug panel, test assertions, warning generation.
 │
 ├── semantic_roles: dict[str, str]
-│     Maps each column name to its semantic role within the detected domain.
-│     Key = column name. Value = role label (domain-specific vocabulary).
-│     Example for financial_markets:
-│       {"date":   "time_index",
-│        "open":   "ohlc_open",
-│        "high":   "ohlc_high",
-│        "low":    "ohlc_low",
-│        "close":  "ohlc_close",
-│        "volume": "volume",
-│        "ticker": "asset_id",
-│        "rsi_14": "technical_indicator"}
-│     Unmapped columns: role = "unknown"
-│     Used in: domain pack selector, chart strategy, narrative, suppression rules
+│     Maps every column name to its semantic role in the detected domain.
+│     Columns not matched to any role get role "unknown".
+│     Example for financial_markets_snapshot:
+│       {"ticker":            "asset_id",
+│        "name":              "asset_label",
+│        "asset_class":       "asset_class",
+│        "sector":            "sector",
+│        "ytd_return":        "return_period",
+│        "one_year_return":   "return_period",
+│        "three_year_return": "return_period",
+│        "volatility":        "volatility",
+│        "sharpe_ratio":      "sharpe_ratio",
+│        "analyst_upside":    "analyst_upside",
+│        "week_52_position":  "position_52w",
+│        "composite_score":   "composite_score",
+│        "market_cap":        "size_metric"}
 │
 └── warnings: list[str]
-      Non-fatal issues detected during context resolution that the user
-      should know about, but that do not block analysis.
-      Examples:
-        "open > high detected in 3 rows — possible data quality issue"
-        "Missing trading days detected — weekend gaps expected, others may be errors"
-        "Ticker column has 500 unique values — per-asset analysis may be slow"
-      Used in: report header, narrative paragraph 1
+      Non-fatal issues detected during context resolution.
+      Examples for snapshot:
+        "Mixed asset classes detected (Equity, ETF, Bond, Crypto) — risk metrics
+         are not directly comparable across these classes."
+        "Sharpe ratio column contains values > 10 — verify annualisation basis."
+        "Analyst upside column has 40% missing values — upside insights will
+         cover a partial universe."
+      Injected into: report header, narrative paragraph 1, InsightResult caveats.
 ```
 
 ### 3.2 Detection Logic (Deterministic, No ML)
 
-Detection is a **signal scoring system** — no machine learning, no LLM calls. Each dataset type has a weighted signal checklist. Signals are deterministic column-name pattern matches, dtype checks, value range checks, and structural checks.
+Detection is a **signal scoring system** — pure deterministic column-name pattern matching, dtype checks, and value-range checks. No machine learning, no LLM calls.
 
-**Why deterministic?**  
-- Reproducible: same DataFrame always produces same DatasetContext.
-- Testable: each signal can be unit tested in isolation.
-- Fast: no model load time, no external API call.
-- Auditable: `matched_signals` tells the user exactly what fired.
+**Why deterministic:**
+- Reproducible: same DataFrame always produces the same DatasetContext.
+- Testable: every signal is a unit-testable function.
+- Fast: no model load, no API call. Target < 200ms on 1M rows.
+- Auditable: `matched_signals` gives the user an exact reason for every classification.
 
-**Signal types:**
-1. **Column name patterns** — regex or keyword match on normalised column names (lowercased, stripped)
-2. **Column group patterns** — a set of columns that must co-occur (e.g. `{open, high, low, close}`)
-3. **Dtype signals** — e.g. datetime column present
-4. **Value range signals** — e.g. values between 0 and 1 suggest rate/probability columns
-5. **Frequency signals** — e.g. date column with 5-day-week gaps suggests trading data
-6. **Cardinality signals** — e.g. a low-cardinality string column in the presence of OHLC suggests `ticker`
+**Signal types used in V1:**
+1. **Column name patterns** — regex / keyword match on normalised names (lowercase, stripped, underscores removed for matching)
+2. **Column group patterns** — a set of columns that co-occur (e.g. return + volatility + sharpe together strongly signal a snapshot)
+3. **Dtype signals** — presence or absence of datetime columns (timeseries has them; snapshot does not)
+4. **Value range signals** — volatility columns contain values in [0, 5]; return columns contain values in [-1, 10] for annual returns
+5. **Cardinality signals** — a low-cardinality string column in the presence of return columns is likely `asset_class` or `sector`
 
-### 3.3 Confidence Calculation
+### 3.3 Snapshot vs. Timeseries Disambiguation
+
+The two financial_markets types are disambiguated by a **datetime column check** run before signal scoring:
+
+| Condition | Assigned Type |
+|---|---|
+| No datetime column AND return/volatility/Sharpe signals present | `financial_markets_snapshot` |
+| Datetime column present AND OHLC group present | `financial_markets_timeseries` |
+| Datetime column present but no OHLC signals | `financial_markets_timeseries` (deferred to generic in V1) |
+| Neither condition met | `generic_tabular` |
+
+This avoids false classification of a timeseries dataset as a snapshot simply because it also has computed return columns.
+
+### 3.4 Confidence Calculation
 
 ```
-For each dataset_type T:
-  signal_scores = [weight_i for each signal_i that fires]
-  max_possible  = sum(weight_i for all signals_i defined for T)
-  confidence(T) = sum(signal_scores) / max_possible
+For each candidate type T:
+  matched_weight = sum(weight_i for each signal_i that fires for T)
+  max_weight     = sum(weight_i for all signals_i defined for T)
+  confidence(T)  = matched_weight / max_weight
 
-Assigned dataset_type = argmax(confidence(T)) across all T
-If max confidence < 0.65 → dataset_type = "generic_tabular", confidence = 1.0
+Assigned type = argmax over all T
+If max confidence < 0.65 → dataset_type = "generic_tabular"
+
+financial_markets_timeseries in V1: even if confidence >= 0.65, the domain
+pack is not activated — timeseries is detected but falls through to generic.
+A DatasetContext.warnings entry is added: "Time-series financial data detected;
+domain-specific analysis for this type is available in a future version."
 ```
-
-Confidence is **not** a probability — it is a normalised match score. A confidence of 0.65 means 65% of the maximum possible signal weight was matched, not that there is a 65% probability of correct classification.
 
 ---
 
 ## 4. Supported Dataset Types
 
-### 4.1 V1 Scope: `financial_markets`
+### 4.1 V1 Full Implementation: `financial_markets_snapshot`
 
-Full domain pack implemented. All other types below are planned for future versions.
+**Reference dataset:** Yahoo Finance global markets cross-sectional snapshot — one row per asset, columns covering returns across multiple periods, risk metrics, analyst consensus, and composite scores.
 
-**Detection signals (weighted):**
+**Canonical column vocabulary:**
 
-| Signal | Weight | Description |
+| Column Pattern | Semantic Role | Weight |
 |---|---|---|
-| OHLC group present | 0.40 | Columns matching open/high/low/close as a co-occurring group |
-| Volume column | 0.20 | Column name contains volume, vol, traded |
-| Date column with trading frequency | 0.15 | Datetime column; median gap = 1 day, ~5-day week pattern |
-| Ticker / symbol column | 0.15 | Low-cardinality string column with names or uppercase codes |
-| Price-like numeric range | 0.05 | Numeric columns with values > 1 and right-skewed |
-| Return / pct_change column | 0.05 | Column name contains return, ret, pct_chg, change |
+| ytd_return, one_year_return, three_year_return, five_year_return, return_* | `return_period` | 0.25 |
+| volatility, vol, std_dev, annualised_vol | `volatility` | 0.20 |
+| sharpe, sharpe_ratio, risk_adjusted_return | `sharpe_ratio` | 0.15 |
+| asset_class, type, instrument_type | `asset_class` | 0.15 |
+| sector, industry, gics_sector | `sector` | 0.10 |
+| analyst_upside, price_target_upside, consensus_upside | `analyst_upside` | 0.08 |
+| week_52_position, position_52w, pct_of_52w_high | `position_52w` | 0.07 |
+| composite_score, overall_score, rating | `composite_score` | — (no weight; derived, not detected) |
+| ticker, symbol, isin | `asset_id` | — (no weight alone; confirms snapshot shape) |
+| name, company_name, asset_name | `asset_label` | — |
+| market_cap, aum, fund_size | `size_metric` | — |
 
-Maximum possible confidence = 1.00 (all signals fire). Threshold for activation = 0.65.
+Minimum for activation: return + volatility + (sharpe OR asset_class) → confidence ≥ 0.65.  
+Maximum possible confidence = 1.00 (all weighted signals fire).
 
-**Semantic roles defined for `financial_markets`:**
-
-| Role Label | Description | Example Columns |
-|---|---|---|
-| `time_index` | The primary date/time axis | date, timestamp, trading_date |
-| `asset_id` | Identifier for the financial instrument | ticker, symbol, isin, cusip |
-| `ohlc_open` | Opening price | open, open_price |
-| `ohlc_high` | Session high price | high, high_price |
-| `ohlc_low` | Session low price | low, low_price |
-| `ohlc_close` | Closing / settlement price | close, close_price, adj_close |
-| `volume` | Trade volume | volume, vol, shares_traded |
-| `returns` | Period return | returns, daily_return, ret, pct_change |
-| `technical_indicator` | Computed TA signal | rsi, macd, sma, ema, bb_upper, atr |
-| `fundamental` | Fundamental ratio | pe_ratio, eps, pb_ratio, roe |
-| `unknown` | Not mapped to any role | anything else |
-
-**Insight pack for `financial_markets`:** (detectors to implement)
-
-| Insight | Detector | Priority |
-|---|---|---|
-| Volatility regime detection | Rolling std-dev on `ohlc_close` or `returns` with change-point detection | HIGH |
-| Volume-price divergence | Correlation sign-flip between `volume` and `returns` over rolling windows | HIGH |
-| Return distribution fat-tails | Kurtosis + Jarque-Bera on `returns` column | HIGH |
-| OHLC integrity check | Validate open ≤ high, low ≤ close, low ≤ high for every row | HIGH |
-| Momentum signal | Autocorrelation of `returns` at lag 1–5 | MEDIUM |
-| Cross-asset correlation | Pearson on `returns` across tickers (panel aware) | MEDIUM |
-| Gap detection | Missing trading days beyond expected weekend/holiday gaps | MEDIUM |
-| Outlier session detection | Single-day returns beyond ±3σ with volume confirmation | MEDIUM |
-
-**Suppression rules for `financial_markets`:**
-
-| Suppressed Insight | Reason |
-|---|---|
-| Correlation between any two `ohlc_*` columns | Structurally correlated by microstructure; not actionable |
-| "Skewed distribution" on `volume` | Volume is always right-skewed; not a finding |
-| "Concentration risk" on `asset_id` | Ticker cardinality is schema design, not risk |
-| "High-cardinality column" on `asset_id` | Same reason |
-| Correlations where both columns have role `technical_indicator` | TA indicators are derived from the same price series; correlation is spurious |
+**No datetime column required or expected.** If a datetime column is present this dataset is reclassified as timeseries.
 
 ---
 
-### 4.2 Future: `customer_churn` (v2+)
+### 4.2 V1 Stub: `financial_markets_timeseries`
 
-**Detection signals:** churned/churn column, tenure/days_since column, customer_id, subscription/plan columns, event counts.
+Detected but not acted on in V1. Assigned when an OHLC group or price-history pattern is found alongside a datetime column. Falls through to the generic analysis path with a warning. Full implementation in V1.5.
 
-**Key insight pack:** churn rate by segment, tenure-survival curve, feature importance for churn prediction, cohort retention heatmap.
-
-**Suppression:** correlations between derived RFM columns (recency/frequency/monetary are definitionally related).
-
----
-
-### 4.3 Future: `insurance` (v2+)
-
-**Detection signals:** claim_amount column, policy_id, premium, exposure, loss_ratio, peril/cause columns.
-
-**Key insight pack:** loss ratio by segment, claim frequency vs severity trade-off, large-loss concentration (Pareto on claim_amount), geographic cluster risk.
-
-**Suppression:** correlations between premium and sum_insured (actuarially set relationship, not a discovery).
+**V1.5 planned detectors (not in scope now):**
+- Volatility regime detection
+- Volume-price divergence
+- Return distribution fat-tails
+- OHLC integrity check
+- Trading day gap detection
+- Rolling momentum autocorrelation
 
 ---
 
-### 4.4 Fallback: `generic_tabular`
+### 4.3 Fallback: `generic_tabular`
 
-**Trigger:** No domain type reaches confidence ≥ 0.65.
+Triggered when no domain type reaches confidence ≥ 0.65, or when `financial_markets_timeseries` is detected in V1. The current `analyze_dataset()` runs without modification. Zero regression guarantee.
 
-**Behaviour:** Current `analyze_dataset()` runs unchanged. No domain pack. No suppression. `DatasetContext` is constructed with `dataset_type="generic_tabular"`, `confidence=1.0`, empty `matched_signals`, all columns with role `"unknown"`.
+---
 
-This is the **zero-regression guarantee**: existing users uploading non-domain datasets see exactly the same output as today.
+### 4.4 Future: `customer_churn` (V2+)
+
+Signals: churned/churn column, tenure, customer_id, subscription/plan columns, event counts.  
+Key pack: churn rate by segment, tenure-survival curve, feature importance.
+
+### 4.5 Future: `insurance` (V2+)
+
+Signals: claim_amount, policy_id, premium, exposure, loss_ratio, peril.  
+Key pack: loss ratio by segment, large-loss Pareto, geographic cluster risk.
 
 ---
 
 ## 5. V1 Implementation Scope
 
-V1 ships exactly one domain: `financial_markets`. Everything else is groundwork that makes adding v2 domains cheap.
+### 5.1 V1A — Dataset Context Detector
 
-**V1 deliverables:**
+Implement `detect_dataset_context(df)` returning one of three types. All signal logic lives in `dataset_context/signals.py`. Detector is purely deterministic. `financial_markets_timeseries` is detected and returned but the domain pack is not activated.
 
-1. `DatasetContext` dataclass + `detect_dataset_context(df)` function
-2. `SemanticRoles` resolver for `financial_markets`
-3. `financial_markets` insight pack (5 detectors: volatility regime, volume-price divergence, return fat-tails, OHLC integrity, gap detection)
-4. Suppression rules applied in ranking
-5. Domain-aware chart strategy for `financial_markets` (price chart, returns distribution, rolling volatility)
-6. Domain narrative template for `financial_markets`
-7. Domain caveats injected into `InsightResult` via adapter
-8. Full test suite (unit + integration)
+### 5.2 V1B — Snapshot Finance Insight Pack
 
-**V1 explicitly excludes:**
+Eight domain-specific detectors operating on columns with roles defined in §4.1. Each returns a list of insight dicts in the existing insight dict schema (same fields as generic detectors: type, title, finding, severity, confidence, evidence, action).
 
-- LLM-based column name inference (pure regex/keyword detection only)
-- Customer churn, insurance, or any other domain pack
-- Frontend UI changes (the domain label may appear in `dataset_summary` but no new UI components)
-- Per-asset (multi-ticker panel) analysis — v1 treats multi-ticker data as a single series
-- Backtest / strategy analysis
-- Real-time / streaming data
+| Detector | Output Insight Type | Description |
+|---|---|---|
+| `_detect_return_leaders` | `"segment"` | Top N assets by best return column; shows outperformers with evidence |
+| `_detect_return_laggards` | `"segment"` | Bottom N assets by return; flags underperformers |
+| `_detect_volatility_leaders` | `"concentration"` | Assets with highest volatility; flags outliers vs. peer median |
+| `_detect_sharpe_leaders` | `"segment"` | Top N assets by Sharpe ratio; risk-adjusted performance ranking |
+| `_detect_asset_class_comparison` | `"segment"` | Median return and volatility per asset class; flags divergent classes |
+| `_detect_sector_comparison` | `"segment"` | Median return per sector; flags best and worst performing sectors |
+| `_detect_analyst_upside` | `"segment"` | Top N assets by analyst upside; flags high-conviction buys |
+| `_detect_52w_position` | `"distribution"` | Distribution of assets near 52-week high vs. low; market breadth signal |
+
+**Mixed-asset-class caveat detector (not an insight — a warning):**  
+If `asset_class` column contains ≥ 2 distinct classes, add to `DatasetContext.warnings`:  
+"This dataset contains mixed asset classes. Volatility, Sharpe ratio, and return comparisons across classes (e.g. Equity vs. Bond vs. Crypto) should be interpreted with caution."  
+This warning is injected into every domain insight's caveats list via the adapter.
+
+### 5.3 V1C — Ranking and Suppression
+
+Three suppression rule sets applied in `rank_insights()`:
+
+**1. Return-column structural correlations:**  
+Suppress any correlation insight where both `columns_used` values have role `return_period`. Multi-period return columns are built from overlapping price series — their correlation is a construction artefact.
+
+**2. Composite-score correlations:**  
+Suppress any correlation insight where either column has role `composite_score`. Composite scores are built from the same constituent metrics as the other columns; their correlations are definitional.
+
+**3. ID / label columns:**  
+Suppress any insight where a column with role `asset_id` or `asset_label` is the primary column. These are identifier strings; statistical tests on them are meaningless. This also prevents the chart builder from producing frequency bar charts of ticker names.
+
+**Fake time-series suppression:**  
+If `dataset_type = "financial_markets_snapshot"` (no datetime column), suppress all insights of type `"trend"` — the generic trend detector may fire on the row-index order, which has no temporal meaning in a snapshot.
+
+### 5.4 V1D — Finance Chart Strategy
+
+Five domain-aware charts are built first when `financial_markets_snapshot` is detected. They replace, not supplement, the generic defaults for this dataset type.
+
+| Chart | Type | Columns | Description |
+|---|---|---|---|
+| Top 10 Returns | Horizontal bar | `asset_label` or `asset_id`, best available `return_period` role | Top 10 assets by return, labelled, sorted descending |
+| Risk vs. Return Scatter | Scatter | `volatility` role (x), best `return_period` role (y), coloured by `asset_class` | The canonical risk/return plot; each dot is one asset |
+| Asset Class Returns | Grouped bar | `asset_class` role (x), median of `return_period` columns (y) | Median return per asset class, one bar per class |
+| Volatility by Asset Class | Boxplot | `asset_class` role (x), `volatility` role (y) | Spread and median volatility per asset class |
+| Analyst Upside Top 10 | Horizontal bar | `asset_label` or `asset_id`, `analyst_upside` role | Top 10 assets by analyst consensus upside, labelled |
+
+If any required column role is absent (e.g. no `analyst_upside` column), that chart is silently skipped. The chart builder falls back to the next generic chart in the priority queue.
+
+Generic charts suppressed for snapshot data:
+- Scatter plots between any two `return_period` columns (structural correlation, not informative)
+- Correlation heatmap when ≥ 50% of numeric columns are `return_period` or `composite_score` roles
+- Bar charts of `asset_id` or `asset_label` columns (ticker name frequency — meaningless)
+- Time-series line charts (no datetime index in a snapshot)
+
+### 5.5 V1E — Finance Executive Summary and Report Integration
+
+**Narrative template** (replaces generic 3-paragraph structure when `financial_markets_snapshot` fires):
+
+- **Paragraph 1 — Universe and data quality:** Number of assets, asset classes covered, date context if present, missing-value summary for key metrics, mixed-asset-class warning if applicable.
+- **Paragraph 2 — Performance landscape:** Return leaders and laggards by name, best and worst asset class median returns, best sector, Sharpe ratio leaders (risk-adjusted standout).
+- **Paragraph 3 — Analyst view and positioning:** Analyst upside leaders, 52-week position distribution (breadth signal — "X% of assets within 5% of 52-week high"), and the single highest-priority recommended action from the domain insights.
+
+**Domain caveats injected into InsightResult:**
+
+| Insight Type | Additional Domain Caveat |
+|---|---|
+| All insights on a mixed-asset-class dataset | "Risk and return metrics are not directly comparable across asset classes (e.g. Equity vs. Bond vs. Crypto)." |
+| Any insight using `return_period` columns | "Return figures may use different calculation bases (price return vs. total return). Verify before comparing." |
+| Any insight using `sharpe_ratio` role | "Sharpe ratio comparability requires consistent annualisation and risk-free rate assumptions." |
+| Any insight using `analyst_upside` role | "Analyst consensus reflects a point-in-time view; upside figures become stale quickly." |
 
 ---
 
 ## 6. Files to Create and Change
 
-### 6.1 New Files (create from scratch)
+### 6.1 New Files
 
 ```
 apps/api/app/services/
@@ -354,31 +407,34 @@ apps/api/app/services/
     │     Exports: DatasetContext, detect_dataset_context, resolve_semantic_roles
     │
     ├── schema.py
-    │     DatasetContext dataclass (frozen, hashable)
-    │     SemanticRoles type alias (dict[str, str])
-    │     DATASET_TYPE literals and constants
-    │     CONFIDENCE_THRESHOLD constant (0.65)
+    │     DatasetContext (frozen dataclass)
+    │     CONFIDENCE_THRESHOLD = 0.65
+    │     DATASET_TYPE literals
     │
     ├── detector.py
-    │     detect_dataset_context(df: DataFrame) -> DatasetContext
-    │     _score_financial_markets(df) -> float, list[str]
-    │     _score_customer_churn(df) -> float, list[str]   [stub, always 0.0]
-    │     _score_insurance(df) -> float, list[str]        [stub, always 0.0]
-    │     _normalise_col_name(col: str) -> str            [lowercase, strip, remove _]
+    │     detect_dataset_context(df) -> DatasetContext
+    │     _score_snapshot(df) -> tuple[float, list[str]]
+    │     _score_timeseries(df) -> tuple[float, list[str]]
+    │     _has_datetime_column(df) -> bool
+    │     _normalise_col(col: str) -> str
     │
     ├── roles.py
     │     resolve_semantic_roles(df, ctx) -> dict[str, str]
-    │     _roles_financial_markets(df) -> dict[str, str]
-    │     _roles_generic(df) -> dict[str, str]            [all "unknown"]
+    │     _roles_snapshot(df) -> dict[str, str]
+    │     _roles_generic(df) -> dict[str, str]
     │
     └── signals.py
-          OHLC_NAMES: frozenset[str]       [open, high, low, close variants]
-          VOLUME_NAMES: frozenset[str]
-          TICKER_NAMES: frozenset[str]
           RETURN_NAMES: frozenset[str]
-          _is_ohlc_group(cols) -> bool
-          _is_trading_frequency(series) -> bool
-          _is_ticker_column(series) -> bool
+          VOLATILITY_NAMES: frozenset[str]
+          SHARPE_NAMES: frozenset[str]
+          ASSET_CLASS_NAMES: frozenset[str]
+          SECTOR_NAMES: frozenset[str]
+          ANALYST_UPSIDE_NAMES: frozenset[str]
+          POSITION_52W_NAMES: frozenset[str]
+          OHLC_NAMES: frozenset[str]          ← for timeseries detection
+          ASSET_ID_NAMES: frozenset[str]
+          ASSET_LABEL_NAMES: frozenset[str]
+          SIZE_METRIC_NAMES: frozenset[str]
 
 apps/api/app/services/analysis/
 └── domain/
@@ -386,151 +442,151 @@ apps/api/app/services/analysis/
     │     Exports: run_domain_pack
     │
     ├── base.py
-    │     Abstract base: DomainInsightPack
+    │     Abstract DomainInsightPack
     │     run(df, roles) -> list[dict]
+    │     suppression_keys(roles) -> set[tuple]
     │
-    ├── financial_markets.py
-    │     FinancialMarketsInsightPack(DomainInsightPack)
-    │     Detectors:
-    │       _detect_volatility_regime(df, roles)
-    │       _detect_volume_price_divergence(df, roles)
-    │       _detect_return_fat_tails(df, roles)
-    │       _detect_ohlc_integrity(df, roles)
-    │       _detect_trading_gaps(df, roles)
+    ├── snapshot_finance.py
+    │     SnapshotFinanceInsightPack(DomainInsightPack)
+    │     _detect_return_leaders(df, roles)
+    │     _detect_return_laggards(df, roles)
+    │     _detect_volatility_leaders(df, roles)
+    │     _detect_sharpe_leaders(df, roles)
+    │     _detect_asset_class_comparison(df, roles)
+    │     _detect_sector_comparison(df, roles)
+    │     _detect_analyst_upside(df, roles)
+    │     _detect_52w_position(df, roles)
     │
     └── registry.py
           DOMAIN_PACKS: dict[str, type[DomainInsightPack]]
+            "financial_markets_snapshot" → SnapshotFinanceInsightPack
           get_domain_pack(dataset_type) -> DomainInsightPack | None
 
 apps/api/tests/
-    ├── test_dataset_context.py      [new]
-    ├── test_financial_markets_pack.py   [new]
-    └── test_domain_ranking.py           [new]
+    ├── test_dataset_context.py           ← new
+    ├── test_snapshot_finance_pack.py     ← new
+    └── test_domain_ranking.py            ← new
 ```
 
-### 6.2 Files to Modify (existing files, targeted changes)
+### 6.2 Files to Modify (targeted, minimal changes)
 
 ```
 apps/api/app/services/analysis/orchestrator.py
-  CHANGE: analyze_dataset(df) gains an optional ctx parameter.
-          If ctx is None, detect_dataset_context(df) is called internally.
-          If ctx.confidence >= CONFIDENCE_THRESHOLD and a domain pack exists,
-          domain pack insights are prepended to the insight list and suppression
-          rules are registered before ranking.
-          Existing detector calls are unchanged.
-  RISK: Low. The ctx parameter is optional with a None default — all existing
-        callers continue to work with zero changes.
+  ADD optional ctx: DatasetContext | None = None to analyze_dataset().
+  If ctx is None, call detect_dataset_context(df) internally.
+  If ctx.dataset_type in DOMAIN_PACKS and ctx.confidence >= CONFIDENCE_THRESHOLD:
+    - run domain pack, prepend insights
+    - pass suppression_keys to rank_insights()
+  All existing detector calls unchanged.
+  LINES CHANGED: ~15 (import + ctx block at top of function).
 
 apps/api/app/services/analysis/ranking.py
-  CHANGE: rank_insights() gains an optional suppression_keys parameter.
-          suppression_keys: set[tuple] = set()   (same key shape as _insight_key)
-          Insights whose key is in suppression_keys are removed before ranking.
-          Domain packs pass their suppression key sets through here.
-  RISK: Low. Parameter is optional; existing callers unaffected.
+  ADD optional suppression_keys: set[tuple] | None = None to rank_insights().
+  Apply filter before sort.
+  LINES CHANGED: ~8.
 
 apps/api/app/services/insight_adapter.py
-  CHANGE: build_insight_result() gains an optional dataset_context parameter.
-          When present and dataset_type == "financial_markets":
-            - caveats list gets domain-specific additions
-            - chart_suggestion may be overridden by domain chart map
-          When absent: current behaviour unchanged.
-  RISK: Low. Parameter is optional.
+  ADD optional dataset_context: DatasetContext | None = None to build_insight_result().
+  When financial_markets_snapshot: inject domain caveats from a new lookup table.
+  LINES CHANGED: ~20 (new lookup table + conditional block).
 
 apps/api/app/services/charting/orchestrator.py
-  CHANGE: build_chart_data() gains an optional dataset_context parameter.
-          When present and dataset_type == "financial_markets":
-            - Domain chart strategy runs first (price timeseries, returns distribution,
-              rolling volatility chart)
-            - Scatter plots of ohlc_* vs ohlc_* columns are skipped
-            - Heatmap is suppressed if all numeric columns are ohlc_* (prevents
-              the misleading all-green OHLC heatmap)
-          When absent: current behaviour unchanged.
-  RISK: Low. Parameter is optional.
+  ADD optional dataset_context: DatasetContext | None = None to build_chart_data().
+  When financial_markets_snapshot: build 5 domain charts first; apply suppression
+  list for structural-correlation scatters, ID bar charts, and heatmap.
+  LINES CHANGED: ~50 (new domain chart builder block at top of function).
 
 apps/api/app/services/analysis/narrative.py
-  CHANGE: generate_narrative() gains an optional dataset_context parameter.
-          When present and dataset_type == "financial_markets":
-            - Paragraph 1: mentions the financial domain and the OHLC structure detected
-            - Paragraph 2: leads with return-distribution and volatility findings
-              rather than correlation findings
-            - Paragraph 3: includes financial-context actions
-          When absent: current 3-paragraph generic narrative unchanged.
-  RISK: Low. Parameter is optional.
-
-apps/api/app/services/analyzer.py
-  CHANGE: The thin wrapper calling orchestrator.analyze_dataset() passes
-          dataset_context through if it is already computed upstream (e.g. from
-          a prior profiling step). No change to public API.
-  RISK: Minimal.
+  ADD optional dataset_context: DatasetContext | None = None to generate_narrative().
+  When financial_markets_snapshot: use 3-paragraph domain template.
+  LINES CHANGED: ~40 (new template function + conditional dispatch).
 ```
 
-### 6.3 Files Explicitly Not Changed in V1
+### 6.3 Files Explicitly Not Changed
 
 ```
-apps/api/app/schemas/insight.py         ← InsightResult schema unchanged
-apps/api/app/routes/analysis.py         ← Route unchanged
-apps/api/app/services/cleaning/         ← Cleaning pipeline unchanged
-apps/api/app/services/charting/payloads.py  ← Payload builders unchanged
-apps/api/app/services/reporting/        ← Report templates unchanged in v1
+apps/api/app/schemas/insight.py          ← InsightResult schema unchanged
+apps/api/app/routes/analysis.py          ← Route unchanged
+apps/api/app/services/cleaning/          ← Cleaning pipeline unchanged
+apps/api/app/services/charting/payloads.py   ← Individual payload builders unchanged
+apps/api/app/services/reporting/         ← Report templates unchanged in V1
 ```
+
+The only schema change in V1 is adding new `InsightCategory` literals for any truly new insight types. Given §5.2 reuses existing types (`"segment"`, `"concentration"`, `"distribution"`), **no schema change is needed in V1**.
 
 ---
 
 ## 7. Tests Required
 
-### 7.1 Unit Tests: `tests/test_dataset_context.py`
+### 7.1 `tests/test_dataset_context.py`
+
+**Detector tests:**
 
 | Test | What it verifies |
 |---|---|
-| `test_ohlc_group_detection` | `_is_ohlc_group()` returns True for [open, high, low, close] and variants; False for partial groups |
-| `test_trading_frequency_detection` | `_is_trading_frequency()` returns True for daily 5-day-week series; False for monthly or hourly |
-| `test_ticker_column_detection` | `_is_ticker_column()` returns True for a low-cardinality uppercase string column; False for free-text |
-| `test_full_ohlc_dataset_confidence` | A DataFrame with all 6 signals scores confidence ≥ 0.90 |
-| `test_partial_ohlc_confidence` | A DataFrame with OHLC + volume but no ticker scores confidence in [0.65, 0.90) |
-| `test_non_financial_dataset` | A customer demographics DataFrame scores confidence < 0.65 → dataset_type = "generic_tabular" |
-| `test_semantic_roles_complete` | resolve_semantic_roles() assigns correct role to every column in a reference OHLC dataset |
-| `test_semantic_roles_unknown_columns` | Novel columns not in signal lists get role "unknown" |
-| `test_matched_signals_are_human_readable` | matched_signals list contains only non-empty strings |
-| `test_warnings_ohlc_integrity` | A DataFrame with open > high on some rows produces a DatasetContext warning |
-| `test_deterministic` | Calling detect_dataset_context() twice on same df produces identical DatasetContext |
-| `test_confidence_threshold_boundary` | A dataset at exactly 0.65 confidence activates the domain pack; at 0.64 it does not |
+| `test_snapshot_all_signals_high_confidence` | DataFrame with return + vol + sharpe + asset_class + sector + upside + 52w scores ≥ 0.85 |
+| `test_snapshot_minimum_signals` | DataFrame with return + vol + sharpe (only) scores ≥ 0.65 → activates |
+| `test_snapshot_below_threshold` | DataFrame with return column only scores < 0.65 → generic_tabular |
+| `test_timeseries_detected_by_ohlc_and_date` | OHLC + datetime column → financial_markets_timeseries |
+| `test_timeseries_does_not_activate_domain_pack` | financial_markets_timeseries context → run_domain_pack returns empty list |
+| `test_generic_tabular_no_signals` | Demographics DataFrame → generic_tabular, confidence = 1.0 |
+| `test_no_false_positive_churn_dataset` | tenure + churned + customer_id → generic_tabular (not snapshot) |
+| `test_deterministic` | Same DataFrame called twice → identical DatasetContext |
+| `test_empty_dataframe` | Empty df → generic_tabular, no raise |
+| `test_single_column` | df with one column → generic_tabular, no raise |
+| `test_mixed_asset_class_warning` | asset_class column with 3 distinct values → warning in DatasetContext.warnings |
+| `test_matched_signals_human_readable` | All matched_signals are non-empty strings |
 
-### 7.2 Unit Tests: `tests/test_financial_markets_pack.py`
-
-| Test | What it verifies |
-|---|---|
-| `test_volatility_regime_detected` | A DataFrame with two distinct volatility regimes produces a "volatility_regime" insight |
-| `test_volatility_regime_single_regime` | A stable-volatility DataFrame produces no regime insight |
-| `test_volume_price_divergence_detected` | A DataFrame where volume rises while returns fall produces a divergence insight |
-| `test_return_fat_tails_kurtosis` | A returns series with kurtosis > 3 produces a fat-tail insight |
-| `test_return_fat_tails_normal` | A normally distributed returns series produces no fat-tail insight |
-| `test_ohlc_integrity_violation` | A row with open > high produces an integrity-violation insight at severity="high" |
-| `test_ohlc_integrity_clean` | A clean OHLC DataFrame produces no integrity insight |
-| `test_gap_detection_missing_days` | A DataFrame with a 5-day gap mid-series (non-holiday) produces a gap insight |
-| `test_gap_detection_weekend_ok` | Weekend gaps are not flagged as missing trading days |
-| `test_domain_pack_returns_list` | `FinancialMarketsInsightPack.run()` always returns a list (never raises) |
-| `test_domain_pack_empty_df` | An empty DataFrame returns an empty insight list without error |
-
-### 7.3 Unit Tests: `tests/test_domain_ranking.py`
+**Semantic role tests:**
 
 | Test | What it verifies |
 |---|---|
-| `test_ohlc_correlation_suppressed` | A correlation insight between two ohlc_* columns is removed by suppression rules |
-| `test_non_ohlc_correlation_not_suppressed` | A correlation between `volume` and `returns` is NOT suppressed |
-| `test_domain_insight_ranks_above_generic` | A domain-pack insight with medium severity outranks a generic low-confidence correlation |
-| `test_suppression_does_not_affect_generic_path` | When dataset_type = "generic_tabular", no suppression rules apply |
-| `test_rank_insights_with_suppression_keys` | rank_insights() with a suppression_keys set removes those insights before sorting |
+| `test_roles_return_period_assigned` | ytd_return, one_year_return → role "return_period" |
+| `test_roles_asset_id_assigned` | ticker, symbol → role "asset_id" |
+| `test_roles_unknown_for_novel_column` | "widget_count" → role "unknown" |
+| `test_roles_complete_no_missing_columns` | Every column in df appears in returned roles dict |
 
-### 7.4 Integration Tests (added to existing test files or new)
+### 7.2 `tests/test_snapshot_finance_pack.py`
+
+| Test | What it verifies |
+|---|---|
+| `test_return_leaders_detected` | Top-return assets appear in leaders insight, names correct |
+| `test_return_laggards_detected` | Bottom-return assets appear in laggards insight |
+| `test_volatility_leaders_vs_median` | Assets with vol > 1.5× median appear in volatility insight |
+| `test_sharpe_leaders_ranking` | Top Sharpe assets appear, ranked correctly |
+| `test_asset_class_comparison_multi_class` | Insight produced when ≥ 2 asset classes present |
+| `test_asset_class_comparison_single_class` | No asset_class insight when only 1 class present |
+| `test_sector_comparison_multi_sector` | Insight produced when ≥ 2 sectors present, best/worst named |
+| `test_analyst_upside_top10` | Top-upside assets named in insight; missing upside column → no insight |
+| `test_52w_position_distribution` | Insight produced; pct near high/low reported in evidence |
+| `test_pack_returns_list_always` | run() always returns list, never raises |
+| `test_pack_empty_dataframe` | Empty df → empty list, no raise |
+| `test_all_insights_have_required_fields` | Every returned dict has type, title, finding, severity, confidence, evidence, action |
+| `test_mixed_asset_caveat_in_warnings` | Mixed-asset df → DatasetContext.warnings contains caveat string |
+
+### 7.3 `tests/test_domain_ranking.py`
+
+| Test | What it verifies |
+|---|---|
+| `test_return_period_correlation_suppressed` | Correlation between two return_period columns removed by suppression |
+| `test_composite_score_correlation_suppressed` | Correlation involving composite_score column removed |
+| `test_asset_id_insight_suppressed` | Insight with asset_id as primary column removed |
+| `test_trend_insight_suppressed_on_snapshot` | Trend insight suppressed when dataset_type = financial_markets_snapshot |
+| `test_non_suppressed_insight_survives` | Sharpe-return correlation (mixed roles) is NOT suppressed |
+| `test_suppression_does_not_affect_generic_path` | generic_tabular context → no suppression applied |
+| `test_rank_insights_signature_unchanged` | rank_insights(insights) with no extra args works as before |
+
+### 7.4 Integration Tests
 
 | Test | File | What it verifies |
 |---|---|---|
-| `test_analyze_dataset_financial_ohlc` | `test_dataset_context.py` | End-to-end: OHLC DataFrame → `analyze_dataset()` → no OHLC-OHLC correlations in output |
-| `test_analyze_dataset_generic_unchanged` | `test_dataset_context.py` | Non-domain DataFrame → output identical to current `analyze_dataset()` |
-| `test_chart_strategy_no_ohlc_heatmap` | `test_dataset_context.py` | OHLC DataFrame → `build_chart_data()` → no all-OHLC heatmap in output |
-| `test_narrative_mentions_domain` | `test_dataset_context.py` | OHLC DataFrame → `generate_narrative()` → narrative mentions financial context |
-| `test_insight_adapter_domain_caveats` | `test_dataset_context.py` | InsightResult built with financial_markets context has domain caveats in `.caveats` |
-| `test_regression_existing_tests_pass` | (run existing suite) | All pre-existing tests pass without modification |
+| `test_analyze_dataset_snapshot_end_to_end` | `test_dataset_context.py` | Yahoo snapshot df → no return-return correlations in output, ≥ 1 domain insight |
+| `test_analyze_dataset_generic_unchanged` | `test_dataset_context.py` | Non-domain df → output identical to pre-change baseline |
+| `test_chart_strategy_snapshot` | `test_dataset_context.py` | Snapshot df → top-returns bar chart present; no ticker-name bar chart |
+| `test_chart_strategy_risk_return_scatter` | `test_dataset_context.py` | Snapshot with vol + return + asset_class → risk/return scatter in output |
+| `test_narrative_snapshot_leads_with_performance` | `test_dataset_context.py` | Snapshot narrative paragraph 2 mentions return leaders/laggards |
+| `test_insight_result_has_domain_caveats` | `test_dataset_context.py` | InsightResult on mixed-asset snapshot has mixed-asset caveat in .caveats |
+| `test_regression_all_existing_tests_pass` | (run existing suite) | All pre-existing tests pass, zero changes required |
 
 ---
 
@@ -538,38 +594,50 @@ apps/api/app/services/reporting/        ← Report templates unchanged in v1
 
 ### 8.1 Detection Accuracy
 
-- A canonical OHLC dataset (date, open, high, low, close, volume, ticker) must score `confidence ≥ 0.85` and `dataset_type = "financial_markets"`.
-- A canonical customer churn dataset (customer_id, tenure, churned, plan, monthly_charges) must score `confidence < 0.65` and `dataset_type = "generic_tabular"` (we have not implemented churn detection yet — it must not false-positive as financial).
-- An empty DataFrame must produce `dataset_type = "generic_tabular"` without raising.
-- A DataFrame with only 1 column must produce `dataset_type = "generic_tabular"` without raising.
+- A Yahoo global markets snapshot with ytd_return, volatility, sharpe_ratio, asset_class, sector, analyst_upside, and week_52_position columns must score `confidence ≥ 0.85` and `dataset_type = "financial_markets_snapshot"`.
+- A snapshot with only ytd_return, volatility, and sharpe_ratio (minimum) must score `confidence ≥ 0.65`.
+- A dataset with one return column and nothing else must score `confidence < 0.65` → `generic_tabular`.
+- An OHLC dataset with a datetime column must classify as `financial_markets_timeseries`, not `financial_markets_snapshot`.
+- A customer churn dataset (tenure, churned, plan, monthly_charges) must not false-positive as any financial type.
+- An empty DataFrame must produce `generic_tabular` without raising.
 
-### 8.2 Suppression Correctness
+### 8.2 Insight Pack Output
 
-- On a standard OHLC dataset, zero insights of type "correlation" with both `columns_used` values having role `ohlc_*` must appear in the final output.
-- On a generic dataset, the count of correlation insights in the output is identical before and after the domain intelligence layer is added.
+- On a canonical Yahoo snapshot, at least 5 of the 8 domain detectors must produce at least one insight.
+- Every domain insight dict must contain: `type`, `title`, `finding`, `severity`, `confidence`, `evidence`, `action`.
+- `confidence` values must be in [0, 100] (pipeline convention; adapter divides by 100).
+- On a single-asset-class snapshot, `_detect_asset_class_comparison` must return an empty list (no false comparison).
+- On a snapshot with no `analyst_upside` column, `_detect_analyst_upside` must return an empty list (no crash).
 
-### 8.3 Domain Pack Coverage
+### 8.3 Suppression Correctness
 
-- On an OHLC dataset with a detectable volatility regime, at least one domain insight of type `"volatility_regime"` must appear in the output.
-- On an OHLC dataset with a clean integrity check, zero `"ohlc_integrity"` insights must appear.
-- On an OHLC dataset with a 5-day non-weekend gap, at least one `"trading_gap"` insight must appear.
+- On a canonical Yahoo snapshot, zero `"correlation"` insights with both `columns_used` values having role `return_period` must appear in the final ranked output.
+- On a snapshot, zero `"trend"` insights must appear (no datetime column).
+- On a snapshot, zero insights whose `columns_used[0]` has role `asset_id` must appear.
+- On a generic dataset, the count of correlation insights is identical before and after the domain intelligence layer.
 
-### 8.4 Backward Compatibility (Non-Negotiable)
+### 8.4 Charts
 
-- All existing tests in `tests/` must pass with zero modifications.
-- The public signatures of `analyze_dataset(df)`, `build_chart_data(df)`, `generate_narrative(insights, df)`, and `build_insight_result(ins)` must remain callable with their existing argument shapes (new parameters are all optional with safe defaults).
-- The `InsightResult` Pydantic schema must not gain any new required fields.
+- On a canonical Yahoo snapshot, the output of `build_chart_data()` must include a horizontal bar chart (top 10 returns) and a scatter chart (risk vs. return).
+- On a canonical Yahoo snapshot, the output must NOT include a scatter chart where both axes are `return_period` columns.
+- On a generic dataset, `build_chart_data()` output is identical before and after.
 
-### 8.5 Performance
+### 8.5 Backward Compatibility (Non-Negotiable)
 
-- `detect_dataset_context(df)` must complete in under 200ms on a DataFrame with up to 1,000,000 rows and 50 columns (pure deterministic signal scoring — no pandas iterrows, no model inference).
-- The domain pack detectors for `financial_markets` must complete in under 5 seconds on 500,000 rows.
-- Total latency increase for the full `analyze_dataset()` pipeline on a financial dataset must be under 10 seconds versus the current baseline.
+- All existing tests pass with zero modifications.
+- `analyze_dataset(df)`, `build_chart_data(df)`, `generate_narrative(insights, df)`, and `build_insight_result(ins)` remain callable with their existing positional-only argument shapes.
+- `InsightResult` gains no new required fields in V1.
 
-### 8.6 Test Coverage
+### 8.6 Performance
+
+- `detect_dataset_context(df)` completes in < 200ms on a 1M-row, 50-column DataFrame.
+- Snapshot domain pack completes in < 3 seconds on 10,000-row snapshot (typical Yahoo global snapshot size).
+- Full `analyze_dataset()` on a snapshot must not increase total latency by more than 5 seconds over baseline.
+
+### 8.7 Test Coverage
 
 - All new files in `dataset_context/` and `analysis/domain/` must have ≥ 90% line coverage.
-- No new file may be introduced with zero tests.
+- No new file introduced with zero tests.
 
 ---
 
@@ -577,33 +645,32 @@ apps/api/app/services/reporting/        ← Report templates unchanged in v1
 
 ### 9.1 Principles
 
-1. **Generic analysis never regresses.** The current `analyze_dataset()` path is the fallback for all non-domain data. It runs unchanged when `dataset_type = "generic_tabular"`.
-2. **Domain insights augment; they do not replace.** In v1, domain pack insights are prepended to the insight list before generic insights run. Both contribute to the final ranked list. Domain suppression rules remove only structurally meaningless generic insights (OHLC-OHLC correlations), not the entire generic analysis.
-3. **High-confidence activation only.** The domain pack activates only when `confidence ≥ 0.65`. Below this threshold, behaviour is identical to today. There is no "partial domain mode".
-4. **Matched signals are always visible.** The `DatasetContext` object (including `matched_signals` and `warnings`) is attached to the `dataset_summary` response. This allows the analyst to understand why the domain pack fired or did not fire.
+1. **Generic analysis never regresses.** `generic_tabular` runs the current unchanged `analyze_dataset()`. Any regression in the generic path is a bug, not an acceptable trade-off.
+2. **Confidence gate is strict.** The domain pack activates only at confidence ≥ 0.65. Below this, behaviour is identical to today.
+3. **Timeseries detected but deferred in V1.** `financial_markets_timeseries` is classified and the classification is surfaced to the user (via `dataset_summary.domain_context`), but the domain pack is not activated. The user knows we detected it; they get a note that OHLC-specific analysis is coming.
+4. **Domain insights augment generic insights.** Domain pack insights are prepended; generic detectors still run. Suppression removes only structurally meaningless generic output, not all generic output.
+5. **Matched signals are always visible.** `DatasetContext.matched_signals` and `.warnings` appear in the `dataset_summary` API response, making every classification auditable.
 
-### 9.2 Flag-Based Activation (Optional Safety Valve)
+### 9.2 Kill Switch
 
-If engineering requires a kill switch during initial rollout, a single boolean config flag `ENABLE_DATASET_INTELLIGENCE = True` can be added to `apps/api/app/config.py`. When `False`, `detect_dataset_context()` immediately returns `DatasetContext(dataset_type="generic_tabular", confidence=1.0, ...)` and the rest of the stack sees the generic path. This flag requires no code changes in any other file.
+A single boolean `ENABLE_DATASET_INTELLIGENCE = True` in `apps/api/app/config.py` allows instant rollback. When `False`, `detect_dataset_context()` returns `generic_tabular` immediately. No other file changes needed.
 
-This flag is optional. If the test suite passes and performance benchmarks are met, the flag is not needed.
+### 9.3 Phased Deployment
 
-### 9.3 Phased Rollout
+**Phase 0 — Inert deploy (no user-visible change):**  
+Deploy all new code with `CONFIDENCE_THRESHOLD = 1.01` (impossible to reach). Monitor for exceptions for several days.
 
-**Phase 0 — Foundation (no user-visible change)**  
-Deploy `dataset_context/` module and `analysis/domain/` registry. `detect_dataset_context()` is called in `analyze_dataset()` but domain pack is not activated (threshold set to 1.01, impossible to reach). Run in production for one week; monitor for exceptions.
+**Phase 1 — Suppression only (V1C):**  
+Lower threshold to 0.65. Activate suppression rules for snapshot datasets only. Domain pack insights not yet shown. Effect: Yahoo snapshot users stop seeing trivial return correlations. Generic users see no change.
 
-**Phase 1 — Financial Markets Suppression Only**  
-Lower threshold to 0.65. Activate suppression rules for `financial_markets` datasets only. Domain pack insights not yet included. Effect: OHLC users stop seeing trivial correlations. Generic users see no change. Monitor insight-count distribution.
+**Phase 2 — Full V1 (V1A through V1E):**  
+Enable domain pack insights, domain charts, and domain narrative. Monitor user feedback. Watch for false-positive snapshot detections on non-financial data.
 
-**Phase 2 — Financial Markets Domain Pack**  
-Enable the `FinancialMarketsInsightPack` detector output. Domain insights appear in ranked output. Monitor for user feedback on false-positive domain detections.
+**Phase 3 — V1.5:**  
+Activate `financial_markets_timeseries` domain pack (OHLC detectors, trading gap detection, volatility regime).
 
-**Phase 3 — Domain Chart Strategy and Narrative**  
-Enable domain-aware chart builder and narrative. Complete the financial markets experience. Gather feedback.
-
-**Phase 4 — V2 Planning**  
-Begin signal definition for `customer_churn` and `insurance` based on Phase 1-3 learnings.
+**Phase 4 — V2:**  
+Add `customer_churn` and `insurance` domain packs using the registry pattern already in place.
 
 ---
 
@@ -611,119 +678,102 @@ Begin signal definition for `customer_churn` and `insurance` based on Phase 1-3 
 
 Steps are ordered by dependency. Steps within the same group can be parallelised.
 
-### Group A: Schema and Detection Foundation
+### Group A — Schema and Signal Definitions
 
-- [ ] **A1.** Create `apps/api/app/services/dataset_context/schema.py`  
-  Define `DatasetContext` dataclass, `CONFIDENCE_THRESHOLD = 0.65`, `DATASET_TYPES` literal, and `SemanticRoles` type alias.
+- [ ] **A1.** Create `dataset_context/schema.py` — `DatasetContext` frozen dataclass, `CONFIDENCE_THRESHOLD`, `DATASET_TYPE` literals.
+- [ ] **A2.** Create `dataset_context/signals.py` — all `frozenset` name lists for each semantic role; `_normalise_col()` helper.
+- [ ] **A3.** Write unit tests for `_normalise_col()` and every frozenset membership check.
 
-- [ ] **A2.** Create `apps/api/app/services/dataset_context/signals.py`  
-  Define `OHLC_NAMES`, `VOLUME_NAMES`, `TICKER_NAMES`, `RETURN_NAMES` frozensets. Implement `_normalise_col_name()`, `_is_ohlc_group()`, `_is_trading_frequency()`, `_is_ticker_column()`.
+### Group B — Detector and Role Resolver (depends on A)
 
-- [ ] **A3.** Write unit tests for all signal functions in `signals.py`  
-  (Before writing detector — validates signal logic in isolation.)
+- [ ] **B1.** Create `dataset_context/detector.py` — `_has_datetime_column()`, `_score_snapshot()`, `_score_timeseries()`, `detect_dataset_context()`.
+- [ ] **B2.** Create `dataset_context/roles.py` — `_roles_snapshot()`, `_roles_generic()`, `resolve_semantic_roles()`.
+- [ ] **B3.** Create `dataset_context/__init__.py` — exports.
+- [ ] **B4.** Write unit tests: detection accuracy tests (§7.1 detector tests), semantic role tests (§7.1 role tests).
 
-### Group B: Detector and Role Resolver (depends on A)
+### Group C — Domain Pack Infrastructure (depends on B)
 
-- [ ] **B1.** Create `apps/api/app/services/dataset_context/detector.py`  
-  Implement `_score_financial_markets(df)` using signals from A2. Implement stub scorers for churn and insurance (return 0.0). Implement `detect_dataset_context(df)`.
+- [ ] **C1.** Create `analysis/domain/base.py` — abstract `DomainInsightPack` with `run()` and `suppression_keys()`.
+- [ ] **C2.** Create `analysis/domain/registry.py` — `DOMAIN_PACKS` dict, `get_domain_pack()`.
+- [ ] **C3.** Create `analysis/domain/__init__.py` — `run_domain_pack(df, ctx)` dispatcher.
 
-- [ ] **B2.** Create `apps/api/app/services/dataset_context/roles.py`  
-  Implement `_roles_financial_markets(df)` mapping each column to its semantic role. Implement `_roles_generic(df)` (all "unknown"). Implement `resolve_semantic_roles(df, ctx)` dispatcher.
+### Group D — Snapshot Finance Pack (depends on B, C)
 
-- [ ] **B3.** Create `apps/api/app/services/dataset_context/__init__.py`  
-  Export `DatasetContext`, `detect_dataset_context`, `resolve_semantic_roles`.
+- [ ] **D1.** Create `analysis/domain/snapshot_finance.py` — implement all 8 detectors.
+- [ ] **D2.** Register `SnapshotFinanceInsightPack` in `registry.py`.
+- [ ] **D3.** Write unit tests for all 8 detectors (§7.2).
 
-- [ ] **B4.** Write unit tests for detector and role resolver (`test_dataset_context.py`, detection and roles sections).
+### Group E — Ranking with Suppression (depends on B, D)
 
-### Group C: Domain Insight Pack (depends on B)
+- [ ] **E1.** Modify `analysis/ranking.py` — add `suppression_keys` parameter to `rank_insights()`.
+- [ ] **E2.** Implement suppression key sets in `snapshot_finance.py` (`suppression_keys()` method).
+- [ ] **E3.** Write unit tests for suppression (§7.3).
 
-- [ ] **C1.** Create `apps/api/app/services/analysis/domain/base.py`  
-  Define abstract `DomainInsightPack` with `run(df, roles) -> list[dict]`.
+### Group F — Orchestrator Integration (depends on B, D, E)
 
-- [ ] **C2.** Create `apps/api/app/services/analysis/domain/financial_markets.py`  
-  Implement all 5 detectors: volatility regime, volume-price divergence, return fat-tails, OHLC integrity, gap detection. Each returns a list of insight dicts conforming to the existing insight dict schema.
+- [ ] **F1.** Modify `analysis/orchestrator.py` — add optional `ctx` parameter; insert domain pack call and suppression.
+- [ ] **F2.** Write integration tests: snapshot end-to-end, generic unchanged baseline (§7.4).
 
-- [ ] **C3.** Create `apps/api/app/services/analysis/domain/registry.py`  
-  Map `"financial_markets"` → `FinancialMarketsInsightPack`. Stubs for future types.
+### Group G — Adapter, Charts, Narrative (depends on B; parallel with F)
 
-- [ ] **C4.** Create `apps/api/app/services/analysis/domain/__init__.py`  
-  Export `run_domain_pack(df, ctx) -> list[dict]`.
+- [ ] **G1.** Modify `insight_adapter.py` — add `dataset_context` parameter; domain caveat lookup table; mixed-asset caveat injection.
+- [ ] **G2.** Modify `charting/orchestrator.py` — add `dataset_context` parameter; implement 5 domain charts; apply suppression list.
+- [ ] **G3.** Modify `analysis/narrative.py` — add `dataset_context` parameter; implement 3-paragraph finance narrative template.
+- [ ] **G4.** Write integration tests: chart strategy (§7.4 chart tests), narrative content, adapter caveats.
 
-- [ ] **C5.** Write unit tests for all domain pack detectors (`test_financial_markets_pack.py`).
+### Group H — Validation
 
-### Group D: Ranking with Suppression (depends on B, C)
+- [ ] **H1.** Run full existing test suite. Assert zero regressions.
+- [ ] **H2.** Benchmark: `detect_dataset_context()` < 200ms on 1M-row DataFrame.
+- [ ] **H3.** Benchmark: full `analyze_dataset()` on 10k-row snapshot < baseline + 5s.
+- [ ] **H4.** Code review: verify all new parameters are optional with safe defaults; no caller broken.
 
-- [ ] **D1.** Modify `apps/api/app/services/analysis/ranking.py`  
-  Add optional `suppression_keys: set[tuple] = None` parameter to `rank_insights()`. Apply suppression filter before ranking sort.
+### Group I — Deployment
 
-- [ ] **D2.** Define suppression key sets for `financial_markets` (in `financial_markets.py` or `registry.py`).  
-  Include keys for all OHLC-OHLC correlation pairs and TA-TA correlations.
-
-- [ ] **D3.** Write unit tests for ranking with suppression (`test_domain_ranking.py`).
-
-### Group E: Orchestrator Integration (depends on B, C, D)
-
-- [ ] **E1.** Modify `apps/api/app/services/analysis/orchestrator.py`  
-  Add optional `ctx: DatasetContext | None = None` to `analyze_dataset()`. If ctx is None, call `detect_dataset_context(df)`. If `ctx.confidence >= CONFIDENCE_THRESHOLD` and domain pack exists, run domain pack, prepend insights, pass suppression keys to `rank_insights()`.
-
-- [ ] **E2.** Write integration test: OHLC DataFrame → `analyze_dataset()` → assert no OHLC-OHLC correlations, assert domain insights present.
-
-- [ ] **E3.** Write integration test: generic DataFrame → `analyze_dataset()` → assert output identical to pre-change baseline.
-
-### Group F: Adapter, Charts, Narrative (depends on B; parallel with E)
-
-- [ ] **F1.** Modify `apps/api/app/services/insight_adapter.py`  
-  Add optional `dataset_context: DatasetContext | None = None` to `build_insight_result()`. Inject domain caveats and override `chart_suggestion` for financial_markets roles.
-
-- [ ] **F2.** Modify `apps/api/app/services/charting/orchestrator.py`  
-  Add optional `dataset_context: DatasetContext | None = None` to `build_chart_data()`. When financial_markets: skip OHLC-OHLC scatters; suppress all-OHLC heatmap; add price timeseries, returns distribution, rolling volatility charts.
-
-- [ ] **F3.** Modify `apps/api/app/services/analysis/narrative.py`  
-  Add optional `dataset_context: DatasetContext | None = None` to `generate_narrative()`. When financial_markets: use domain narrative template.
-
-- [ ] **F4.** Write integration tests for F1, F2, F3 (adapter caveats, chart suppression, narrative domain mention).
-
-### Group G: Validation and Cleanup
-
-- [ ] **G1.** Run full existing test suite. Assert zero regressions.
-
-- [ ] **G2.** Run performance benchmark: `detect_dataset_context()` on 1M-row DataFrame must complete < 200ms.
-
-- [ ] **G3.** Run performance benchmark: full `analyze_dataset()` on a 500k-row OHLC DataFrame must not exceed baseline + 10s.
-
-- [ ] **G4.** Code review: verify all new parameters are optional with safe defaults; verify no existing caller is broken.
-
-- [ ] **G5.** Update `CLAUDE.md` / developer docs with the new `dataset_context/` module structure and how to add a future domain pack.
-
-### Group H: Deployment
-
-- [ ] **H1.** Deploy Phase 0 (threshold = 1.01, no activation). Monitor for one week.
-- [ ] **H2.** Deploy Phase 1 (suppression only). Monitor insight distribution.
-- [ ] **H3.** Deploy Phase 2 (full domain pack). Monitor for user feedback.
-- [ ] **H4.** Deploy Phase 3 (charts + narrative). Complete v1.
-- [ ] **H5.** Begin v2 signal definition based on learnings.
+- [ ] **I1.** Deploy Phase 0 (threshold = 1.01). Monitor.
+- [ ] **I2.** Deploy Phase 1 (suppression only). Monitor insight distribution.
+- [ ] **I3.** Deploy Phase 2 (full V1). Monitor for false positives and user feedback.
+- [ ] **I4.** Begin V1.5 planning (timeseries pack).
 
 ---
 
 ## Appendix A: Key Invariants
 
-1. `DatasetContext` is **immutable** (frozen dataclass). Once detected, it is passed through the pipeline without modification.
-2. `semantic_roles` covers every column in the DataFrame. No column is ever absent from the roles dict. Unknown columns get `"unknown"`, never `None` or missing key.
-3. `detect_dataset_context()` **never raises**. All exceptions are caught internally; on failure, the function returns `generic_tabular` with a warning in `DatasetContext.warnings`.
-4. Domain pack detectors **never raise to the caller**. Each detector wraps its logic in try/except and returns an empty list on failure.
-5. Suppression keys are applied **before** ranking, not after. A suppressed insight is gone from the ranked list, not just moved to the bottom.
-6. The `generic_tabular` fallback path is **the unchanged current code**. Any regression in the generic path is a bug, not an acceptable trade-off.
+1. `DatasetContext` is **immutable** (frozen dataclass). Passed through the pipeline without modification.
+2. `semantic_roles` covers every column. No column is absent. Unknown → `"unknown"`, never `None`.
+3. `detect_dataset_context()` **never raises**. Exceptions are caught; failure returns `generic_tabular` with a warning.
+4. Domain pack detectors **never raise to the caller**. Each wraps in try/except; returns empty list on failure.
+5. `financial_markets_timeseries` in V1 **always falls through to generic**. Detection fires, domain pack does not.
+6. Suppression is applied **before ranking**, not after. Suppressed insights are gone, not merely demoted.
+7. The `generic_tabular` fallback path is **the unchanged current code**. Any regression there is a bug.
 
-## Appendix B: Naming Conventions for New Insight Types
+---
 
-New insight types introduced by domain packs must be added to the `InsightCategory` Literal in `apps/api/app/schemas/insight.py`. V1 additions:
+## Appendix B: Scope Boundaries
 
-| New Type | Category Label |
-|---|---|
-| Volatility regime change | `"volatility_regime"` |
-| Volume-price divergence | `"volume_price_divergence"` |
-| Return fat-tails | `"distribution"` (reuse existing — fat-tail is a distribution finding) |
-| OHLC integrity violation | `"data_quality"` (reuse existing — it is a quality issue) |
-| Trading day gap | `"missing_pattern"` (reuse existing — gaps are missing data) |
+### In V1
 
-Reusing existing categories where semantically correct avoids schema changes and keeps the `InsightCategory` literal manageable.
+- `financial_markets_snapshot` detection and full domain pack
+- `financial_markets_timeseries` detection (stub only, no pack)
+- 8 snapshot insight detectors
+- 5 domain charts
+- Finance executive summary narrative
+- Domain caveats in InsightResult
+- Ranking suppression for structural correlations, composite scores, ID columns, fake trends
+
+### In V1.5
+
+- `financial_markets_timeseries` full domain pack (OHLC detectors, volatility regime, gap detection, momentum, volume-price divergence)
+
+### In V2
+
+- `customer_churn` domain pack
+- `insurance` domain pack
+
+### Never in scope
+
+- LLM-based column name inference
+- Real-time / streaming data
+- Frontend UI changes (domain label surfaced via existing `dataset_summary` field only)
+- Per-asset panel analysis for multi-ticker timeseries
+- Backtest or strategy analysis
