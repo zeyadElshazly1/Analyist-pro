@@ -21,6 +21,7 @@ from app.services.dataset_context import (
 )
 
 from .domain.registry import run_domain_pack
+from .insight_suppression import suppress_for_dataset_context
 
 from .budget import (
     MAX_CORR_COLS,
@@ -145,6 +146,8 @@ def analyze_dataset(df: pd.DataFrame) -> tuple[list[dict], str]:
             insights.extend(run_domain_pack(df, ctx))
     except Exception:
         logger.exception("Domain pack wiring failed; continuing without domain insights")
+
+    insights = suppress_for_dataset_context(insights, ctx)
 
     # ── Rank, deduplicate, cap ────────────────────────────────────────────────
     top_insights, total_found = rank_insights(insights)
