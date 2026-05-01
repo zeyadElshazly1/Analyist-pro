@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Any, Optional
 
 from app.db import get_db
 from app.middleware.auth import get_current_user
@@ -255,6 +255,140 @@ def preview_report(
 
 # ── Report Result builder ─────────────────────────────────────────────────────
 
+
+def _safe_json_list(raw: str | None) -> list[Any]:
+    """Parse a JSON Text column expecting a list; never raises."""
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return []
+    return data if isinstance(data, list) else []
+
+
+def _draft_selected_chart_ids_safe(draft: ReportDraft) -> list[Any]:
+    """``selected_chart_ids_json`` decoded as list — survives malformed payloads."""
+    return _safe_json_list(getattr(draft, "selected_chart_ids_json", None))
+
+
+def _chart_block_from_run(result_data: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Prefer the first non-empty canonical chart array on stored analysis."""
+    if not isinstance(result_data, dict):
+        return []
+    for key in ("charts", "chart_results", "suggested_charts", "chart_gallery"):
+        blk = result_data.get(key)
+        if isinstance(blk, list):
+            vals = [c for c in blk if isinstance(c, dict)]
+            if vals:
+                return vals
+    return []
+
+
+def _chart_catalog_by_id(charts: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    for ch in charts:
+        for field in ("chart_id", "id"):
+            cid = ch.get(field)
+            if isinstance(cid, str) and cid.strip():
+                key = cid.strip()
+                if key not in out:
+                    out[key] = ch
+                break
+    return out
+
+
+def _coerce_run_chart_meta(match: dict[str, Any] | None, *, fallback_title: str) -> tuple[str, str]:
+    if match:
+        t = match.get("title") or match.get("chart_title")
+        if isinstance(t, str) and t.strip():
+            title = t.strip()[:2048]
+        else:
+            title = fallback_title[:2048]
+        ct = match.get("chart_type") or match.get("type")
+        if isinstance(ct, str) and ct.strip():
+            ctype = ct.strip()[:255]
+        else:
+            ctype = "unknown"
+    else:
+        title, ctype = fallback_title[:2048], "unknown"
+    return title, ctype
+
+
+def _one_included_chart(
+    raw_item: Any,
+    *,
+    by_id: dict[str, dict[str, Any]],
+    ordered: list[dict[str, Any]],
+) -> tuple[str, str, str] | None:
+    """Resolve one selection slot to ``(chart_id, chart_type, title)`` or skip."""
+    if isinstance(raw_item, dict):
+        cid_raw = raw_item.get("chart_id")
+        if cid_raw is None:
+            cid_raw = raw_item.get("id")
+        if isinstance(cid_raw, float) and cid_raw == int(cid_raw):
+            cid_raw = str(int(cid_raw))
+        elif isinstance(cid_raw, int):
+            cid_raw = str(cid_raw)
+        cid = cid_raw.strip() if isinstance(cid_raw, str) else ""
+        if not cid:
+            return None
+        match = by_id.get(cid)
+        title, ctype_def = _coerce_run_chart_meta(match, fallback_title=cid)
+        ct_override = raw_item.get("chart_type") or raw_item.get("type")
+        if isinstance(ct_override, str) and ct_override.strip():
+            ctype = ct_override.strip()[:255]
+        else:
+            ctype = ctype_def
+        t_override = raw_item.get("title") or raw_item.get("chart_title")
+        if isinstance(t_override, str) and t_override.strip():
+            title = t_override.strip()[:2048]
+        return (cid[:512], ctype, title)
+
+    if isinstance(raw_item, str) and raw_item.strip():
+        cid = raw_item.strip()[:512]
+        match = by_id.get(cid)
+        title, ctype = _coerce_run_chart_meta(match, fallback_title=cid)
+        return (cid, ctype, title)
+
+    if isinstance(raw_item, int) and ordered and raw_item >= 0 and raw_item < len(ordered):
+        ch = ordered[raw_item]
+        cid_inner: str | None = None
+        for field in ("chart_id", "id"):
+            v = ch.get(field)
+            if isinstance(v, str) and v.strip():
+                cid_inner = v.strip()
+                break
+        cid = cid_inner if cid_inner else f"idx_{raw_item}"
+        title, ctype = _coerce_run_chart_meta(ch, fallback_title=cid)
+        return (cid[:512], ctype, title)
+
+    return None
+
+
+def _build_included_charts_list(draft: ReportDraft, result_data: dict[str, Any] | None) -> list:
+    """Map draft.chart selection (+ optional persisted run chart payloads) to IncludedChart."""
+    from app.schemas.report import IncludedChart
+
+    selected = _draft_selected_chart_ids_safe(draft)
+    if not selected:
+        return []
+    ordered = _chart_block_from_run(result_data)
+    by_id = _chart_catalog_by_id(ordered)
+    out: list[IncludedChart] = []
+    seen: set[str] = set()
+    for slot in selected:
+        row = _one_included_chart(slot, by_id=by_id, ordered=ordered)
+        if row is None:
+            continue
+        cid, ctype, title = row
+        if cid in seen:
+            continue
+        seen.add(cid)
+        out.append(IncludedChart(chart_id=cid, chart_type=ctype, title=title))
+    return out
+
+
 def _build_report_result(draft: ReportDraft, db: Session) -> dict:
     """
     Assemble a canonical ReportResult from a draft, linked analysis, and audit log.
@@ -269,6 +403,7 @@ def _build_report_result(draft: ReportDraft, db: Session) -> dict:
     # the draft's project, so a tampered draft can never pull data from an
     # analysis owned by a different project.
     included_insights: list[IncludedInsight] = []
+    result_for_charts: dict[str, Any] | None = None
     if draft.analysis_result_id:
         analysis = (
             db.query(AnalysisResult)
@@ -281,6 +416,7 @@ def _build_report_result(draft: ReportDraft, db: Session) -> dict:
         if analysis:
             try:
                 result_data = json.loads(analysis.result_json)
+                result_for_charts = result_data
                 raw = result_data.get("insight_results") or result_data.get("insights") or []
                 # Resolve stable IDs (preferred) and legacy integer indices
                 # against the same insight list the export will render, so
@@ -300,6 +436,8 @@ def _build_report_result(draft: ReportDraft, db: Session) -> dict:
                     ))
             except Exception:
                 pass
+
+    included_charts = _build_included_charts_list(draft, result_for_charts)
 
     # Default section list — all included; compare_summary excluded unless compare ran
     _SECTIONS = [
@@ -342,7 +480,7 @@ def _build_report_result(draft: ReportDraft, db: Session) -> dict:
         template=draft.template,     # type: ignore[arg-type]
         included_sections=included_sections,
         included_insights=included_insights,
-        included_charts=[],          # chart resolution deferred to V2
+        included_charts=included_charts,
         user_edits=[],               # edit history not persisted in V1
         ai_generated_sections=["executive_summary"],
         export_statuses=export_statuses,
@@ -361,7 +499,7 @@ def _draft_response(draft: ReportDraft, db: Session) -> dict:
         "title": draft.title,
         "summary": draft.summary,
         "selected_insight_ids": draft.selected_insights,
-        "selected_chart_ids": draft.selected_charts,
+        "selected_chart_ids": _draft_selected_chart_ids_safe(draft),
         "template": draft.template,
         "created_at": draft.created_at.isoformat() if draft.created_at else None,
         "updated_at": draft.updated_at.isoformat() if draft.updated_at else None,

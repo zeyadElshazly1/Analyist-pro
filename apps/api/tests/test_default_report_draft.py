@@ -126,8 +126,7 @@ def test_get_draft_auto_creates_when_analysis_exists(client, uploaded_project, a
     rr = data["report_result"]
     assert len(rr["included_sections"]) >= 1
     assert len(rr["included_insights"]) >= 1
-
-    db = TestingSessionLocal()
+    assert rr["included_charts"] == []
     try:
         n = db.query(ReportDraft).filter(ReportDraft.project_id == pid).count()
         assert n == 1
@@ -190,7 +189,99 @@ def test_get_draft_auto_create_uses_finance_aware_insight_order(client, project,
 
     r = client.get(f"/reports/draft/{pid}", headers=auth_headers)
     assert r.status_code == 200, r.text
-    assert r.json()["selected_insight_ids"] == ["id_top", "id_lag", "id_vol"]
+    data = r.json()
+    assert data["selected_insight_ids"] == ["id_top", "id_lag", "id_vol"]
+    assert data["report_result"]["included_charts"] == []
+
+
+def test_get_draft_populates_included_charts_from_selection_and_run(client, project, auth_headers):
+    pid = project["id"]
+    result_body = {
+        "narrative": "",
+        "insight_results": [
+            {"title": "Finding A", "insight_id": "a", "severity": "high", "report_safe": True},
+            {"title": "Finding B", "insight_id": "b", "severity": "medium", "report_safe": True},
+            {"title": "Finding C", "insight_id": "c", "severity": "low", "report_safe": True},
+        ],
+        "charts": [
+            {"chart_id": "chg_1", "type": "bar", "title": "Revenue by segment"},
+        ],
+        "dataset_summary": {"rows": 3, "columns": 2},
+        "health_score": {"total": 80},
+    }
+    db = TestingSessionLocal()
+    try:
+        run = AnalysisResult(
+            project_id=pid,
+            file_hash="chart-catalog-hash",
+            result_json=json.dumps(result_body),
+            status="report_ready",
+        )
+        db.add(run)
+        db.commit()
+        db.add(
+            ReportDraft(
+                project_id=pid,
+                analysis_result_id=run.id,
+                title="T",
+                summary="S",
+                selected_insight_ids_json=json.dumps(["a"]),
+                selected_chart_ids_json=json.dumps(["chg_1", "missing_id"]),
+            ),
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.get(f"/reports/draft/{pid}", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    payload = r.json()
+    assert payload["selected_chart_ids"] == ["chg_1", "missing_id"]
+    charts = payload["report_result"]["included_charts"]
+    assert len(charts) == 2
+    by_id = {c["chart_id"]: c for c in charts}
+    assert by_id["chg_1"]["chart_type"] == "bar"
+    assert by_id["chg_1"]["title"] == "Revenue by segment"
+    assert by_id["missing_id"]["chart_type"] == "unknown"
+    assert by_id["missing_id"]["title"] == "missing_id"
+
+
+def test_get_draft_survives_malformed_selected_chart_ids_json(client, project, auth_headers):
+    pid = project["id"]
+    result_body = {
+        "insight_results": [{"insight_id": "x", "title": "Only", "severity": "high", "report_safe": True}],
+        "dataset_summary": {"rows": 1, "columns": 1},
+        "health_score": {"total": 50},
+    }
+    db = TestingSessionLocal()
+    try:
+        run = AnalysisResult(
+            project_id=pid,
+            file_hash="mal-chart-json",
+            result_json=json.dumps(result_body),
+            status="report_ready",
+        )
+        db.add(run)
+        db.commit()
+        db.add(
+            ReportDraft(
+                project_id=pid,
+                analysis_result_id=run.id,
+                title="T",
+                summary="S",
+                selected_insight_ids_json=json.dumps(["x"]),
+                selected_chart_ids_json="<<<not-json>>>",
+            ),
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.get(f"/reports/draft/{pid}", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["selected_chart_ids"] == []
+    assert data["report_result"]["included_charts"] == []
 
 
 def test_get_draft_still_null_without_analysis(client, project, auth_headers):

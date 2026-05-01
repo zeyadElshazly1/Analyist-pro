@@ -101,7 +101,12 @@ class IncludedInsight(BaseModel):
 
 
 class IncludedChart(BaseModel):
-    """A reference to one chart selected for report inclusion."""
+    """A reference to one chart selected for report inclusion.
+
+    ``routes.reports._build_included_charts_list`` builds instances from
+    ``ReportDraft.selected_chart_ids_json``, optionally enriching type/title from
+    persisted analysis ``charts`` / ``chart_results`` / similar arrays when present.
+    """
     chart_id: str = Field(
         description="Unique identifier for the chart within the analysis run.",
     )
