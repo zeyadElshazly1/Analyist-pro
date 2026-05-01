@@ -18,9 +18,13 @@ nonlinear relationships surface alongside linear ones.
 Data generation is vectorized (no iterrows()) for performance on large datasets.
 """
 import re
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from itertools import combinations
+
+from app.services.dataset_context import detect_dataset_context
+from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT
 
 from .budget import (
     MAX_TIMESERIES_DATES,
@@ -44,6 +48,9 @@ from .payloads import (
 from .payloads import build_binary_bar_payload  # noqa: F401 (re-export for tests)
 from .quality_gates import datetime_axis_suitable_for_line_chart
 from .ranker import rank_and_cap
+
+if TYPE_CHECKING:
+    from app.services.dataset_context.schema import DatasetContext
 
 # Semantic types that identify a column as an identifier/key field.
 # Columns with these types are excluded from all chart generation.
@@ -114,7 +121,7 @@ def _is_id_col(
     return unique_count / n_rows >= 0.9 and unique_count > 20
 
 
-def build_chart_data(df: pd.DataFrame) -> list[dict]:
+def build_chart_data(df: pd.DataFrame, dataset_context: "DatasetContext | None" = None) -> list[dict]:
     """
     Return a list of chart payload dicts (up to MAX_CHARTS) sorted by score.
 
@@ -132,7 +139,17 @@ def build_chart_data(df: pd.DataFrame) -> list[dict]:
       normality badges or skewness language.
     • Continuous numeric columns go through the histogram / scatter / heatmap path.
     • String/category columns go through the categorical bar / pie path.
+
+    financial_markets_snapshot datasets use domain-aware cross-section charts
+    (returns, volatility, risk–return scatter) instead of misleading price
+    pseudo time-series charts (Task 74A).
     """
+    ctx = dataset_context if dataset_context is not None else detect_dataset_context(df)
+    if ctx.dataset_type == FINANCIAL_MARKETS_SNAPSHOT:
+        from app.services.chart_suggestions import build_financial_snapshot_charts
+
+        return rank_and_cap(build_financial_snapshot_charts(df, ctx))
+
     charts: list[dict] = []
 
     # ── Semantic type map (best-effort; silently ignored if unavailable) ──────
