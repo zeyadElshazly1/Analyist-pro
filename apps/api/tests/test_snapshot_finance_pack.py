@@ -74,8 +74,106 @@ def _full_roles_with_asset_class() -> dict[str, str]:
     }
 
 
+def _full_df_with_sector_and_asset_class() -> pd.DataFrame:
+    base = _full_df_with_asset_class().copy()
+    base["sector"] = ["Technology"] * 3 + ["Energy"] * 3 + ["Healthcare"] * 3
+    return base
+
+
+def _full_roles_with_sector_and_asset_class() -> dict[str, str]:
+    r = dict(_full_roles_with_asset_class())
+    r["sector"] = "sector"
+    return r
+
+
 def test_pack_registered_for_snapshot():
     assert isinstance(get_domain_pack(FINANCIAL_MARKETS_SNAPSHOT), SnapshotFinanceInsightPack)
+
+
+def test_run_returns_six_insights_when_sector_asset_class_and_full_metrics_present():
+    pack = SnapshotFinanceInsightPack()
+    insights = pack.run(
+        _full_df_with_sector_and_asset_class(),
+        _context(_full_roles_with_sector_and_asset_class()),
+    )
+    assert len(insights) == 6
+    assert {i["title"] for i in insights} == {
+        "Top return leaders",
+        "Largest return laggards",
+        "Highest volatility assets",
+        "Best risk-adjusted performers",
+        "Asset classes show different return profiles",
+        "Sectors show different return profiles",
+    }
+
+
+def test_sector_comparison_insight_present():
+    pack = SnapshotFinanceInsightPack()
+    insights = pack.run(
+        _full_df_with_sector_and_asset_class(),
+        _context(_full_roles_with_sector_and_asset_class()),
+    )
+    assert "Sectors show different return profiles" in {i["title"] for i in insights}
+
+
+def test_sector_comparison_names_top_and_bottom_sectors():
+    pack = SnapshotFinanceInsightPack()
+    insights = pack.run(
+        _full_df_with_sector_and_asset_class(),
+        _context(_full_roles_with_sector_and_asset_class()),
+    )
+    sec = next(i for i in insights if i["title"] == "Sectors show different return profiles")
+    assert "Technology" in sec["finding"] and "Energy" in sec["finding"]
+    assert "1Y return" in sec["finding"]
+
+
+def test_sector_evidence_includes_columns_and_group_structures():
+    pack = SnapshotFinanceInsightPack()
+    insights = pack.run(
+        _full_df_with_sector_and_asset_class(),
+        _context(_full_roles_with_sector_and_asset_class()),
+    )
+    ev = next(i for i in insights if i["title"] == "Sectors show different return profiles")["evidence"]
+    assert ev["selected_sector_column"] == "sector"
+    assert len(ev["top_groups"]) >= 2
+    assert isinstance(ev["bottom_group"], dict)
+    assert "sector" in ev["bottom_group"]
+    assert ev["group_count"] >= 2
+
+
+def test_no_sector_insight_when_sector_role_missing():
+    pack = SnapshotFinanceInsightPack()
+    roles = {k: v for k, v in _full_roles_with_sector_and_asset_class().items() if k != "sector"}
+    insights = pack.run(_full_df_with_sector_and_asset_class(), _context(roles))
+    assert "Sectors show different return profiles" not in {i["title"] for i in insights}
+    assert len(insights) == 5
+
+
+def test_no_sector_insight_when_return_period_role_missing():
+    pack = SnapshotFinanceInsightPack()
+    roles = {k: v for k, v in _full_roles_with_sector_and_asset_class().items() if k != "return_1y_pct"}
+    insights = pack.run(_full_df_with_sector_and_asset_class(), _context(roles))
+    assert "Sectors show different return profiles" not in {i["title"] for i in insights}
+    assert {i["title"] for i in insights} == {
+        "Highest volatility assets",
+        "Best risk-adjusted performers",
+    }
+
+
+def test_no_sector_insight_when_fewer_than_two_qualified_sector_groups():
+    pack = SnapshotFinanceInsightPack()
+    df = pd.DataFrame(
+        {
+            "ticker": ["A", "B", "C", "D", "E"],
+            "sector": ["Technology", "Technology", "Technology", "Technology", "Energy"],
+            "asset_class": ["Crypto"] * 5,
+            "return_1y_pct": [0.10, 0.11, 0.12, 0.13, 0.02],
+            "volatility_1y_ann": [0.2, 0.21, 0.22, 0.23, 0.15],
+            "sharpe_1y": [1.0, 1.1, 1.2, 1.3, 0.5],
+        }
+    )
+    insights = pack.run(df, _context(_full_roles_with_sector_and_asset_class()))
+    assert "Sectors show different return profiles" not in {i["title"] for i in insights}
 
 
 def test_run_returns_two_insights_when_only_return_columns_present():
@@ -285,6 +383,7 @@ def test_all_insights_include_required_fields():
     for df, roles in (
         (_full_df(), _full_roles()),
         (_full_df_with_asset_class(), _full_roles_with_asset_class()),
+        (_full_df_with_sector_and_asset_class(), _full_roles_with_sector_and_asset_class()),
     ):
         insights = pack.run(df, _context(roles))
         assert insights
@@ -297,6 +396,7 @@ def test_no_buy_or_sell_language():
     for df, roles in (
         (_full_df(), _full_roles()),
         (_full_df_with_asset_class(), _full_roles_with_asset_class()),
+        (_full_df_with_sector_and_asset_class(), _full_roles_with_sector_and_asset_class()),
     ):
         insights = pack.run(df, _context(roles))
         combined = " ".join(

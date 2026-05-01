@@ -1,7 +1,7 @@
 """
 Insight pack for financial markets snapshot datasets (cross-section of assets).
 
-Includes return movers, volatility concentration, risk-adjusted leaders, and asset-class contrasts.
+Includes return movers, volatility concentration, risk-adjusted leaders, asset-class and sector contrasts.
 """
 from __future__ import annotations
 
@@ -57,6 +57,7 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
             self._detect_volatility_leaders,
             self._detect_sharpe_leaders,
             self._detect_asset_class_return_comparison,
+            self._detect_sector_return_comparison,
         ):
             try:
                 insights.extend(detector(df, context))
@@ -325,6 +326,79 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
             }
         ]
 
+    def _detect_sector_return_comparison(self, df: pd.DataFrame, context: DatasetContext) -> list[dict]:
+        selected_return_col = _select_return_column(df, context)
+        sector_col = _select_sector_column(df, context)
+        if not selected_return_col or not sector_col:
+            return []
+
+        work = df[[sector_col, selected_return_col]].copy()
+        work["_ret"] = pd.to_numeric(work[selected_return_col], errors="coerce")
+        work["_sec"] = work[sector_col].map(_stringify_sector)
+        work = work.dropna(subset=["_ret", "_sec"])
+        if work.empty:
+            return []
+
+        scale = _detect_percent_scale(work["_ret"])
+
+        grp = work.groupby("_sec", sort=False, observed=True)["_ret"]
+        agg = grp.agg(count="count", mean="mean", median="median")
+        qualified = agg[agg["count"] >= 3].copy()
+        if qualified.shape[0] < 2:
+            return []
+
+        ranked = qualified.sort_values("mean", ascending=False)
+        top_name = ranked.index[0]
+        bottom_name = ranked.index[-1]
+        top_avg = float(ranked.iloc[0]["mean"])
+        bottom_avg = float(ranked.iloc[-1]["mean"])
+
+        metric_label = _readable_return_metric_label(selected_return_col)
+        finding = (
+            f"Average {metric_label} varies by sector: {top_name} leads at "
+            f"{_format_percent(top_avg, scale)}, while {bottom_name} trails at "
+            f"{_format_percent(bottom_avg, scale)}."
+        )
+
+        def _group_row(sec_name: object) -> dict:
+            row = ranked.loc[sec_name]
+            return {
+                "sector": str(sec_name),
+                "count": int(row["count"]),
+                "average_return": _format_percent(float(row["mean"]), scale),
+                "median_return": _format_percent(float(row["median"]), scale),
+            }
+
+        head3 = [_group_row(ix) for ix in ranked.head(3).index]
+        bottom_row = _group_row(bottom_name)
+
+        return [
+            {
+                "type": "segment",
+                "title": "Sectors show different return profiles",
+                "finding": finding,
+                "severity": "medium",
+                "confidence": 82,
+                "evidence": {
+                    "selected_return_column": selected_return_col,
+                    "selected_sector_column": sector_col,
+                    "group_count": int(qualified.shape[0]),
+                    "top_groups": head3,
+                    "bottom_group": bottom_row,
+                    "valid_row_count": int(work.shape[0]),
+                },
+                "action": (
+                    "Compare assets within the same sector before drawing conclusions from broad return differences."
+                ),
+                "why_it_matters": (
+                    "Sector grouping captures shared industry exposures, so return dispersion across sectors "
+                    "often reflects structural winners and laggards rather than individual issuer stories alone."
+                ),
+                "columns_used": [selected_return_col, sector_col],
+                "domain": FINANCIAL_MARKETS_SNAPSHOT,
+            }
+        ]
+
 
 def _select_return_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
     return_cols = [
@@ -377,6 +451,13 @@ def _select_asset_class_column(df: pd.DataFrame, context: DatasetContext) -> str
     return None
 
 
+def _select_sector_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
+    for col, role in context.semantic_roles.items():
+        if role == "sector" and col in df.columns:
+            return col
+    return None
+
+
 def _select_label_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
     for col, role in context.semantic_roles.items():
         if role == "asset_label" and col in df.columns:
@@ -410,6 +491,11 @@ def _stringify_asset_class(value: object) -> str | None:
     if not text or text.lower() in {"nan", "none", "<na>"}:
         return None
     return text
+
+
+def _stringify_sector(value: object) -> str | None:
+    """Clean sector bucket labels using the same rules as asset class grouping."""
+    return _stringify_asset_class(value)
 
 
 def _readable_return_metric_label(column_name: str) -> str:
