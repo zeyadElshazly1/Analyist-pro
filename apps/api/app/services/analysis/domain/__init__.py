@@ -9,13 +9,13 @@ get_suppression_keys(context)     Return ranking suppression keys.
 
 DomainInsightPack                 Base class for all domain packs.
 DOMAIN_PACKS                      Registry dict (dataset_type → pack instance).
-SnapshotFinancePlaceholderPack    V1 placeholder for financial_markets_snapshot.
+SnapshotFinanceInsightPack        Domain pack for financial_markets_snapshot.
 """
 
 from .base import DomainInsightPack
+from .snapshot_finance import SnapshotFinanceInsightPack
 from .registry import (
     DOMAIN_PACKS,
-    SnapshotFinancePlaceholderPack,
     get_domain_pack,
     get_suppression_keys,
     run_domain_pack,
@@ -24,7 +24,7 @@ from .registry import (
 __all__ = [
     "DomainInsightPack",
     "DOMAIN_PACKS",
-    "SnapshotFinancePlaceholderPack",
+    "SnapshotFinanceInsightPack",
     "get_domain_pack",
     "get_suppression_keys",
     "run_domain_pack",
