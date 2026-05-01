@@ -1,7 +1,7 @@
 """
 Insight pack for financial markets snapshot datasets (cross-section of assets).
 
-V1 exposes return leaders/laggards only; additional detectors belong in future tasks.
+Includes return movers, volatility concentration, and risk-adjusted (Sharpe) leaders.
 """
 from __future__ import annotations
 
@@ -33,13 +33,30 @@ _RETURN_PRIORITY_GROUPS: list[frozenset[str]] = [
     frozenset({"return1mpct", "1mreturn", "ret1m", "perf1m", "performance1m"}),
 ]
 
+_VOLATILITY_PRIORITY_GROUPS: list[frozenset[str]] = [
+    frozenset({"volatility1yann", "volatility1y", "vol1y"}),
+    frozenset({"volatility90dann", "volatility90d", "vol90d"}),
+    frozenset({"volatility30dann", "volatility30d", "vol30d"}),
+]
+
+_SHARPE_PRIORITY_GROUPS: list[frozenset[str]] = [
+    frozenset({"sharpe1y"}),
+    frozenset({"sharperatio"}),
+    frozenset({"sharpe"}),
+]
+
 
 class SnapshotFinanceInsightPack(DomainInsightPack):
     dataset_type = FINANCIAL_MARKETS_SNAPSHOT
 
     def run(self, df: pd.DataFrame, context: DatasetContext) -> list[dict]:
         insights: list[dict] = []
-        for detector in (self._detect_return_leaders, self._detect_return_laggards):
+        for detector in (
+            self._detect_return_leaders,
+            self._detect_return_laggards,
+            self._detect_volatility_leaders,
+            self._detect_sharpe_leaders,
+        ):
             try:
                 insights.extend(detector(df, context))
             except Exception:
@@ -58,8 +75,7 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
 
         scale = _detect_percent_scale(valid)
         label_col = _select_label_column(df, context)
-        top_idx = valid.nlargest(3).index
-        top_named = [(_label_for_row(df, idx, label_col), float(valid.loc[idx])) for idx in top_idx]
+        top_named = _named_extremes(df, valid, label_col, k=3, largest=True)
 
         finding = "Top 3 outperformance candidates to flag for review: " + ", ".join(
             f"{name} ({_format_percent(value, scale)})" for name, value in top_named
@@ -107,8 +123,7 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
 
         scale = _detect_percent_scale(valid)
         label_col = _select_label_column(df, context)
-        bottom_idx = valid.nsmallest(3).index
-        bottom_named = [(_label_for_row(df, idx, label_col), float(valid.loc[idx])) for idx in bottom_idx]
+        bottom_named = _named_extremes(df, valid, label_col, k=3, largest=False)
 
         finding = "Bottom 3 names showing downside pressure to flag for review: " + ", ".join(
             f"{name} ({_format_percent(value, scale)})" for name, value in bottom_named
@@ -144,6 +159,100 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
             }
         ]
 
+    def _detect_volatility_leaders(self, df: pd.DataFrame, context: DatasetContext) -> list[dict]:
+        volatility_col = _select_volatility_column(df, context)
+        if not volatility_col:
+            return []
+
+        values = pd.to_numeric(df[volatility_col], errors="coerce")
+        valid = values.dropna()
+        if valid.shape[0] < 3:
+            return []
+
+        scale = _detect_percent_scale(valid)
+        label_col = _select_label_column(df, context)
+        top_named = _named_extremes(df, valid, label_col, k=3, largest=True)
+
+        finding = "Top 3 volatility names to flag for review: " + ", ".join(
+            f"{name} ({_format_percent(value, scale)})" for name, value in top_named
+        ) + "."
+
+        columns_used = _columns_used(volatility_col, label_col)
+
+        return [
+            {
+                "type": "concentration",
+                "title": "Highest volatility assets",
+                "finding": finding,
+                "severity": "medium",
+                "confidence": 82,
+                "evidence": {
+                    "selected_volatility_column": volatility_col,
+                    "top_values": [
+                        {"asset": name, "volatility": _format_percent(value, scale)}
+                        for name, value in top_named
+                    ],
+                    "median_volatility": _format_percent(float(valid.median()), scale),
+                    "valid_row_count": int(valid.shape[0]),
+                },
+                "action": (
+                    "Review high-volatility assets separately from lower-risk assets before comparing returns."
+                ),
+                "why_it_matters": (
+                    "Volatility leaders can indicate risk concentration and less stable return profiles "
+                    "that deserve separate screening."
+                ),
+                "columns_used": columns_used,
+                "domain": FINANCIAL_MARKETS_SNAPSHOT,
+            }
+        ]
+
+    def _detect_sharpe_leaders(self, df: pd.DataFrame, context: DatasetContext) -> list[dict]:
+        sharpe_col = _select_sharpe_column(df, context)
+        if not sharpe_col:
+            return []
+
+        values = pd.to_numeric(df[sharpe_col], errors="coerce")
+        valid = values.dropna()
+        if valid.shape[0] < 3:
+            return []
+
+        label_col = _select_label_column(df, context)
+        top_named = _named_extremes(df, valid, label_col, k=3, largest=True)
+
+        finding = "Top 3 risk-adjusted performers to flag for review: " + ", ".join(
+            f"{name} ({_format_number(value)})" for name, value in top_named
+        ) + "."
+
+        columns_used = _columns_used(sharpe_col, label_col)
+
+        return [
+            {
+                "type": "segment",
+                "title": "Best risk-adjusted performers",
+                "finding": finding,
+                "severity": "medium",
+                "confidence": 84,
+                "evidence": {
+                    "selected_sharpe_column": sharpe_col,
+                    "top_values": [
+                        {"asset": name, "sharpe": _format_number(value)} for name, value in top_named
+                    ],
+                    "valid_row_count": int(valid.shape[0]),
+                },
+                "action": (
+                    "Use Sharpe leaders as a starting point, then verify annualisation, volatility, "
+                    "and asset-class comparability."
+                ),
+                "why_it_matters": (
+                    "Sharpe helps compare return relative to risk so high-ranked names can be screened "
+                    "on a risk-adjusted basis."
+                ),
+                "columns_used": columns_used,
+                "domain": FINANCIAL_MARKETS_SNAPSHOT,
+            }
+        ]
+
 
 def _select_return_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
     return_cols = [
@@ -160,6 +269,33 @@ def _select_return_column(df: pd.DataFrame, context: DatasetContext) -> str | No
             if norm in priority_group:
                 return col
     return return_cols[0]
+
+
+def _select_by_role_with_priority(
+    df: pd.DataFrame,
+    context: DatasetContext,
+    role: str,
+    priority_groups: list[frozenset[str]],
+) -> str | None:
+    cols = [
+        col for col, r in context.semantic_roles.items() if r == role and col in df.columns
+    ]
+    if not cols:
+        return None
+    normalized = {col: _normalise_col(col) for col in cols}
+    for group in priority_groups:
+        for col, norm in normalized.items():
+            if norm in group:
+                return col
+    return cols[0]
+
+
+def _select_volatility_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
+    return _select_by_role_with_priority(df, context, "volatility", _VOLATILITY_PRIORITY_GROUPS)
+
+
+def _select_sharpe_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
+    return _select_by_role_with_priority(df, context, "sharpe_ratio", _SHARPE_PRIORITY_GROUPS)
 
 
 def _select_label_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
@@ -187,6 +323,18 @@ def _label_for_row(df: pd.DataFrame, idx: object, label_col: str | None) -> str:
     return str(idx)
 
 
+def _named_extremes(
+    df: pd.DataFrame,
+    valid: pd.Series,
+    label_col: str | None,
+    *,
+    k: int,
+    largest: bool,
+) -> list[tuple[str, float]]:
+    ranked = valid.nlargest(k) if largest else valid.nsmallest(k)
+    return [(_label_for_row(df, idx, label_col), float(ranked.loc[idx])) for idx in ranked.index]
+
+
 def _columns_used(primary_col: str, label_col: str | None) -> list[str]:
     out = [primary_col]
     if label_col is not None:
@@ -205,4 +353,8 @@ def _detect_percent_scale(valid: pd.Series) -> str:
 def _format_percent(value: float, scale: str) -> str:
     pct = value * 100.0 if scale == "decimal" else value
     return f"{pct:.1f}%"
+
+
+def _format_number(value: float) -> str:
+    return f"{value:.2f}"
 
