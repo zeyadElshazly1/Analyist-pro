@@ -9,10 +9,18 @@ Public API (backward-compatible with app.services.analyzer):
     generate_executive_panel(insights) -> dict
     get_dataset_summary(df)         -> dict
 """
+import logging
+
 import numpy as np
 import pandas as pd
 
-from app.services.dataset_context import detect_dataset_context
+from app.services.dataset_context import (
+    CONFIDENCE_THRESHOLD,
+    FINANCIAL_MARKETS_SNAPSHOT,
+    detect_dataset_context,
+)
+
+from .domain.registry import run_domain_pack
 
 from .budget import (
     MAX_CORR_COLS,
@@ -42,6 +50,9 @@ from .narrative import _detect_domain, _enrich_insight, generate_narrative
 from .ranking import rank_insights
 
 
+logger = logging.getLogger(__name__)
+
+
 def analyze_dataset(df: pd.DataFrame) -> tuple[list[dict], str]:
     """
     Run the full insight detection pipeline and return (insights, narrative).
@@ -55,6 +66,8 @@ def analyze_dataset(df: pd.DataFrame) -> tuple[list[dict], str]:
         if "id" in col.lower() and df[col].nunique() / max(len(df), 1) > 0.95
     ]
     df = df.drop(columns=id_cols, errors="ignore")
+
+    ctx = detect_dataset_context(df)
 
     # ── Column lists ──────────────────────────────────────────────────────────
     all_numeric = df.select_dtypes(include=[np.number]).columns.tolist()
@@ -122,6 +135,16 @@ def analyze_dataset(df: pd.DataFrame) -> tuple[list[dict], str]:
 
     # 9. Trends (datetime only — no row-order fallback)
     insights += detect_trends(df, trend_cols)
+
+    # 10. Domain-specific insights (financial snapshot, when confidently detected)
+    try:
+        if (
+            ctx.dataset_type == FINANCIAL_MARKETS_SNAPSHOT
+            and ctx.confidence >= CONFIDENCE_THRESHOLD
+        ):
+            insights.extend(run_domain_pack(df, ctx))
+    except Exception:
+        logger.exception("Domain pack wiring failed; continuing without domain insights")
 
     # ── Rank, deduplicate, cap ────────────────────────────────────────────────
     top_insights, total_found = rank_insights(insights)
