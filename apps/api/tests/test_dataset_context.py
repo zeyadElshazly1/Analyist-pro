@@ -1,5 +1,5 @@
 """
-Tests for the dataset_context schema and signal definitions.
+Tests for the dataset_context schema, signal definitions, and detector.
 
 Coverage:
   - DatasetContext dataclass construction and immutability
@@ -9,9 +9,13 @@ Coverage:
   - role_for_column maps canonical Yahoo snapshot column names correctly
   - role_for_column returns "unknown" for unrecognised columns
   - frozensets are non-empty and contain only strings
+  - detect_dataset_context classification (snapshot / timeseries / generic)
+  - resolve_semantic_roles covers every column
 """
 from __future__ import annotations
 
+import numpy as np
+import pandas as pd
 import pytest
 
 from app.services.dataset_context import (
@@ -23,6 +27,8 @@ from app.services.dataset_context import (
     generic_tabular_context,
     _normalise_col,
     role_for_column,
+    detect_dataset_context,
+    resolve_semantic_roles,
     RETURN_NAMES,
     VOLATILITY_NAMES,
     SHARPE_NAMES,
@@ -352,3 +358,286 @@ class TestSignalFrozensets:
         # "close", "open" etc. must not be misclassified as returns
         assert "close" not in RETURN_NAMES
         assert "open" not in RETURN_NAMES
+
+
+# ── Detector fixtures ─────────────────────────────────────────────────────────
+
+def _yahoo_snapshot_df(n: int = 50) -> pd.DataFrame:
+    """
+    Canonical Yahoo Finance global markets snapshot shape.
+
+    Columns: ticker, shortName, asset_class, sector, ytd_return,
+    one_year_return, volatility, sharpe_ratio, analyst_upside_pct,
+    week_52_position, composite_score, marketCap.
+    """
+    rng = np.random.default_rng(42)
+    classes = ["Equity", "ETF", "Bond", "Crypto"]
+    sectors = ["Technology", "Financials", "Healthcare", "Energy", "Consumer"]
+    return pd.DataFrame({
+        "ticker":              [f"TK{i:03d}" for i in range(n)],
+        "shortName":           [f"Asset {i}" for i in range(n)],
+        "asset_class":         rng.choice(classes, n),
+        "sector":              rng.choice(sectors, n),
+        "ytd_return":          rng.uniform(-0.3, 0.5, n),
+        "one_year_return":     rng.uniform(-0.4, 0.8, n),
+        "volatility":          rng.uniform(0.05, 0.6, n),
+        "sharpe_ratio":        rng.uniform(-1.0, 3.0, n),
+        "analyst_upside_pct":  rng.uniform(-0.1, 0.4, n),
+        "week_52_position":    rng.uniform(0.0, 1.0, n),
+        "composite_score":     rng.uniform(0.0, 100.0, n),
+        "marketCap":           rng.integers(1_000_000, 1_000_000_000_000, n).astype(float),
+    })
+
+
+def _minimum_snapshot_df(n: int = 30) -> pd.DataFrame:
+    """Minimal snapshot: return + volatility + sharpe only."""
+    rng = np.random.default_rng(7)
+    return pd.DataFrame({
+        "ytd_return":   rng.uniform(-0.3, 0.5, n),
+        "volatility":   rng.uniform(0.05, 0.6, n),
+        "sharpe_ratio": rng.uniform(-1.0, 3.0, n),
+    })
+
+
+def _return_only_df(n: int = 30) -> pd.DataFrame:
+    """Only a single return column — should fall back to generic."""
+    rng = np.random.default_rng(9)
+    return pd.DataFrame({
+        "ytd_return": rng.uniform(-0.3, 0.5, n),
+        "random_col": rng.normal(0, 1, n),
+    })
+
+
+def _telco_churn_df(n: int = 100) -> pd.DataFrame:
+    """Telco churn dataset — should not classify as financial."""
+    rng = np.random.default_rng(3)
+    return pd.DataFrame({
+        "customer_id":      [f"CUS{i}" for i in range(n)],
+        "tenure_months":    rng.integers(1, 72, n),
+        "monthly_charges":  rng.uniform(20, 120, n),
+        "total_charges":    rng.uniform(100, 8000, n),
+        "contract":         rng.choice(["Month-to-month", "One year", "Two year"], n),
+        "churned":          rng.integers(0, 2, n),
+    })
+
+
+def _ohlc_timeseries_df(n: int = 252) -> pd.DataFrame:
+    """Daily OHLC timeseries — should classify as financial_markets_timeseries."""
+    rng = np.random.default_rng(1)
+    dates = pd.date_range("2024-01-02", periods=n, freq="B")
+    price = 100.0 + rng.normal(0, 1, n).cumsum()
+    return pd.DataFrame({
+        "date":   dates,
+        "open":   price + rng.uniform(-0.5, 0.5, n),
+        "high":   price + rng.uniform(0.0, 1.0, n),
+        "low":    price - rng.uniform(0.0, 1.0, n),
+        "close":  price,
+        "volume": rng.integers(1_000_000, 50_000_000, n).astype(float),
+    })
+
+
+# ── detect_dataset_context ────────────────────────────────────────────────────
+
+class TestDetectDatasetContext:
+
+    # ── Snapshot classification ───────────────────────────────────────────────
+
+    def test_yahoo_snapshot_is_snapshot(self):
+        ctx = detect_dataset_context(_yahoo_snapshot_df())
+        assert ctx.dataset_type == FINANCIAL_MARKETS_SNAPSHOT
+
+    def test_yahoo_snapshot_confidence_high(self):
+        ctx = detect_dataset_context(_yahoo_snapshot_df())
+        assert ctx.confidence >= 0.85
+
+    def test_minimum_snapshot_is_snapshot(self):
+        ctx = detect_dataset_context(_minimum_snapshot_df())
+        assert ctx.dataset_type == FINANCIAL_MARKETS_SNAPSHOT
+
+    def test_minimum_snapshot_confidence_at_threshold(self):
+        ctx = detect_dataset_context(_minimum_snapshot_df())
+        assert ctx.confidence >= CONFIDENCE_THRESHOLD
+
+    def test_minimum_snapshot_confidence_below_yahoo(self):
+        min_ctx   = detect_dataset_context(_minimum_snapshot_df())
+        yahoo_ctx = detect_dataset_context(_yahoo_snapshot_df())
+        assert min_ctx.confidence < yahoo_ctx.confidence
+
+    def test_snapshot_matched_signals_non_empty(self):
+        ctx = detect_dataset_context(_yahoo_snapshot_df())
+        assert len(ctx.matched_signals) >= 3
+
+    def test_snapshot_matched_signals_mention_return(self):
+        ctx = detect_dataset_context(_yahoo_snapshot_df())
+        assert any("return_period" in s for s in ctx.matched_signals)
+
+    def test_snapshot_matched_signals_mention_volatility(self):
+        ctx = detect_dataset_context(_yahoo_snapshot_df())
+        assert any("volatility" in s for s in ctx.matched_signals)
+
+    # ── Fallback: return-only ─────────────────────────────────────────────────
+
+    def test_return_only_is_generic(self):
+        ctx = detect_dataset_context(_return_only_df())
+        assert ctx.dataset_type == GENERIC_TABULAR
+
+    def test_return_only_matched_signals_mentions_fallback(self):
+        ctx = detect_dataset_context(_return_only_df())
+        assert any("No supported" in s for s in ctx.matched_signals)
+
+    # ── Fallback: telco churn ─────────────────────────────────────────────────
+
+    def test_churn_dataset_is_generic(self):
+        ctx = detect_dataset_context(_telco_churn_df())
+        assert ctx.dataset_type == GENERIC_TABULAR
+
+    def test_churn_dataset_not_snapshot(self):
+        ctx = detect_dataset_context(_telco_churn_df())
+        assert ctx.dataset_type != FINANCIAL_MARKETS_SNAPSHOT
+
+    def test_churn_dataset_not_timeseries(self):
+        ctx = detect_dataset_context(_telco_churn_df())
+        assert ctx.dataset_type != FINANCIAL_MARKETS_TIMESERIES
+
+    # ── Edge cases ────────────────────────────────────────────────────────────
+
+    def test_empty_dataframe_is_generic(self):
+        ctx = detect_dataset_context(pd.DataFrame())
+        assert ctx.dataset_type == GENERIC_TABULAR
+
+    def test_empty_dataframe_no_raise(self):
+        ctx = detect_dataset_context(pd.DataFrame())
+        assert isinstance(ctx, DatasetContext)
+
+    def test_single_column_is_generic(self):
+        ctx = detect_dataset_context(pd.DataFrame({"a": [1, 2, 3]}))
+        assert ctx.dataset_type == GENERIC_TABULAR
+
+    def test_single_column_no_raise(self):
+        ctx = detect_dataset_context(pd.DataFrame({"a": [1, 2, 3]}))
+        assert isinstance(ctx, DatasetContext)
+
+    # ── Timeseries classification ─────────────────────────────────────────────
+
+    def test_ohlc_timeseries_is_timeseries(self):
+        ctx = detect_dataset_context(_ohlc_timeseries_df())
+        assert ctx.dataset_type == FINANCIAL_MARKETS_TIMESERIES
+
+    def test_timeseries_confidence_high(self):
+        ctx = detect_dataset_context(_ohlc_timeseries_df())
+        assert ctx.confidence >= 0.65
+
+    def test_timeseries_matched_signals_mention_datetime(self):
+        ctx = detect_dataset_context(_ohlc_timeseries_df())
+        assert any("Datetime" in s or "datetime" in s for s in ctx.matched_signals)
+
+    def test_timeseries_matched_signals_mention_ohlc(self):
+        ctx = detect_dataset_context(_ohlc_timeseries_df())
+        assert any("OHLC" in s or "ohlc" in s for s in ctx.matched_signals)
+
+    def test_timeseries_has_future_version_warning(self):
+        ctx = detect_dataset_context(_ohlc_timeseries_df())
+        assert any("future version" in w.lower() for w in ctx.warnings)
+
+    def test_snapshot_without_datetime_not_timeseries(self):
+        ctx = detect_dataset_context(_yahoo_snapshot_df())
+        assert ctx.dataset_type != FINANCIAL_MARKETS_TIMESERIES
+
+    # ── Determinism ───────────────────────────────────────────────────────────
+
+    def test_detector_is_deterministic(self):
+        df = _yahoo_snapshot_df()
+        ctx_a = detect_dataset_context(df)
+        ctx_b = detect_dataset_context(df)
+        assert ctx_a == ctx_b
+
+    def test_detector_deterministic_generic(self):
+        df = _telco_churn_df()
+        assert detect_dataset_context(df) == detect_dataset_context(df)
+
+    # ── Warnings ──────────────────────────────────────────────────────────────
+
+    def test_mixed_asset_class_produces_warning(self):
+        ctx = detect_dataset_context(_yahoo_snapshot_df())
+        # yahoo df has 4 asset classes → warning must be present
+        assert any("mixed asset class" in w.lower() for w in ctx.warnings)
+
+    def test_single_asset_class_no_mixed_warning(self):
+        df = _minimum_snapshot_df()  # no asset_class column at all
+        ctx = detect_dataset_context(df)
+        assert not any("mixed asset class" in w.lower() for w in ctx.warnings)
+
+    def test_single_asset_class_value_no_mixed_warning(self):
+        rng = np.random.default_rng(5)
+        n = 20
+        df = pd.DataFrame({
+            "ytd_return":   rng.uniform(-0.2, 0.3, n),
+            "volatility":   rng.uniform(0.1, 0.4, n),
+            "sharpe_ratio": rng.uniform(0.0, 2.0, n),
+            "asset_class":  ["Equity"] * n,  # only one class
+        })
+        ctx = detect_dataset_context(df)
+        assert not any("mixed asset class" in w.lower() for w in ctx.warnings)
+
+
+# ── resolve_semantic_roles ────────────────────────────────────────────────────
+
+class TestResolveSemanticRoles:
+
+    def test_covers_all_columns(self):
+        df = _yahoo_snapshot_df()
+        roles = resolve_semantic_roles(df, FINANCIAL_MARKETS_SNAPSHOT)
+        assert set(roles.keys()) == set(df.columns)
+
+    def test_no_none_values(self):
+        df = _yahoo_snapshot_df()
+        roles = resolve_semantic_roles(df, FINANCIAL_MARKETS_SNAPSHOT)
+        assert all(v is not None for v in roles.values())
+
+    def test_no_empty_string_values(self):
+        df = _yahoo_snapshot_df()
+        roles = resolve_semantic_roles(df, FINANCIAL_MARKETS_SNAPSHOT)
+        assert all(v != "" for v in roles.values())
+
+    def test_known_roles_assigned(self):
+        df = _yahoo_snapshot_df()
+        roles = resolve_semantic_roles(df, FINANCIAL_MARKETS_SNAPSHOT)
+        assert roles["ytd_return"]    == "return_period"
+        assert roles["volatility"]    == "volatility"
+        assert roles["sharpe_ratio"]  == "sharpe_ratio"
+        assert roles["asset_class"]   == "asset_class"
+        assert roles["sector"]        == "sector"
+        assert roles["ticker"]        == "asset_id"
+        assert roles["shortName"]     == "asset_label"
+        assert roles["marketCap"]     == "size_metric"
+
+    def test_unknown_columns_get_unknown(self):
+        df = pd.DataFrame({
+            "ytd_return":    [0.1, 0.2],
+            "volatility":    [0.2, 0.3],
+            "sharpe_ratio":  [1.0, 1.5],
+            "widget_count":  [5, 10],   # unknown
+            "random_field":  ["a", "b"],  # unknown
+        })
+        roles = resolve_semantic_roles(df, FINANCIAL_MARKETS_SNAPSHOT)
+        assert roles["widget_count"]  == "unknown"
+        assert roles["random_field"]  == "unknown"
+
+    def test_empty_dataframe_returns_empty_dict(self):
+        roles = resolve_semantic_roles(pd.DataFrame(), GENERIC_TABULAR)
+        assert roles == {}
+
+    def test_generic_tabular_context_still_maps_roles(self):
+        df = _telco_churn_df()
+        roles = resolve_semantic_roles(df, GENERIC_TABULAR)
+        assert set(roles.keys()) == set(df.columns)
+        # churn columns are unknown
+        assert roles["customer_id"]   == "unknown"
+        assert roles["churned"]       == "unknown"
+
+    def test_roles_via_detector_match_direct_call(self):
+        """Roles embedded in DatasetContext equal a direct resolve_semantic_roles call."""
+        df = _yahoo_snapshot_df()
+        ctx = detect_dataset_context(df)
+        direct = resolve_semantic_roles(df, ctx.dataset_type)
+        assert ctx.semantic_roles == direct
