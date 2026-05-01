@@ -1,7 +1,7 @@
 """
 Insight pack for financial markets snapshot datasets (cross-section of assets).
 
-Includes return movers, volatility concentration, and risk-adjusted (Sharpe) leaders.
+Includes return movers, volatility concentration, risk-adjusted leaders, and asset-class contrasts.
 """
 from __future__ import annotations
 
@@ -56,6 +56,7 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
             self._detect_return_laggards,
             self._detect_volatility_leaders,
             self._detect_sharpe_leaders,
+            self._detect_asset_class_return_comparison,
         ):
             try:
                 insights.extend(detector(df, context))
@@ -253,6 +254,79 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
             }
         ]
 
+    def _detect_asset_class_return_comparison(self, df: pd.DataFrame, context: DatasetContext) -> list[dict]:
+        selected_return_col = _select_return_column(df, context)
+        asset_class_col = _select_asset_class_column(df, context)
+        if not selected_return_col or not asset_class_col:
+            return []
+
+        work = df[[asset_class_col, selected_return_col]].copy()
+        work["_ret"] = pd.to_numeric(work[selected_return_col], errors="coerce")
+        work = df[[asset_class_col, selected_return_col]].copy()
+        work["_ret"] = pd.to_numeric(work[selected_return_col], errors="coerce")
+        work["_cls"] = work[asset_class_col].map(_stringify_asset_class)
+        work = work.dropna(subset=["_ret", "_cls"])
+        if work.empty:
+            return []
+
+        scale = _detect_percent_scale(work["_ret"])
+
+        grp = work.groupby("_cls", sort=False, observed=True)["_ret"]
+        agg = grp.agg(count="count", mean="mean", median="median")
+        qualified = agg[agg["count"] >= 3].copy()
+        if qualified.shape[0] < 2:
+            return []
+
+        ranked = qualified.sort_values("mean", ascending=False)
+        top_name = ranked.index[0]
+        bottom_name = ranked.index[-1]
+        top_avg = float(ranked.iloc[0]["mean"])
+        bottom_avg = float(ranked.iloc[-1]["mean"])
+
+        metric_label = _readable_return_metric_label(selected_return_col)
+        finding = (
+            f"Average {metric_label} varies by asset class: {top_name} leads at "
+            f"{_format_percent(top_avg, scale)}, while {bottom_name} trails at "
+            f"{_format_percent(bottom_avg, scale)}."
+        )
+
+        def _group_row(cls_name: object) -> dict:
+            row = ranked.loc[cls_name]
+            return {
+                "asset_class": str(cls_name),
+                "count": int(row["count"]),
+                "average_return": _format_percent(float(row["mean"]), scale),
+                "median_return": _format_percent(float(row["median"]), scale),
+            }
+
+        head3 = [_group_row(ix) for ix in ranked.head(3).index]
+        bottom_row = _group_row(bottom_name)
+
+        return [
+            {
+                "type": "segment",
+                "title": "Asset classes show different return profiles",
+                "finding": finding,
+                "severity": "medium",
+                "confidence": 83,
+                "evidence": {
+                    "selected_return_column": selected_return_col,
+                    "selected_asset_class_column": asset_class_col,
+                    "group_count": int(qualified.shape[0]),
+                    "top_groups": head3,
+                    "bottom_group": bottom_row,
+                    "valid_row_count": int(work.shape[0]),
+                },
+                "action": "Compare assets within the same asset class before drawing cross-market conclusions.",
+                "why_it_matters": (
+                    "Mixed asset classes bundle different risk and return regimes, so headline return "
+                    "gaps often reflect buckets rather than like-for-like security selection."
+                ),
+                "columns_used": [selected_return_col, asset_class_col],
+                "domain": FINANCIAL_MARKETS_SNAPSHOT,
+            }
+        ]
+
 
 def _select_return_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
     return_cols = [
@@ -298,6 +372,13 @@ def _select_sharpe_column(df: pd.DataFrame, context: DatasetContext) -> str | No
     return _select_by_role_with_priority(df, context, "sharpe_ratio", _SHARPE_PRIORITY_GROUPS)
 
 
+def _select_asset_class_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
+    for col, role in context.semantic_roles.items():
+        if role == "asset_class" and col in df.columns:
+            return col
+    return None
+
+
 def _select_label_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
     for col, role in context.semantic_roles.items():
         if role == "asset_label" and col in df.columns:
@@ -321,6 +402,22 @@ def _label_for_row(df: pd.DataFrame, idx: object, label_col: str | None) -> str:
             if text:
                 return text
     return str(idx)
+
+
+def _stringify_asset_class(value: object) -> str | None:
+    """Return a strippped group label, or None when the row should be excluded."""
+    if pd.isna(value):
+        return None
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none", "<na>"}:
+        return None
+    return text
+
+
+def _readable_return_metric_label(column_name: str) -> str:
+    if column_name.strip() == "return_1y_pct" or _normalise_col(column_name) == "return1ypct":
+        return "1Y return"
+    return column_name.replace("_", " ").strip() or column_name
 
 
 def _named_extremes(

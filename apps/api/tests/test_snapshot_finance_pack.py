@@ -42,6 +42,38 @@ def _full_roles() -> dict[str, str]:
     }
 
 
+def _full_df_with_asset_class() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "ticker": [f"T{i}" for i in range(9)],
+            "asset_class": ["Crypto"] * 3 + ["Equity"] * 3 + ["Bond"] * 3,
+            "return_1y_pct": [
+                0.184,
+                0.190,
+                0.180,
+                0.041,
+                0.043,
+                0.042,
+                0.085,
+                0.088,
+                0.086,
+            ],
+            "volatility_1y_ann": [0.22, 0.45, 0.30, 0.12, 0.41, 0.35, 0.28, 0.31, 0.29],
+            "sharpe_1y": [1.21, -0.10, 1.55, 0.23, 1.31, 0.9, 1.0, 1.05, 1.02],
+        }
+    )
+
+
+def _full_roles_with_asset_class() -> dict[str, str]:
+    return {
+        "ticker": "asset_id",
+        "return_1y_pct": "return_period",
+        "asset_class": "asset_class",
+        "volatility_1y_ann": "volatility",
+        "sharpe_1y": "sharpe_ratio",
+    }
+
+
 def test_pack_registered_for_snapshot():
     assert isinstance(get_domain_pack(FINANCIAL_MARKETS_SNAPSHOT), SnapshotFinanceInsightPack)
 
@@ -51,6 +83,89 @@ def test_run_returns_two_insights_when_only_return_columns_present():
     insights = pack.run(_valid_df(), _context({"ticker": "asset_id", "ytd_return": "return_period"}))
     assert len(insights) == 2
     assert {i["title"] for i in insights} == {"Top return leaders", "Largest return laggards"}
+
+
+def test_run_returns_five_insights_when_asset_class_and_full_metrics_present():
+    pack = SnapshotFinanceInsightPack()
+    insights = pack.run(_full_df_with_asset_class(), _context(_full_roles_with_asset_class()))
+    assert len(insights) == 5
+    assert {i["title"] for i in insights} == {
+        "Top return leaders",
+        "Largest return laggards",
+        "Highest volatility assets",
+        "Best risk-adjusted performers",
+        "Asset classes show different return profiles",
+    }
+
+
+def test_asset_class_comparison_insight_present():
+    pack = SnapshotFinanceInsightPack()
+    insights = pack.run(_full_df_with_asset_class(), _context(_full_roles_with_asset_class()))
+    titles = {i["title"] for i in insights}
+    assert "Asset classes show different return profiles" in titles
+
+
+def test_asset_class_comparison_names_top_and_bottom_classes():
+    pack = SnapshotFinanceInsightPack()
+    insights = pack.run(_full_df_with_asset_class(), _context(_full_roles_with_asset_class()))
+    ac = next(i for i in insights if i["title"] == "Asset classes show different return profiles")
+    assert "Crypto" in ac["finding"] and "Equity" in ac["finding"]
+    assert "1Y return" in ac["finding"]
+
+
+def test_asset_class_evidence_includes_columns_and_group_structures():
+    pack = SnapshotFinanceInsightPack()
+    insights = pack.run(_full_df_with_asset_class(), _context(_full_roles_with_asset_class()))
+    ev = next(i for i in insights if i["title"] == "Asset classes show different return profiles")[
+        "evidence"
+    ]
+    assert ev["selected_asset_class_column"] == "asset_class"
+    assert "top_groups" in ev and len(ev["top_groups"]) >= 2
+    assert "bottom_group" in ev
+    assert isinstance(ev["bottom_group"], dict)
+    assert "asset_class" in ev["bottom_group"]
+    assert ev["group_count"] >= 2
+
+
+def test_no_asset_class_insight_when_asset_class_role_missing():
+    pack = SnapshotFinanceInsightPack()
+    roles = {k: v for k, v in _full_roles_with_asset_class().items() if k != "asset_class"}
+    insights = pack.run(_full_df_with_asset_class(), _context(roles))
+    assert "Asset classes show different return profiles" not in {i["title"] for i in insights}
+    assert len(insights) == 4
+
+
+def test_no_asset_class_insight_when_return_period_role_missing():
+    pack = SnapshotFinanceInsightPack()
+    roles = {k: v for k, v in _full_roles_with_asset_class().items() if k != "return_1y_pct"}
+    insights = pack.run(_full_df_with_asset_class(), _context(roles))
+    assert "Asset classes show different return profiles" not in {i["title"] for i in insights}
+    assert {i["title"] for i in insights} == {
+        "Highest volatility assets",
+        "Best risk-adjusted performers",
+    }
+
+
+def test_no_asset_class_insight_when_fewer_than_two_qualified_groups():
+    pack = SnapshotFinanceInsightPack()
+    df = pd.DataFrame(
+        {
+            "ticker": ["A", "B", "C", "D", "E"],
+            "asset_class": ["Crypto", "Crypto", "Crypto", "Crypto", "Equity"],
+            "return_1y_pct": [0.10, 0.11, 0.12, 0.13, 0.02],
+            "volatility_1y_ann": [0.2, 0.21, 0.22, 0.23, 0.15],
+            "sharpe_1y": [1.0, 1.1, 1.2, 1.3, 0.5],
+        }
+    )
+    roles = {
+        "ticker": "asset_id",
+        "return_1y_pct": "return_period",
+        "asset_class": "asset_class",
+        "volatility_1y_ann": "volatility",
+        "sharpe_1y": "sharpe_ratio",
+    }
+    insights = pack.run(df, _context(roles))
+    assert "Asset classes show different return profiles" not in {i["title"] for i in insights}
 
 
 def test_run_returns_four_insights_when_return_volatility_sharpe_present():
@@ -167,21 +282,29 @@ def test_pack_never_raises_on_empty_dataframe():
 
 def test_all_insights_include_required_fields():
     pack = SnapshotFinanceInsightPack()
-    insights = pack.run(_full_df(), _context(_full_roles()))
-    assert insights
-    for insight in insights:
-        assert REQUIRED_FIELDS.issubset(set(insight))
+    for df, roles in (
+        (_full_df(), _full_roles()),
+        (_full_df_with_asset_class(), _full_roles_with_asset_class()),
+    ):
+        insights = pack.run(df, _context(roles))
+        assert insights
+        for insight in insights:
+            assert REQUIRED_FIELDS.issubset(set(insight))
 
 
 def test_no_buy_or_sell_language():
     pack = SnapshotFinanceInsightPack()
-    insights = pack.run(_full_df(), _context(_full_roles()))
-    combined = " ".join(
-        f"{ins['finding']} {ins.get('action', '')} {ins.get('why_it_matters', '')}".lower()
-        for ins in insights
-    )
-    assert "buy" not in combined
-    assert "sell" not in combined
+    for df, roles in (
+        (_full_df(), _full_roles()),
+        (_full_df_with_asset_class(), _full_roles_with_asset_class()),
+    ):
+        insights = pack.run(df, _context(roles))
+        combined = " ".join(
+            f"{ins['finding']} {ins.get('action', '')} {ins.get('why_it_matters', '')}".lower()
+            for ins in insights
+        )
+        assert "buy" not in combined
+        assert "sell" not in combined
 
 
 def test_return_column_priority_prefers_1y_over_ytd():
