@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pandas as pd
 
 from app.services.analysis.domain import SnapshotFinanceInsightPack, get_domain_pack
@@ -84,6 +86,106 @@ def _full_roles_with_sector_and_asset_class() -> dict[str, str]:
     r = dict(_full_roles_with_asset_class())
     r["sector"] = "sector"
     return r
+
+
+def _full_df_with_analyst_sector_and_asset_class() -> pd.DataFrame:
+    df = _full_df_with_sector_and_asset_class().copy()
+    df["analyst_upside_pct"] = [0.152, 0.183, 0.241, -0.05, -0.04, -0.06, 0.08, 0.07, 0.065]
+    return df
+
+
+def _full_roles_with_analyst_sector_and_asset_class() -> dict[str, str]:
+    r = dict(_full_roles_with_sector_and_asset_class())
+    r["analyst_upside_pct"] = "analyst_upside"
+    return r
+
+
+def test_run_returns_seven_insights_when_analyst_sector_asset_class_and_full_metrics_present():
+    pack = SnapshotFinanceInsightPack()
+    insights = pack.run(
+        _full_df_with_analyst_sector_and_asset_class(),
+        _context(_full_roles_with_analyst_sector_and_asset_class()),
+    )
+    assert len(insights) == 7
+    assert {i["title"] for i in insights} == {
+        "Top return leaders",
+        "Largest return laggards",
+        "Highest volatility assets",
+        "Best risk-adjusted performers",
+        "Asset classes show different return profiles",
+        "Sectors show different return profiles",
+        "Highest analyst-implied upside",
+    }
+
+
+def test_analyst_upside_insight_present():
+    pack = SnapshotFinanceInsightPack()
+    insights = pack.run(
+        _full_df_with_analyst_sector_and_asset_class(),
+        _context(_full_roles_with_analyst_sector_and_asset_class()),
+    )
+    assert "Highest analyst-implied upside" in {i["title"] for i in insights}
+
+
+def test_analyst_upside_names_top_three_tickers():
+    pack = SnapshotFinanceInsightPack()
+    insights = pack.run(
+        _full_df_with_analyst_sector_and_asset_class(),
+        _context(_full_roles_with_analyst_sector_and_asset_class()),
+    )
+    up = next(i for i in insights if i["title"] == "Highest analyst-implied upside")
+    assert "T2" in up["finding"] and "T1" in up["finding"] and "T0" in up["finding"]
+
+
+def test_analyst_upside_evidence_keys():
+    pack = SnapshotFinanceInsightPack()
+    insights = pack.run(
+        _full_df_with_analyst_sector_and_asset_class(),
+        _context(_full_roles_with_analyst_sector_and_asset_class()),
+    )
+    ev = next(i for i in insights if i["title"] == "Highest analyst-implied upside")["evidence"]
+    assert ev["selected_analyst_upside_column"] == "analyst_upside_pct"
+    assert "top_values" in ev and len(ev["top_values"]) == 3
+    assert "median_analyst_upside" in ev
+
+
+def test_no_analyst_upside_insight_when_role_missing():
+    pack = SnapshotFinanceInsightPack()
+    roles = {
+        k: v
+        for k, v in _full_roles_with_analyst_sector_and_asset_class().items()
+        if k != "analyst_upside_pct"
+    }
+    insights = pack.run(_full_df_with_analyst_sector_and_asset_class(), _context(roles))
+    assert "Highest analyst-implied upside" not in {i["title"] for i in insights}
+    assert len(insights) == 6
+
+
+def test_no_analyst_upside_insight_when_fewer_than_three_valid_rows():
+    pack = SnapshotFinanceInsightPack()
+    df = _full_df_with_analyst_sector_and_asset_class().copy()
+    df["analyst_upside_pct"] = [0.10, None, "x", None, None, None, None, None, None]
+    insights = pack.run(df, _context(_full_roles_with_analyst_sector_and_asset_class()))
+    assert "Highest analyst-implied upside" not in {i["title"] for i in insights}
+
+
+def test_no_analyst_upside_insight_when_top_three_not_positive():
+    pack = SnapshotFinanceInsightPack()
+    df = _full_df_with_analyst_sector_and_asset_class().copy()
+    df["analyst_upside_pct"] = [-0.10, -0.11, -0.09, -0.20, -0.15, -0.08, -0.05, -0.06, -0.04]
+    insights = pack.run(df, _context(_full_roles_with_analyst_sector_and_asset_class()))
+    assert "Highest analyst-implied upside" not in {i["title"] for i in insights}
+
+
+def test_analyst_upside_column_priority_prefers_analyst_upside_pct():
+    pack = SnapshotFinanceInsightPack()
+    df = _full_df_with_analyst_sector_and_asset_class().copy()
+    df["generic_upside"] = df["analyst_upside_pct"] * 0.5
+    roles = dict(_full_roles_with_analyst_sector_and_asset_class())
+    roles["generic_upside"] = "analyst_upside"
+    insights = pack.run(df, _context(roles))
+    ev = next(i for i in insights if i["title"] == "Highest analyst-implied upside")["evidence"]
+    assert ev["selected_analyst_upside_column"] == "analyst_upside_pct"
 
 
 def test_pack_registered_for_snapshot():
@@ -384,6 +486,7 @@ def test_all_insights_include_required_fields():
         (_full_df(), _full_roles()),
         (_full_df_with_asset_class(), _full_roles_with_asset_class()),
         (_full_df_with_sector_and_asset_class(), _full_roles_with_sector_and_asset_class()),
+        (_full_df_with_analyst_sector_and_asset_class(), _full_roles_with_analyst_sector_and_asset_class()),
     ):
         insights = pack.run(df, _context(roles))
         assert insights
@@ -391,20 +494,32 @@ def test_all_insights_include_required_fields():
             assert REQUIRED_FIELDS.issubset(set(insight))
 
 
-def test_no_buy_or_sell_language():
+def test_no_forbidden_investment_advice_language():
     pack = SnapshotFinanceInsightPack()
-    for df, roles in (
+    forb_substrings = (
+        "buy",
+        "sell",
+        "undervalued",
+        "overvalued",
+        "investment advice",
+        "recommendation",
+    )
+    rows = (
         (_full_df(), _full_roles()),
         (_full_df_with_asset_class(), _full_roles_with_asset_class()),
         (_full_df_with_sector_and_asset_class(), _full_roles_with_sector_and_asset_class()),
-    ):
+        (_full_df_with_analyst_sector_and_asset_class(), _full_roles_with_analyst_sector_and_asset_class()),
+    )
+    for df, roles in rows:
         insights = pack.run(df, _context(roles))
         combined = " ".join(
-            f"{ins['finding']} {ins.get('action', '')} {ins.get('why_it_matters', '')}".lower()
+            f"{ins.get('title', '')} {ins['finding']} {ins.get('action', '')} "
+            f"{ins.get('why_it_matters', '')}".lower()
             for ins in insights
         )
-        assert "buy" not in combined
-        assert "sell" not in combined
+        for s in forb_substrings:
+            assert s not in combined
+        assert re.search(r"\bhold\b", combined) is None
 
 
 def test_return_column_priority_prefers_1y_over_ytd():

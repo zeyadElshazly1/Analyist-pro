@@ -1,7 +1,8 @@
 """
 Insight pack for financial markets snapshot datasets (cross-section of assets).
 
-Includes return movers, volatility concentration, risk-adjusted leaders, asset-class and sector contrasts.
+Includes return movers, volatility concentration, risk-adjusted leaders, asset-class and sector contrasts,
+plus analyst-implied upside screens.
 """
 from __future__ import annotations
 
@@ -45,6 +46,15 @@ _SHARPE_PRIORITY_GROUPS: list[frozenset[str]] = [
     frozenset({"sharpe"}),
 ]
 
+_ANALYST_UPSIDE_PRIORITY_GROUPS: list[frozenset[str]] = [
+    frozenset({"analystupsidepct"}),
+    frozenset({"analystupside"}),
+    frozenset({"upsidepct"}),
+    frozenset({"upside"}),
+    frozenset({"targetupside"}),
+    frozenset({"impliedupside"}),
+]
+
 
 class SnapshotFinanceInsightPack(DomainInsightPack):
     dataset_type = FINANCIAL_MARKETS_SNAPSHOT
@@ -58,6 +68,7 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
             self._detect_sharpe_leaders,
             self._detect_asset_class_return_comparison,
             self._detect_sector_return_comparison,
+            self._detect_analyst_upside_leaders,
         ):
             try:
                 insights.extend(detector(df, context))
@@ -399,6 +410,58 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
             }
         ]
 
+    def _detect_analyst_upside_leaders(self, df: pd.DataFrame, context: DatasetContext) -> list[dict]:
+        upside_col = _select_analyst_upside_column(df, context)
+        if not upside_col:
+            return []
+
+        values = pd.to_numeric(df[upside_col], errors="coerce")
+        valid = values.dropna()
+        if valid.shape[0] < 3:
+            return []
+
+        label_col = _select_label_column(df, context)
+        top_named = _named_extremes(df, valid, label_col, k=3, largest=True)
+        if not any(value > 0.0 for _, value in top_named):
+            return []
+
+        scale = _detect_percent_scale(valid)
+        top_phrase = _finding_three_analyst_upside_assets(top_named, scale)
+
+        columns_used = _columns_used(upside_col, label_col)
+
+        finding = f"Analyst-implied upside is highest for {top_phrase}."
+
+        return [
+            {
+                "type": "segment",
+                "title": "Highest analyst-implied upside",
+                "finding": finding,
+                "severity": "medium",
+                "confidence": 80,
+                "evidence": {
+                    "selected_analyst_upside_column": upside_col,
+                    "top_values": [
+                        {"asset": name, "analyst_implied_upside": _format_percent(value, scale)}
+                        for name, value in top_named
+                    ],
+                    "median_analyst_upside": _format_percent(float(valid.median()), scale),
+                    "valid_row_count": int(valid.shape[0]),
+                },
+                "action": (
+                    "Use analyst-implied upside as a screening signal, then validate coverage, "
+                    "assumptions, and risk before drawing conclusions."
+                ),
+                "why_it_matters": (
+                    "Analyst-implied upside highlights gap-to-target style market expectations that "
+                    "can flag names for review, but those figures depend on models, coverage, and "
+                    "time horizon and should not be read as a standalone view of fair value."
+                ),
+                "columns_used": columns_used,
+                "domain": FINANCIAL_MARKETS_SNAPSHOT,
+            }
+        ]
+
 
 def _select_return_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
     return_cols = [
@@ -442,6 +505,12 @@ def _select_volatility_column(df: pd.DataFrame, context: DatasetContext) -> str 
 
 def _select_sharpe_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
     return _select_by_role_with_priority(df, context, "sharpe_ratio", _SHARPE_PRIORITY_GROUPS)
+
+
+def _select_analyst_upside_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
+    return _select_by_role_with_priority(
+        df, context, "analyst_upside", _ANALYST_UPSIDE_PRIORITY_GROUPS
+    )
 
 
 def _select_asset_class_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
@@ -514,6 +583,18 @@ def _named_extremes(
 ) -> list[tuple[str, float]]:
     ranked = valid.nlargest(k) if largest else valid.nsmallest(k)
     return [(_label_for_row(df, idx, label_col), float(ranked.loc[idx])) for idx in ranked.index]
+
+
+def _finding_three_analyst_upside_assets(
+    top_named: list[tuple[str, float]],
+    scale: str,
+) -> str:
+    parts = [f"{name} ({_format_percent(value, scale)})" for name, value in top_named]
+    if len(parts) == 1:
+        return parts[0]
+    if len(parts) == 2:
+        return f"{parts[0]} and {parts[1]}"
+    return f"{parts[0]}, {parts[1]}, and {parts[2]}"
 
 
 def _columns_used(primary_col: str, label_col: str | None) -> list[str]:
