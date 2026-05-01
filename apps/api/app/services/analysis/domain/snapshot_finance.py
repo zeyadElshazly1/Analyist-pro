@@ -6,6 +6,11 @@ import pandas as pd
 
 from app.services.analysis.domain.base import DomainInsightPack
 from app.services.dataset_context import DatasetContext, FINANCIAL_MARKETS_SNAPSHOT, _normalise_col
+from app.services.dataset_context import (
+    DatasetContext,
+    FINANCIAL_MARKETS_SNAPSHOT,
+    _normalise_col,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +50,41 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
             "finding": "Top 3 outperformance candidates to flag for review: " + ", ".join(
                 f"{name} ({_format_percent(value, scale)})" for name, value in top_named
             ) + ".",
+
+        values = pd.to_numeric(df[selected_return_col], errors="coerce")
+        valid = values.dropna()
+        if valid.shape[0] < 3:
+            return []
+
+        scale = _detect_percent_scale(valid)
+        label_col = _select_label_column(df, context)
+
+        top_idx = valid.nlargest(3).index
+        top_rows = [(idx, valid.loc[idx]) for idx in top_idx]
+        top_named = [(_label_for_row(df, idx, label_col), value) for idx, value in top_rows]
+
+        finding = "Top 3 outperformance candidates to flag for review: " + ", ".join(
+            f"{name} ({_format_percent(value, scale)})" for name, value in top_named
+        ) + "."
+
+        columns_used = [selected_return_col]
+        if label_col is not None:
+            columns_used.append(label_col)
+
+        return [{
+            "type": "segment",
+            "title": "Top return leaders",
+            "finding": finding,
             "severity": "medium",
             "confidence": 85,
             "evidence": {
                 "selected_return_column": selected_return_col,
                 "top_values": [{"asset": n, "return": _format_percent(v, scale)} for n, v in top_named],
+
+                "top_values": [
+                    {"asset": name, "return": _format_percent(value, scale)}
+                    for name, value in top_named
+                ],
                 "valid_row_count": int(valid.shape[0]),
             },
             "action": "Review the top performers and compare whether momentum is supported by risk-adjusted metrics before making decisions.",
@@ -75,11 +110,40 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
             "finding": "Bottom 3 names showing downside pressure to flag for review: " + ", ".join(
                 f"{name} ({_format_percent(value, scale)})" for name, value in bottom_named
             ) + ".",
+
+        values = pd.to_numeric(df[selected_return_col], errors="coerce")
+        valid = values.dropna()
+        if valid.shape[0] < 3:
+            return []
+
+        scale = _detect_percent_scale(valid)
+        label_col = _select_label_column(df, context)
+
+        bottom_idx = valid.nsmallest(3).index
+        bottom_rows = [(idx, valid.loc[idx]) for idx in bottom_idx]
+        bottom_named = [(_label_for_row(df, idx, label_col), value) for idx, value in bottom_rows]
+
+        finding = "Bottom 3 names showing downside pressure to flag for review: " + ", ".join(
+            f"{name} ({_format_percent(value, scale)})" for name, value in bottom_named
+        ) + "."
+
+        columns_used = [selected_return_col]
+        if label_col is not None:
+            columns_used.append(label_col)
+
+        return [{
+            "type": "segment",
+            "title": "Largest return laggards",
+            "finding": finding,
             "severity": "medium",
             "confidence": 85,
             "evidence": {
                 "selected_return_column": selected_return_col,
                 "bottom_values": [{"asset": n, "return": _format_percent(v, scale)} for n, v in bottom_named],
+                "bottom_values": [
+                    {"asset": name, "return": _format_percent(value, scale)}
+                    for name, value in bottom_named
+                ],
                 "valid_row_count": int(valid.shape[0]),
             },
             "action": "Review laggards for drawdown, volatility, or sector-specific pressure before interpreting underperformance.",
@@ -163,6 +227,17 @@ def _select_by_role_with_priority(df: pd.DataFrame, context: DatasetContext, rol
 
 def _select_return_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
     return _select_by_role_with_priority(df, context, "return_period", [
+=======
+
+def _select_return_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
+    return_cols = [
+        col for col, role in context.semantic_roles.items()
+        if role == "return_period" and col in df.columns
+    ]
+    if not return_cols:
+        return None
+
+    priorities = [
         {"return1ypct", "oneyearreturn", "1yreturn", "1yrreturn", "ret1y", "performance1y", "perf1y"},
         {"ytdreturn", "returnytd", "retytd", "perfytd"},
         {"return6mpct", "6mreturn", "ret6m", "perf6m", "performance6m"},
@@ -185,6 +260,15 @@ def _select_sharpe_column(df: pd.DataFrame, context: DatasetContext) -> str | No
         {"sharperatio"},
         {"sharpe"},
     ])
+
+    ]
+
+    normalized = {col: _normalise_col(col) for col in return_cols}
+    for priority_group in priorities:
+        for col, norm in normalized.items():
+            if norm in priority_group:
+                return col
+    return return_cols[0]
 
 
 def _select_label_column(df: pd.DataFrame, context: DatasetContext) -> str | None:
@@ -234,3 +318,4 @@ def _format_percent(value: float, scale: str) -> str:
 
 def _format_number(value: float) -> str:
     return f"{value:.2f}"
+=======
