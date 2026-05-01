@@ -5,6 +5,10 @@ When ``DatasetContext.dataset_type`` is ``financial_markets_snapshot``, chart
 payloads use semantic roles (return, volatility, asset labels, etc.) instead of
 generic time-series or index-based line charts that mislead on cross-sectional
 market snapshots.
+
+Task 74B adds display-oriented metadata (``value_format``, ``value_scale``,
+``x_format`` / ``y_format``, ``x_scale`` / ``y_scale``) without changing raw
+numeric values in ``data`` — the frontend applies formatting later.
 """
 from __future__ import annotations
 
@@ -23,6 +27,26 @@ _MIN_ROWS_SCATTER = 5
 _MIN_ROWS_GROUP_AVG = 3
 _MIN_DISTINCT_GROUPS = 2
 _LEADERBOARD_TOP_N = 10
+
+# Semantic roles stored in ``DatasetContext.semantic_roles`` that map to %-style metrics.
+_PERCENT_METRIC_ROLES: frozenset[str] = frozenset({
+    "return_period",
+    "volatility",
+    "analyst_upside",
+    "position_52w",
+})
+
+
+def _infer_percent_value_scale(values: pd.Series | list[float] | np.ndarray) -> str:
+    """
+    If absolute magnitudes stay within a fraction band, treat as decimal (0.24 → 24%);
+    otherwise values are likely already in “unit” percent space (24 → 24%).
+    """
+    s = pd.to_numeric(pd.Series(values), errors="coerce").dropna()
+    if s.empty:
+        return "decimal"
+    mx = float(np.nanmax(np.abs(s.to_numpy(dtype=float))))
+    return "decimal" if mx <= 1.0 else "unit"
 
 
 def _cols_for_snapshot_charts(df: pd.DataFrame, ctx: DatasetContext) -> dict[str, str | None]:
@@ -48,6 +72,7 @@ def _bar_leaderboard(
     insight: str,
     ascending: bool,
     score: float,
+    percent_value_role: str | None = None,
 ) -> dict | None:
     sub = df[[label_col, value_col]].copy()
     sub[value_col] = pd.to_numeric(sub[value_col], errors="coerce")
@@ -66,7 +91,7 @@ def _bar_leaderboard(
     for _, row in sub_sorted.iterrows():
         lab = str(row["_lab"])[:160]
         data.append({"label": lab, "value": round(float(row[value_col]), 8)})
-    return {
+    payload: dict = {
         "type": "bar",
         "title": title,
         "description": description,
@@ -80,6 +105,12 @@ def _bar_leaderboard(
         "recommended": not ascending,
         "score": score,
     }
+    if percent_value_role and percent_value_role in _PERCENT_METRIC_ROLES:
+        scale = _infer_percent_value_scale(sub_sorted[value_col])
+        payload["value_format"] = "percent"
+        payload["value_scale"] = scale
+        payload["y_label"] = f"{value_col} (%)"
+    return payload
 
 
 def _avg_numeric_by_category(
@@ -90,6 +121,7 @@ def _avg_numeric_by_category(
     title: str,
     description: str,
     score: float,
+    percent_value_role: str | None = None,
 ) -> dict | None:
     gdf = df[[category_col, value_col]].copy()
     gdf[value_col] = pd.to_numeric(gdf[value_col], errors="coerce")
@@ -106,7 +138,7 @@ def _avg_numeric_by_category(
     data = [{"label": str(cat), "value": round(float(mn), 8)} for cat, mn in means.items()]
     top = means.index[0]
     top_mean = float(means.iloc[0])
-    return {
+    payload: dict = {
         "type": "bar",
         "title": title,
         "description": description,
@@ -123,6 +155,12 @@ def _avg_numeric_by_category(
         "recommended": False,
         "score": score,
     }
+    if percent_value_role and percent_value_role in _PERCENT_METRIC_ROLES:
+        scale = _infer_percent_value_scale(gdf[value_col])
+        payload["value_format"] = "percent"
+        payload["value_scale"] = scale
+        payload["y_label"] = f"Mean {value_col} (%)"
+    return payload
 
 
 def _risk_return_scatter(
@@ -180,6 +218,9 @@ def _risk_return_scatter(
         for xi, yi, ai in zip(x, y, anomaly):
             data.append({"x": float(xi), "y": float(yi), "is_anomaly": bool(ai)})
 
+    x_scale = _infer_percent_value_scale(clean[vol_col])
+    y_scale = _infer_percent_value_scale(clean[ret_col])
+
     result: dict = {
         "type": "scatter",
         "title": "Risk vs return",
@@ -187,8 +228,12 @@ def _risk_return_scatter(
         "insight": narration,
         "x_key": "x",
         "y_key": "y",
-        "x_label": vol_col,
-        "y_label": ret_col,
+        "x_label": f"{vol_col} (%)",
+        "y_label": f"{ret_col} (%)",
+        "x_format": "percent",
+        "x_scale": x_scale,
+        "y_format": "percent",
+        "y_scale": y_scale,
         "data": data,
         "regression": regression,
         "significance_badge": significance_badge,
@@ -234,6 +279,7 @@ def build_financial_snapshot_charts(df: pd.DataFrame, ctx: DatasetContext) -> li
             insight=f"Ranked by {ret_col} (higher is better for this metric).",
             ascending=False,
             score=8.85,
+            percent_value_role="return_period",
         )
         if ch:
             out.append(ch)
@@ -246,6 +292,7 @@ def build_financial_snapshot_charts(df: pd.DataFrame, ctx: DatasetContext) -> li
             insight=f"Lowest {ret_col} values in the snapshot.",
             ascending=True,
             score=8.75,
+            percent_value_role="return_period",
         )
         if ch:
             out.append(ch)
@@ -260,6 +307,7 @@ def build_financial_snapshot_charts(df: pd.DataFrame, ctx: DatasetContext) -> li
             insight=f"Ranked by {vol_col} (higher indicates more dispersion).",
             ascending=False,
             score=8.78,
+            percent_value_role="volatility",
         )
         if ch:
             out.append(ch)
@@ -278,6 +326,7 @@ def build_financial_snapshot_charts(df: pd.DataFrame, ctx: DatasetContext) -> li
             title="Average return by asset class",
             description=f"Mean {ret_col} for each asset class (≥{_MIN_ROWS_GROUP_AVG} rows per class)",
             score=8.55,
+            percent_value_role="return_period",
         )
         if ch:
             out.append(ch)
@@ -290,6 +339,7 @@ def build_financial_snapshot_charts(df: pd.DataFrame, ctx: DatasetContext) -> li
             title="Average return by sector",
             description=f"Mean {ret_col} for each sector (≥{_MIN_ROWS_GROUP_AVG} rows per sector)",
             score=8.45,
+            percent_value_role="return_period",
         )
         if ch:
             out.append(ch)
@@ -304,6 +354,7 @@ def build_financial_snapshot_charts(df: pd.DataFrame, ctx: DatasetContext) -> li
             insight=f"Ranked by {analyst_col}.",
             ascending=False,
             score=8.4,
+            percent_value_role="analyst_upside",
         )
         if ch:
             out.append(ch)
@@ -318,6 +369,7 @@ def build_financial_snapshot_charts(df: pd.DataFrame, ctx: DatasetContext) -> li
             insight="Higher values typically sit nearer the trailing 52-week range top.",
             ascending=False,
             score=8.35,
+            percent_value_role="position_52w",
         )
         if ch:
             out.append(ch)

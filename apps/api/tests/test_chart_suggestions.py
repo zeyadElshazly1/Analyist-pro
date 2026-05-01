@@ -97,8 +97,14 @@ class TestFinanceSnapshotCharts:
             _select_volatility_column,
         )
 
-        assert sc.get("x_label") == _select_volatility_column(df, ctx)
-        assert sc.get("y_label") == _select_return_column(df, ctx)
+        vol = _select_volatility_column(df, ctx)
+        ret = _select_return_column(df, ctx)
+        assert sc.get("x_label") == f"{vol} (%)"
+        assert sc.get("y_label") == f"{ret} (%)"
+        assert sc.get("x_format") == "percent"
+        assert sc.get("y_format") == "percent"
+        assert sc.get("x_scale") in {"decimal", "unit"}
+        assert sc.get("y_scale") in {"decimal", "unit"}
         pts = sc.get("data") or []
         assert len(pts) >= 5
 
@@ -123,3 +129,69 @@ class TestGroupedAndOptionalFinanceCharts:
         charts = build_chart_data(df)
         titles = {c.get("title") for c in charts}
         assert titles.isdisjoint(_FINANCE_HEADLINE_TITLES)
+        for c in charts:
+            assert c.get("value_format") != "percent"
+            assert c.get("x_format") != "percent"
+            assert c.get("y_format") != "percent"
+
+
+class TestFinanceChartFormattingMetadata74B:
+    def test_return_leaderboard_has_percent_metadata(self) -> None:
+        df = _yahoo_snapshot_df()
+        charts = build_chart_data(df)
+        leaders = next(c for c in charts if c.get("title") == "Top assets by return")
+        assert leaders.get("value_format") == "percent"
+        assert leaders.get("value_scale") in {"decimal", "unit"}
+        ret_col = leaders["y_label"].replace(" (%)", "")
+        assert ret_col in df.columns
+
+    def test_return_leaderboard_values_stay_decimal_raw(self) -> None:
+        df = _yahoo_snapshot_df()
+        charts = build_chart_data(df)
+        leaders = next(c for c in charts if c.get("title") == "Top assets by return")
+        vals = [row["value"] for row in leaders["data"]]
+        assert vals
+        assert all(isinstance(v, (int, float)) for v in vals)
+        assert all(abs(float(v)) <= 1.0 + 1e-6 for v in vals)
+
+    def test_return_leaderboard_value_scale_unit_when_large_magnitudes(self) -> None:
+        rng = np.random.default_rng(0)
+        n = 50
+        classes = ["Equity", "ETF", "Bond", "Crypto"]
+        sectors = ["Technology", "Financials", "Healthcare", "Energy", "Consumer"]
+        df = pd.DataFrame(
+            {
+                "ticker": [f"T{i}" for i in range(n)],
+                "shortName": [f"Name{i}" for i in range(n)],
+                "asset_class": rng.choice(classes, n),
+                "sector": rng.choice(sectors, n),
+                "ytd_return": rng.uniform(-30.0, 50.0, n),
+                "one_year_return": rng.uniform(-40.0, 80.0, n),
+                "volatility": rng.uniform(5.0, 60.0, n),
+                "sharpe_ratio": rng.uniform(-1.0, 3.0, n),
+                "analyst_upside_pct": rng.uniform(-10.0, 40.0, n),
+                "week_52_position": rng.uniform(0.0, 100.0, n),
+                "composite_score": rng.uniform(0.0, 100.0, n),
+                "marketCap": rng.integers(1_000_000, 50_000_000_000, n).astype(float),
+            }
+        )
+        assert detect_dataset_context(df).dataset_type == FINANCIAL_MARKETS_SNAPSHOT
+        charts = build_chart_data(df)
+        leaders = next(c for c in charts if c.get("title") == "Top assets by return")
+        assert leaders.get("value_format") == "percent"
+        assert leaders.get("value_scale") == "unit"
+
+    def test_grouped_asset_class_mean_return_has_percent_format(self) -> None:
+        df = _yahoo_snapshot_df()
+        charts = build_chart_data(df)
+        grp = next(c for c in charts if c.get("title") == "Average return by asset class")
+        assert grp.get("value_format") == "percent"
+        assert grp.get("value_scale") in {"decimal", "unit"}
+        assert grp["y_label"].endswith("(%)")
+
+    def test_risk_vs_return_scatter_percent_axis_formats(self) -> None:
+        df = _yahoo_snapshot_df()
+        charts = build_chart_data(df)
+        sc = next(c for c in charts if c.get("title") == "Risk vs return")
+        assert sc.get("x_format") == "percent"
+        assert sc.get("y_format") == "percent"
