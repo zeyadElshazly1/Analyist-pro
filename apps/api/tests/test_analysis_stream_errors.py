@@ -34,7 +34,7 @@ def _file_info():
 # ── build_cleaning_result failure (the original crash scenario) ───────────────
 
 class TestCleaningAdapterSSEFallback:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_validation_error_becomes_sse_error_event(self):
         """
         A ValidationError from build_cleaning_result must be caught and
@@ -73,7 +73,7 @@ class TestCleaningAdapterSSEFallback:
         # Must not contain a result (success) event
         assert not any("result" in e for e in events)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_clean_dataset_failure_becomes_sse_error_event(self):
         """clean_dataset() crash → SSE error, not an unhandled exception."""
         with (
@@ -95,7 +95,7 @@ class TestCleaningAdapterSSEFallback:
         assert error_events
         assert "error" in error_events[0]
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_load_dataset_failure_becomes_sse_error_event(self):
         """load_dataset() crash → SSE error, not an unhandled exception."""
         with (
@@ -111,7 +111,7 @@ class TestCleaningAdapterSSEFallback:
         error_events = [e for e in events if "error" in e]
         assert error_events
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_unhandled_exception_in_generator_emits_sse_error(self):
         """
         An unexpected exception that bypasses every per-stage handler must
