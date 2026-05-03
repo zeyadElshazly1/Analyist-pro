@@ -133,6 +133,7 @@ def _get_stored_analysis(project_id: int, current_user: User, db: Session) -> tu
                 if draft.selected_insight_ids_json is not None
                 else None
             ),
+            selected_chart_ids=_draft_selected_chart_ids_safe(draft),
         )
 
     title = (draft.title.strip() if draft and draft.title else "") or project.name

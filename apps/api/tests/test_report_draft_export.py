@@ -13,6 +13,8 @@ Verifies that the saved Report Builder draft drives what comes out of the
 - A draft whose ``analysis_result_id`` points at a different project's run
   is rejected and falls back to the project's own latest run.
 - The draft-applied helper in isolation behaves correctly.
+- build_context exposes selected_chart_payloads resolved from stored chart
+  blocks.
 
 These tests are the contract for the launch-hardening report-export fix.
 """
@@ -21,9 +23,13 @@ from __future__ import annotations
 import io
 import json
 
+import pandas as pd
+import pytest
 from openpyxl import load_workbook
 
 from app.models import AnalysisResult, ReportDraft
+from app.services.reporting.charts import resolve_selected_chart_payloads
+from app.services.reporting.context import build_context
 from app.services.reporting.draft_context import apply_draft_to_result
 from tests.conftest import TestingSessionLocal
 
@@ -367,3 +373,277 @@ class TestNoDraftFallback:
         r = client.get(f"/reports/export/{pid}?format=html", headers=consultant_auth_headers)
         assert r.status_code == 200, r.text
         assert "DEFAULT_FINDING_NO_DRAFT" in r.text
+
+
+# ── apply_draft_to_result: selected_chart_ids propagation ─────────────────────
+
+class TestApplyDraftSelectedChartIds:
+    def test_stores_chart_ids_in_result(self):
+        result = {"insight_results": []}
+        applied = apply_draft_to_result(result, selected_chart_ids=["c1", "c2"])
+        assert applied["selected_chart_ids"] == ["c1", "c2"]
+
+    def test_none_chart_ids_does_not_add_key(self):
+        result = {"insight_results": []}
+        applied = apply_draft_to_result(result, selected_chart_ids=None)
+        assert "selected_chart_ids" not in applied
+
+    def test_empty_list_stored_explicitly(self):
+        result = {"insight_results": []}
+        applied = apply_draft_to_result(result, selected_chart_ids=[])
+        assert applied["selected_chart_ids"] == []
+
+    def test_does_not_mutate_original(self):
+        result = {"insight_results": [], "charts": [{"chart_id": "x"}]}
+        apply_draft_to_result(result, selected_chart_ids=["x"])
+        assert "selected_chart_ids" not in result
+
+    def test_combined_with_insight_selection(self):
+        result = {
+            "insight_results": [
+                {"insight_id": "a", "title": "A"},
+                {"insight_id": "b", "title": "B"},
+            ],
+        }
+        applied = apply_draft_to_result(
+            result, selected_indices=["a"], selected_chart_ids=["c9"]
+        )
+        assert [i["title"] for i in applied["insight_results"]] == ["A"]
+        assert applied["selected_chart_ids"] == ["c9"]
+
+
+# ── resolve_selected_chart_payloads unit tests ────────────────────────────────
+
+class TestResolveSelectedChartPayloads:
+    def test_returns_empty_when_no_key(self):
+        assert resolve_selected_chart_payloads({}) == []
+
+    def test_returns_empty_when_key_is_empty_list(self):
+        assert resolve_selected_chart_payloads({"selected_chart_ids": []}) == []
+
+    def test_resolves_string_id_from_charts_block(self):
+        result = {
+            "selected_chart_ids": ["c1"],
+            "charts": [{"chart_id": "c1", "title": "Revenue", "type": "bar"}],
+        }
+        out = resolve_selected_chart_payloads(result)
+        assert len(out) == 1
+        assert out[0]["chart_id"] == "c1"
+        assert out[0]["title"] == "Revenue"
+        assert out[0]["chart_type"] == "bar"
+
+    def test_resolves_from_chart_results_block(self):
+        result = {
+            "selected_chart_ids": ["cr1"],
+            "chart_results": [{"chart_id": "cr1", "title": "Sector split", "type": "pie"}],
+        }
+        out = resolve_selected_chart_payloads(result)
+        assert out[0]["chart_id"] == "cr1"
+        assert out[0]["chart_type"] == "pie"
+
+    def test_resolves_from_suggested_charts_block(self):
+        result = {
+            "selected_chart_ids": ["s1"],
+            "suggested_charts": [{"chart_id": "s1", "title": "Trend", "type": "line"}],
+        }
+        out = resolve_selected_chart_payloads(result)
+        assert out[0]["chart_id"] == "s1"
+
+    def test_resolves_from_chart_gallery_block(self):
+        result = {
+            "selected_chart_ids": ["g1"],
+            "chart_gallery": [{"chart_id": "g1", "title": "Gallery item", "type": "scatter"}],
+        }
+        out = resolve_selected_chart_payloads(result)
+        assert out[0]["chart_id"] == "g1"
+
+    def test_skips_unresolvable_ids(self):
+        result = {
+            "selected_chart_ids": ["known", "ghost"],
+            "charts": [{"chart_id": "known", "title": "Known chart", "type": "bar"}],
+        }
+        out = resolve_selected_chart_payloads(result)
+        assert len(out) == 1
+        assert out[0]["chart_id"] == "known"
+
+    def test_deduplicates_by_chart_id(self):
+        result = {
+            "selected_chart_ids": ["dup", "dup"],
+            "charts": [{"chart_id": "dup", "title": "Dup", "type": "bar"}],
+        }
+        out = resolve_selected_chart_payloads(result)
+        assert len(out) == 1
+
+    def test_preserves_order_matching_selected_ids(self):
+        result = {
+            "selected_chart_ids": ["b", "a"],
+            "charts": [
+                {"chart_id": "a", "title": "A"},
+                {"chart_id": "b", "title": "B"},
+            ],
+        }
+        out = resolve_selected_chart_payloads(result)
+        assert [e["chart_id"] for e in out] == ["b", "a"]
+
+    def test_legacy_integer_index_resolved(self):
+        result = {
+            "selected_chart_ids": [1],
+            "charts": [
+                {"title": "First", "type": "bar"},
+                {"title": "Second", "type": "line"},
+            ],
+        }
+        out = resolve_selected_chart_payloads(result)
+        assert len(out) == 1
+        assert out[0]["chart_id"] == "idx_1"
+        assert out[0]["title"] == "Second"
+        assert out[0]["chart_type"] == "line"
+
+    def test_integer_index_out_of_range_skipped(self):
+        result = {
+            "selected_chart_ids": [99],
+            "charts": [{"chart_id": "only", "title": "Only", "type": "bar"}],
+        }
+        assert resolve_selected_chart_payloads(result) == []
+
+    def test_integer_index_resolves_to_existing_chart_id(self):
+        result = {
+            "selected_chart_ids": [0],
+            "charts": [{"chart_id": "has_id", "title": "Has ID", "type": "bar"}],
+        }
+        out = resolve_selected_chart_payloads(result)
+        assert out[0]["chart_id"] == "has_id"
+
+    def test_dict_slot_resolved_by_chart_id_field(self):
+        result = {
+            "selected_chart_ids": [{"chart_id": "d1", "title": "override"}],
+            "charts": [{"chart_id": "d1", "title": "Stored", "type": "bar"}],
+        }
+        out = resolve_selected_chart_payloads(result)
+        assert out[0]["chart_id"] == "d1"
+
+    def test_preserves_all_stored_fields(self):
+        result = {
+            "selected_chart_ids": ["rich"],
+            "charts": [{
+                "chart_id": "rich",
+                "title": "Rich chart",
+                "type": "bar",
+                "data": {"labels": ["A"], "datasets": [{"data": [1]}]},
+                "options": {"responsive": True},
+            }],
+        }
+        out = resolve_selected_chart_payloads(result)
+        assert "data" in out[0]
+        assert "options" in out[0]
+
+    def test_normalises_chart_type_from_type_field(self):
+        result = {
+            "selected_chart_ids": ["t1"],
+            "charts": [{"chart_id": "t1", "title": "T", "type": "scatter"}],
+        }
+        out = resolve_selected_chart_payloads(result)
+        assert out[0]["chart_type"] == "scatter"
+
+    def test_unknown_chart_type_when_missing(self):
+        result = {
+            "selected_chart_ids": ["no_type"],
+            "charts": [{"chart_id": "no_type", "title": "No type chart"}],
+        }
+        out = resolve_selected_chart_payloads(result)
+        assert out[0]["chart_type"] == "unknown"
+
+    def test_booleans_in_selected_ids_are_skipped(self):
+        result = {
+            "selected_chart_ids": [True, False, "real"],
+            "charts": [{"chart_id": "real", "title": "R", "type": "bar"}],
+        }
+        out = resolve_selected_chart_payloads(result)
+        assert len(out) == 1
+        assert out[0]["chart_id"] == "real"
+
+    def test_empty_charts_block_falls_through_to_chart_results(self):
+        result = {
+            "selected_chart_ids": ["x"],
+            "charts": [],
+            "chart_results": [{"chart_id": "x", "title": "X", "type": "bar"}],
+        }
+        out = resolve_selected_chart_payloads(result)
+        assert out[0]["chart_id"] == "x"
+
+
+# ── build_context: selected_chart_payloads integration ───────────────────────
+
+_MINIMAL_DF = pd.DataFrame({"a": [1, 2, 3]})
+
+
+class TestBuildContextSelectedChartPayloads:
+    def test_key_present_and_empty_when_no_selection(self):
+        result = {
+            "insight_results": [],
+            "health_score": {"total": 80, "breakdown": {"Overall": 80}},
+        }
+        ctx = build_context(_MINIMAL_DF, result, "Test")
+        assert "selected_chart_payloads" in ctx
+        assert ctx["selected_chart_payloads"] == []
+
+    def test_resolves_payloads_when_selection_present(self):
+        result = {
+            "selected_chart_ids": ["c1"],
+            "charts": [{"chart_id": "c1", "title": "Revenue", "type": "bar"}],
+            "insight_results": [],
+            "health_score": {"total": 70},
+        }
+        ctx = build_context(_MINIMAL_DF, result, "Test")
+        payloads = ctx["selected_chart_payloads"]
+        assert len(payloads) == 1
+        assert payloads[0]["chart_id"] == "c1"
+        assert payloads[0]["title"] == "Revenue"
+        assert payloads[0]["chart_type"] == "bar"
+
+    def test_skips_unresolvable_ids_in_context(self):
+        result = {
+            "selected_chart_ids": ["present", "absent"],
+            "charts": [{"chart_id": "present", "title": "Here", "type": "line"}],
+            "insight_results": [],
+            "health_score": {"total": 70},
+        }
+        ctx = build_context(_MINIMAL_DF, result, "Test")
+        ids = [p["chart_id"] for p in ctx["selected_chart_payloads"]]
+        assert ids == ["present"]
+
+    def test_legacy_health_and_missing_charts_unchanged(self):
+        result = {
+            "health_score": {"total": 65, "breakdown": {"Completeness": 65}},
+            "profile": [{"name": "col_a", "missing_pct": 20}],
+            "insight_results": [],
+        }
+        ctx = build_context(_MINIMAL_DF, result, "Test")
+        assert ctx["health_chart"] is not None
+        assert ctx["missing_chart"] is not None
+        assert "selected_chart_payloads" in ctx
+
+    def test_full_pipeline_apply_draft_then_build_context(self):
+        analysis_result = {
+            "narrative": "original",
+            "insight_results": [
+                {"insight_id": "ins_a", "title": "Insight A", "severity": "high"},
+            ],
+            "charts": [
+                {"chart_id": "ch_1", "title": "Top performers", "type": "bar"},
+                {"chart_id": "ch_2", "title": "Risk scatter", "type": "scatter"},
+            ],
+            "health_score": {"total": 75},
+        }
+        applied = apply_draft_to_result(
+            analysis_result,
+            draft_summary="Consultant summary.",
+            selected_indices=["ins_a"],
+            selected_chart_ids=["ch_2", "ch_1"],
+        )
+        ctx = build_context(_MINIMAL_DF, applied, "Project X")
+        payloads = ctx["selected_chart_payloads"]
+        assert [p["chart_id"] for p in payloads] == ["ch_2", "ch_1"]
+        assert payloads[0]["chart_type"] == "scatter"
+        assert payloads[1]["chart_type"] == "bar"
+        assert ctx["narrative"] == "Consultant summary."
