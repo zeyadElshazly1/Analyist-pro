@@ -647,3 +647,148 @@ class TestBuildContextSelectedChartPayloads:
         assert payloads[0]["chart_type"] == "scatter"
         assert payloads[1]["chart_type"] == "bar"
         assert ctx["narrative"] == "Consultant summary."
+
+
+# ── HTML export: Chart Gallery section ───────────────────────────────────────
+
+class TestHtmlExportChartGallery:
+    def _seed_run_with_charts(self, project_id: int) -> int:
+        db = TestingSessionLocal()
+        try:
+            result = {
+                "project_id": project_id,
+                "narrative": "Narrative text.",
+                "insight_results": [
+                    {
+                        "insight_id": "ins_0",
+                        "title": "Finding A",
+                        "severity": "high",
+                        "explanation": "Detail.",
+                        "recommendation": "Fix it",
+                    }
+                ],
+                "health_score": {"total": 80, "breakdown": {"Overall": 80}},
+                "dataset_summary": {"rows": 10, "columns": 3, "numeric_cols": 2, "categorical_cols": 1, "missing_pct": 0.0},
+                "cleaning_report": [],
+                "profile": [],
+                "charts": [
+                    {
+                        "chart_id": "gallery_a",
+                        "title": "CHART_GALLERY_A_TITLE",
+                        "type": "bar",
+                        "chart_type": "bar",
+                        "data": {"labels": ["X", "Y"], "datasets": [{"label": "s", "data": [1, 2]}]},
+                    },
+                    {
+                        "chart_id": "gallery_b",
+                        "title": "CHART_GALLERY_B_TITLE",
+                        "type": "scatter",
+                        "chart_type": "scatter",
+                        "data": {"labels": ["P", "Q"], "datasets": [{"label": "t", "data": [3, 4]}]},
+                    },
+                ],
+            }
+            run = AnalysisResult(
+                project_id=project_id,
+                file_hash="chart-seed-hash",
+                result_json=json.dumps(result),
+                status="report_ready",
+            )
+            db.add(run)
+            db.commit()
+            db.refresh(run)
+            return run.id
+        finally:
+            db.close()
+
+    def _save_draft_with_charts(self, client, project_id: int, headers, *, chart_ids: list) -> None:
+        _save_draft(client, project_id, headers, summary="Gallery summary.")
+        db = TestingSessionLocal()
+        try:
+            draft = (
+                db.query(ReportDraft)
+                .filter(ReportDraft.project_id == project_id)
+                .order_by(ReportDraft.created_at.desc())
+                .first()
+            )
+            assert draft is not None
+            draft.selected_chart_ids_json = json.dumps(chart_ids)
+            db.commit()
+        finally:
+            db.close()
+
+    def test_chart_gallery_section_present_when_charts_selected(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        self._seed_run_with_charts(pid)
+        self._save_draft_with_charts(client, pid, consultant_auth_headers, chart_ids=["gallery_a"])
+
+        r = client.get(f"/reports/export/{pid}?format=html", headers=consultant_auth_headers)
+        assert r.status_code == 200, r.text
+        assert "Chart Gallery" in r.text
+
+    def test_chart_titles_rendered_in_gallery(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        self._seed_run_with_charts(pid)
+        self._save_draft_with_charts(
+            client, pid, consultant_auth_headers, chart_ids=["gallery_a", "gallery_b"]
+        )
+
+        r = client.get(f"/reports/export/{pid}?format=html", headers=consultant_auth_headers)
+        assert r.status_code == 200, r.text
+        assert "CHART_GALLERY_A_TITLE" in r.text
+        assert "CHART_GALLERY_B_TITLE" in r.text
+
+    def test_chart_type_badge_rendered_uppercased(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        self._seed_run_with_charts(pid)
+        self._save_draft_with_charts(client, pid, consultant_auth_headers, chart_ids=["gallery_a"])
+
+        r = client.get(f"/reports/export/{pid}?format=html", headers=consultant_auth_headers)
+        assert r.status_code == 200, r.text
+        assert "BAR" in r.text
+
+    def test_charts_rendered_in_selection_order(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        self._seed_run_with_charts(pid)
+        # Select B before A to verify ordering respects selected_chart_ids
+        self._save_draft_with_charts(
+            client, pid, consultant_auth_headers, chart_ids=["gallery_b", "gallery_a"]
+        )
+
+        r = client.get(f"/reports/export/{pid}?format=html", headers=consultant_auth_headers)
+        assert r.status_code == 200, r.text
+        pos_b = r.text.index("CHART_GALLERY_B_TITLE")
+        pos_a = r.text.index("CHART_GALLERY_A_TITLE")
+        assert pos_b < pos_a, "Gallery B must appear before Gallery A (selection order)"
+
+    def test_unselected_chart_absent_from_gallery(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        self._seed_run_with_charts(pid)
+        # Only select gallery_a
+        self._save_draft_with_charts(client, pid, consultant_auth_headers, chart_ids=["gallery_a"])
+
+        r = client.get(f"/reports/export/{pid}?format=html", headers=consultant_auth_headers)
+        assert r.status_code == 200, r.text
+        assert "CHART_GALLERY_A_TITLE" in r.text
+        assert "CHART_GALLERY_B_TITLE" not in r.text
+
+    def test_no_gallery_section_when_no_charts_selected(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        self._seed_run_with_charts(pid)
+        self._save_draft_with_charts(client, pid, consultant_auth_headers, chart_ids=[])
+
+        r = client.get(f"/reports/export/{pid}?format=html", headers=consultant_auth_headers)
+        assert r.status_code == 200, r.text
+        assert "Chart Gallery" not in r.text
