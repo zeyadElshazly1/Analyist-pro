@@ -73,6 +73,40 @@
   </div>
   {% endif %}
 
+  {% if selected_chart_payloads %}
+  <h2>Chart Gallery</h2>
+  <div class="card">
+    {% for chart in selected_chart_payloads %}
+    <div{% if not loop.last %} style="margin-bottom:2rem;border-bottom:1px solid #334155;padding-bottom:2rem;"{% endif %}>
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;">
+        <h3>{{ chart.title or 'Untitled Chart' }}</h3>
+        <span class="badge badge-blue" style="font-size:0.7rem;">{{ (chart.chart_type or chart.type or 'chart') | upper }}</span>
+      </div>
+      <div class="chart-wrapper"><canvas id="selChart_{{ loop.index0 }}"></canvas></div>
+    </div>
+    {% endfor %}
+  </div>
+  <script>
+  (function(){
+    Chart.defaults.color = '#94a3b8';
+    var payloads = {{ selected_chart_payloads | tojson }};
+    payloads.forEach(function(p, i){
+      var el = document.getElementById('selChart_' + i);
+      if (!el) return;
+      var type = p.type || p.chart_type || 'bar';
+      var data = p.data;
+      var opts = p.options || {};
+      if (!data || !data.datasets) {
+        el.parentElement.innerHTML = '<p style="color:#64748b;text-align:center;padding:2rem">Chart data unavailable for this export.</p>';
+        return;
+      }
+      try { new Chart(el, {type: type, data: data, options: opts}); }
+      catch(e) { el.parentElement.innerHTML = '<p style="color:#64748b;text-align:center;padding:2rem">Chart data unavailable for this export.</p>'; }
+    });
+  })();
+  </script>
+  {% endif %}
+
   {% if health_chart %}
   <h2>Data Quality Breakdown</h2>
   <div class="card">
