@@ -102,6 +102,7 @@ def apply_draft_to_result(
     draft_summary: Optional[str] = None,
     draft_title: Optional[str] = None,
     selected_indices: Optional[Iterable[Any]] = None,
+    selected_chart_ids: Optional[list[Any]] = None,
 ) -> dict[str, Any]:
     """Return a copy of ``analysis_result`` with the saved draft applied.
 
@@ -163,5 +164,8 @@ def apply_draft_to_result(
         cleaned_title = draft_title.strip()
         if cleaned_title:
             result["draft_title"] = cleaned_title
+
+    if selected_chart_ids is not None:
+        result["selected_chart_ids"] = list(selected_chart_ids)
 
     return result

@@ -12,7 +12,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from .charts import build_chart_configs
+from .charts import build_chart_configs, resolve_selected_chart_payloads
 
 _SEVERITY_BADGE = {
     "high":   "badge-red",
@@ -124,8 +124,11 @@ def build_context(
                 "impact": step.get("impact", "") if isinstance(step, dict) else "",
             })
 
-    # Chart configs
+    # Chart configs (legacy health/missing charts for existing templates)
     chart_configs = build_chart_configs(analysis_result)
+
+    # Selected chart payloads from Report Builder (set by apply_draft_to_result)
+    selected_chart_payloads = resolve_selected_chart_payloads(analysis_result)
 
     # Trust metadata
     cleaning_steps = len(analysis_result.get("cleaning_report", []))
@@ -161,8 +164,9 @@ def build_context(
         "insights":        insights,
         "column_rows":     column_rows,
         "cleaning_rows":   cleaning_rows,
-        "health_chart":    chart_configs.get("health_chart"),
-        "missing_chart":   chart_configs.get("missing_chart"),
+        "health_chart":             chart_configs.get("health_chart"),
+        "missing_chart":            chart_configs.get("missing_chart"),
+        "selected_chart_payloads":  selected_chart_payloads,
         "trust_meta":      trust_meta,
         # Optional canonical block — None when no comparison was run for this
         # project.  Templates that opt in can render it; existing templates
