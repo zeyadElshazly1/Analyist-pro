@@ -542,6 +542,32 @@ export function ReportBuilder({
     });
   }
 
+  function moveChart(chartId: string, direction: "up" | "down") {
+    setSelectedChartIds((prev) => {
+      const idx = prev.indexOf(chartId);
+      if (idx === -1) return prev;
+      if (direction === "up"   && idx === 0)              return prev;
+      if (direction === "down" && idx === prev.length - 1) return prev;
+      const next = [...prev];
+      const swap = direction === "up" ? idx - 1 : idx + 1;
+      [next[idx], next[swap]] = [next[swap], next[idx]];
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      setSaved(false);
+      setSaving(true);
+      saveDraftReport(projectId, {
+        title:                draft.title,
+        summary:              draft.summary,
+        selected_insight_ids: draft.selected,
+        selected_chart_ids:   next,
+        template:             draft.template ?? null,
+      })
+        .then(() => setSaved(true))
+        .catch(() => {/* silent */})
+        .finally(() => setSaving(false));
+      return next;
+    });
+  }
+
   function toggleChart(chartId: string) {
     setSelectedChartIds((prev) => {
       const next = prev.includes(chartId)
@@ -874,56 +900,105 @@ export function ReportBuilder({
                 No chart suggestions are available for this run yet.
               </p>
             </div>
-          ) : (
-            <>
-              <div className="space-y-1.5">
-                {availableCharts.map((ch) => {
-                  const isSelected = selectedChartIds.includes(ch.chart_id);
-                  return (
+          ) : (() => {
+            // Derive two ordered sublists:
+            // 1. selected: in selectedChartIds order (so Up/Down have meaning)
+            // 2. unselected: in catalog order
+            const byId = Object.fromEntries(availableCharts.map((c) => [c.chart_id, c]));
+            const selectedRows = selectedChartIds
+              .map((id) => byId[id])
+              .filter((c): c is AvailableChart => Boolean(c));
+            const unselectedRows = availableCharts.filter(
+              (c) => !selectedChartIds.includes(c.chart_id),
+            );
+            return (
+              <>
+                <div className="space-y-1.5">
+                  {selectedRows.map((ch, rowIdx) => (
+                    <div
+                      key={ch.chart_id}
+                      className="flex items-center gap-2 rounded-xl border border-indigo-500/40 bg-indigo-600/8 px-3 py-2.5"
+                    >
+                      {/* Checkbox */}
+                      <button
+                        type="button"
+                        onClick={() => toggleChart(ch.chart_id)}
+                        className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border border-indigo-500 bg-indigo-600 transition-colors"
+                        aria-label={`Remove ${ch.title || ch.chart_id}`}
+                      >
+                        <CheckCircle className="h-3 w-3 text-white" />
+                      </button>
+                      <BarChart2 className="h-3.5 w-3.5 flex-shrink-0 text-indigo-400/60" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-medium text-white/80">
+                          {ch.title || ch.chart_id}
+                        </p>
+                      </div>
+                      <span className="flex-shrink-0 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-indigo-300">
+                        {ch.chart_type}
+                      </span>
+                      {/* Up / Down */}
+                      <div className="flex flex-shrink-0 flex-col gap-px">
+                        <button
+                          type="button"
+                          disabled={rowIdx === 0}
+                          onClick={() => moveChart(ch.chart_id, "up")}
+                          className="flex h-4 w-4 items-center justify-center rounded text-white/30 transition hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-20"
+                          aria-label="Move up"
+                        >
+                          <ChevronUp className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={rowIdx === selectedRows.length - 1}
+                          onClick={() => moveChart(ch.chart_id, "down")}
+                          className="flex h-4 w-4 items-center justify-center rounded text-white/30 transition hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-20"
+                          aria-label="Move down"
+                        >
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Unselected charts — add-only, no reorder controls */}
+                  {unselectedRows.length > 0 && selectedRows.length > 0 && (
+                    <div className="my-1 border-t border-white/[0.05]" />
+                  )}
+                  {unselectedRows.map((ch) => (
                     <button
                       key={ch.chart_id}
                       type="button"
                       onClick={() => toggleChart(ch.chart_id)}
-                      className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all ${
-                        isSelected
-                          ? "border-indigo-500/40 bg-indigo-600/8"
-                          : "border-white/[0.06] bg-white/[0.015] hover:border-white/10"
-                      }`}
+                      className="flex w-full items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.015] px-3 py-2.5 text-left transition-all hover:border-white/10"
                     >
-                      <div className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border transition-colors ${
-                        isSelected ? "border-indigo-500 bg-indigo-600" : "border-white/20"
-                      }`}>
-                        {isSelected && <CheckCircle className="h-3 w-3 text-white" />}
-                      </div>
+                      <div className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border border-white/20 transition-colors" />
                       <BarChart2 className="h-3.5 w-3.5 flex-shrink-0 text-white/25" />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-xs font-medium text-white/80">
                           {ch.title || ch.chart_id}
                         </p>
                       </div>
-                      <span className={`flex-shrink-0 rounded-full border px-1.5 py-px text-[10px] font-medium uppercase tracking-wide transition-colors ${
-                        isSelected
-                          ? "border-indigo-500/25 bg-indigo-500/10 text-indigo-300"
-                          : "border-white/10 bg-white/[0.03] text-white/35"
-                      }`}>
+                      <span className="flex-shrink-0 rounded-full border border-white/10 bg-white/[0.03] px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-white/35">
                         {ch.chart_type}
                       </span>
                     </button>
-                  );
-                })}
-              </div>
-              {selectedChartIds.length === 0 && (
-                <p className="mt-2 text-[11px] text-white/30">
-                  No charts selected for this report yet.
-                </p>
-              )}
-              {selectedChartIds.length > 0 && (
-                <p className="mt-2 text-[11px] text-white/30">
-                  These charts will be included in HTML export and listed in Excel export.
-                </p>
-              )}
-            </>
-          )}
+                  ))}
+                </div>
+
+                {selectedChartIds.length === 0 && (
+                  <p className="mt-2 text-[11px] text-white/30">
+                    No charts selected for this report yet.
+                  </p>
+                )}
+                {selectedChartIds.length > 0 && (
+                  <p className="mt-2 text-[11px] text-white/30">
+                    Chart order controls the order used in HTML and Excel exports.
+                  </p>
+                )}
+              </>
+            );
+          })()}
         </div>
 
       </div>

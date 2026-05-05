@@ -1,8 +1,9 @@
 # Report Builder — Chart Selection QA Checkpoint
 
-Tasks 75K–75M added end-to-end chart selection to the Report Builder:
-auto-selected finance charts, interactive add/remove toggles, and
-persistence of `selected_chart_ids` through HTML and Excel exports.
+Tasks 75K–75O added end-to-end chart selection and reordering to the
+Report Builder: auto-selected finance charts, interactive add/remove
+toggles, Up/Down reorder controls, and persistence of
+`selected_chart_ids` (including order) through HTML and Excel exports.
 
 No frontend test framework (Jest/Vitest) is currently configured.  Run
 these scenarios manually when reviewing chart-selection changes, or add
@@ -21,6 +22,7 @@ them to a CI test suite when one is introduced.
 | `availableCharts` state | `report-builder.tsx` | `useState<AvailableChart[]>` |
 | `selectedChartIds` state | `report-builder.tsx` | `useState<string[]>` |
 | `toggleChart` | `report-builder.tsx` | `(chartId: string) => void` |
+| `moveChart` | `report-builder.tsx` | `(chartId: string, direction: "up" \| "down") => void` |
 | `persistDraft` payload | `report-builder.tsx` | reads `selectedChartIdsRef.current` — never hardcoded `[]` |
 
 Run: `cd apps/web && npx tsc --noEmit` — expect only the pre-existing
@@ -141,6 +143,81 @@ Run: `cd apps/web && npx tsc --noEmit` — expect only the pre-existing
 - Both save payloads include the correct `selected_insight_ids` **and**
   `selected_chart_ids` simultaneously.
 - Neither toggle clobbers the other's state.
+
+---
+
+## Scenario 9 — Reorder: move second chart above first
+
+**Setup:** two or more charts selected (e.g., `c_top` at position 1,
+`c_rr` at position 2).
+
+**Steps:**
+1. In "Charts to include", locate the `c_rr` row (second selected chart).
+2. Click the **▲ (Move up)** button on that row.
+
+**Expected:**
+- `c_rr` jumps to position 1; `c_top` moves to position 2.
+- The ▲ button on the new top row (`c_rr`) is now disabled (greyed out).
+- The ▼ button on the new bottom row (`c_top`) is disabled if it was last.
+- Live Preview "Selected Charts" section reorders immediately.
+- Saving… / Draft saved fires.
+- `saveDraftReport` called with `selected_chart_ids: ["c_rr", "c_top", ...]`.
+
+---
+
+## Scenario 10 — Reorder: move chart down
+
+**Steps:**
+1. Click **▼ (Move down)** on the first selected chart.
+
+**Expected:**
+- Chart moves to position 2.
+- ▲ button on the new first chart is disabled.
+- Draft saves with updated order.
+
+---
+
+## Scenario 11 — Reorder persists through save and reopen
+
+**Steps:**
+1. Reorder charts so `c_rr` is first, `c_top` is second.
+2. Refresh the page.
+
+**Expected:**
+- `GET /reports/draft` returns `selected_chart_ids: ["c_rr", "c_top", ...]`.
+- `available_charts[].selected` marks correct entries.
+- The "Charts to include" section shows `c_rr` first with ▲ disabled,
+  `c_top` second.
+
+---
+
+## Scenario 12 — Reordered charts appear in correct order in HTML export
+
+**Steps:**
+1. Set order: `c_rr` first, `c_top` second.
+2. Export HTML.
+
+**Expected:**
+- "Chart Gallery" section shows `c_rr` canvas **before** `c_top` canvas.
+
+---
+
+## Scenario 13 — Reordered charts appear in correct order in XLSX export
+
+**Steps:**
+1. Same `c_rr`-first order. Export Excel.
+
+**Expected:**
+- "Selected Charts" sheet row 2 is `c_rr`, row 3 is `c_top`.
+
+---
+
+## Scenario 14 — Boundary: first chart ▲ disabled, last chart ▼ disabled
+
+**Expected:**
+- The ▲ button on the first selected row has `disabled` attribute.
+- The ▼ button on the last selected row has `disabled` attribute.
+- Clicking a disabled button has no effect.
 
 ---
 
