@@ -545,3 +545,156 @@ def test_get_draft_still_null_without_analysis(client, project, auth_headers):
     r = client.get(f"/reports/draft/{project['id']}", headers=auth_headers)
     assert r.status_code == 200
     assert r.json() is None
+
+
+# ── available_charts catalog in draft response ────────────────────────────────
+
+class TestAvailableCharts:
+    """GET /reports/draft exposes available_charts from the linked run."""
+
+    def _seed(self, project_id: int, charts: list[dict], selected_chart_ids: list | None = None) -> None:
+        db = TestingSessionLocal()
+        try:
+            result_body = {
+                "narrative": "n",
+                "insight_results": [
+                    {"insight_id": "a", "title": "Finding A", "severity": "high", "report_safe": True},
+                ],
+                "dataset_summary": {"rows": 5, "columns": 3},
+                "health_score": {"total": 75},
+                "charts": charts,
+            }
+            run = AnalysisResult(
+                project_id=project_id,
+                file_hash=f"avail-charts-{project_id}",
+                result_json=json.dumps(result_body),
+                status="report_ready",
+            )
+            db.add(run)
+            db.commit()
+            draft = ReportDraft(
+                project_id=project_id,
+                analysis_result_id=run.id,
+                title="T",
+                summary="S",
+                selected_insight_ids_json=json.dumps(["a"]),
+                selected_chart_ids_json=json.dumps(selected_chart_ids) if selected_chart_ids is not None else None,
+            )
+            db.add(draft)
+            db.commit()
+        finally:
+            db.close()
+
+    def test_available_charts_present_when_charts_exist(self, client, project, auth_headers):
+        pid = project["id"]
+        self._seed(pid, [
+            {"chart_id": "c1", "title": "Revenue", "type": "bar"},
+            {"chart_id": "c2", "title": "Trend",   "type": "line"},
+        ], selected_chart_ids=["c1"])
+
+        r = client.get(f"/reports/draft/{pid}", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert "available_charts" in data
+        assert len(data["available_charts"]) == 2
+
+    def test_available_charts_preserves_stored_order(self, client, project, auth_headers):
+        pid = project["id"]
+        self._seed(pid, [
+            {"chart_id": "first",  "title": "First",  "type": "bar"},
+            {"chart_id": "second", "title": "Second", "type": "line"},
+            {"chart_id": "third",  "title": "Third",  "type": "pie"},
+        ], selected_chart_ids=["first"])
+
+        data = client.get(f"/reports/draft/{pid}", headers=auth_headers).json()
+        ids = [c["chart_id"] for c in data["available_charts"]]
+        assert ids == ["first", "second", "third"]
+
+    def test_selected_charts_marked_true(self, client, project, auth_headers):
+        pid = project["id"]
+        self._seed(pid, [
+            {"chart_id": "sel",   "title": "Selected",   "type": "bar"},
+            {"chart_id": "unsel", "title": "Unselected", "type": "line"},
+        ], selected_chart_ids=["sel"])
+
+        data = client.get(f"/reports/draft/{pid}", headers=auth_headers).json()
+        by_id = {c["chart_id"]: c for c in data["available_charts"]}
+        assert by_id["sel"]["selected"] is True
+        assert by_id["unsel"]["selected"] is False
+
+    def test_unselected_charts_marked_false(self, client, project, auth_headers):
+        pid = project["id"]
+        self._seed(pid, [
+            {"chart_id": "a", "title": "A", "type": "bar"},
+            {"chart_id": "b", "title": "B", "type": "bar"},
+            {"chart_id": "c", "title": "C", "type": "bar"},
+        ], selected_chart_ids=["b"])
+
+        data = client.get(f"/reports/draft/{pid}", headers=auth_headers).json()
+        by_id = {c["chart_id"]: c for c in data["available_charts"]}
+        assert by_id["a"]["selected"] is False
+        assert by_id["b"]["selected"] is True
+        assert by_id["c"]["selected"] is False
+
+    def test_legacy_index_charts_appear_with_idx_ids(self, client, project, auth_headers):
+        pid = project["id"]
+        # Charts without chart_id/id → catalog uses idx_N
+        self._seed(pid, [
+            {"title": "No-id chart zero",  "type": "bar"},
+            {"title": "No-id chart one",   "type": "line"},
+        ], selected_chart_ids=[0])
+
+        data = client.get(f"/reports/draft/{pid}", headers=auth_headers).json()
+        ids = [c["chart_id"] for c in data["available_charts"]]
+        assert ids == ["idx_0", "idx_1"]
+        by_id = {c["chart_id"]: c for c in data["available_charts"]}
+        assert by_id["idx_0"]["selected"] is True
+        assert by_id["idx_1"]["selected"] is False
+
+    def test_no_chart_payload_returns_empty_list(self, client, project, auth_headers):
+        pid = project["id"]
+        # Seed a run with no charts block at all
+        db = TestingSessionLocal()
+        try:
+            result_body = {
+                "narrative": "n",
+                "insight_results": [
+                    {"insight_id": "x", "title": "X", "severity": "high", "report_safe": True},
+                ],
+                "dataset_summary": {"rows": 3, "columns": 2},
+                "health_score": {"total": 70},
+            }
+            run = AnalysisResult(
+                project_id=pid,
+                file_hash="no-chart-block",
+                result_json=json.dumps(result_body),
+                status="report_ready",
+            )
+            db.add(run)
+            db.commit()
+            db.add(ReportDraft(
+                project_id=pid,
+                analysis_result_id=run.id,
+                title="T",
+                summary="S",
+                selected_insight_ids_json=json.dumps(["x"]),
+            ))
+            db.commit()
+        finally:
+            db.close()
+
+        data = client.get(f"/reports/draft/{pid}", headers=auth_headers).json()
+        assert data["available_charts"] == []
+
+    def test_available_charts_includes_title_and_chart_type(self, client, project, auth_headers):
+        pid = project["id"]
+        self._seed(pid, [
+            {"chart_id": "scatter1", "title": "Risk scatter", "type": "scatter"},
+        ], selected_chart_ids=["scatter1"])
+
+        data = client.get(f"/reports/draft/{pid}", headers=auth_headers).json()
+        ch = data["available_charts"][0]
+        assert ch["chart_id"] == "scatter1"
+        assert ch["title"] == "Risk scatter"
+        assert ch["chart_type"] == "scatter"
+        assert ch["selected"] is True
