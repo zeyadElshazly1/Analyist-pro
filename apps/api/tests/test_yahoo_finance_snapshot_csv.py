@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from app.services.analysis.orchestrator import analyze_dataset
+from app.services.analysis.ranking import _FINANCE_SNAPSHOT_TITLE_ORDER
 from app.services.dataset_context import FINANCIAL_MARKETS_SNAPSHOT, detect_dataset_context
 from app.services.insight_adapter import build_insight_results
 from app.services.profiler import calculate_health_score
@@ -29,30 +30,44 @@ def test_yahoo_finance_fixture_top_findings_are_finance_first() -> None:
     insights, _ = analyze_dataset(df)
     assert insights, "expected capped insight list"
 
-    premium = {
-        "Top return leaders",
-        "Largest return laggards",
-        "Highest volatility assets",
-        "Best risk-adjusted performers",
-        "Asset classes show different return profiles",
-        "Sectors show different return profiles",
-        "Highest analyst-implied upside",
-        "Assets cluster at different 52-week positions",
-    }
-    titles = [str(i.get("title", "")) for i in insights]
+    titles_seen = [str(i.get("title", "")) for i in insights]
+    premium_set = set(_FINANCE_SNAPSHOT_TITLE_ORDER)
+    present_premium = [t for t in _FINANCE_SNAPSHOT_TITLE_ORDER if t in titles_seen]
+
     domain_finance = [i for i in insights if i.get("domain") == FINANCIAL_MARKETS_SNAPSHOT]
     assert len(domain_finance) >= 5
+
+    n_pre = len(present_premium)
+    assert titles_seen[:n_pre] == present_premium, (
+        f"Expected opening block {present_premium}, got {titles_seen[:n_pre]}"
+    )
 
     first_generic_corr_idx = next(
         (j for j, i in enumerate(insights) if i.get("type") == "correlation"),
         None,
     )
-    last_premium_idx = max(j for j, t in enumerate(titles) if t in premium)
+    last_premium_idx = max(j for j, t in enumerate(titles_seen) if t in premium_set)
 
     if first_generic_corr_idx is not None:
         assert first_generic_corr_idx > last_premium_idx
 
-    assert titles[0] == "Top return leaders"
+    assert titles_seen[0] == "Top return leaders"
+
+    bad_seg_markers = (
+        "→ previousclose",
+        "→ open",
+        "→ daylow",
+        "→ currentprice",
+        "→ fiftydayaverage",
+        "→ twohundreddayaverage",
+    )
+    for idx, ins in enumerate(insights):
+        tl = str(ins.get("title", "")).lower()
+        if ins.get("type") == "segment" and "segment gap:" in tl:
+            if any(m in tl for m in bad_seg_markers):
+                assert idx >= n_pre, f"price segment {ins.get('title')} before premium block"
+        if "anomalies in currentprice" in tl:
+            assert idx >= n_pre
 
 
 def test_yahoo_finance_insight_adapter_stringifies_structured_evidence() -> None:

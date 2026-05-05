@@ -6,6 +6,8 @@ financial market snapshots while leaving domain-pack insights untouched.
 """
 from __future__ import annotations
 
+import re
+
 from app.services.dataset_context import FINANCIAL_MARKETS_SNAPSHOT, _normalise_col
 from app.services.dataset_context.schema import DatasetContext
 
@@ -93,6 +95,43 @@ def _multicollinearity_mostly_price_family(ins: dict) -> bool:
     return price_hits > len(cols) / 2.0
 
 
+def _generic_price_level_structure_insight(ins: dict) -> bool:
+    """
+    Generic detectors often emit asset_class → OHLC or univariate anomalies on price columns.
+    Those are redundant with the finance pack and price-overlap caveat on snapshots.
+    """
+    if ins.get("domain") == FINANCIAL_MARKETS_SNAPSHOT:
+        return False
+
+    itype = ins.get("type", "")
+    title = str(ins.get("title", ""))
+
+    if itype == "segment" and "segment gap:" in title.lower() and "→" in title:
+        parts = title.split("→")
+        if len(parts) >= 2:
+            num_side = parts[-1].strip().split(" (")[0].strip()
+            cat_side = parts[0].split(":")[-1].strip()
+            if _is_price_family_column(num_side):
+                return True
+            if _is_price_family_column(cat_side) and _is_price_family_column(num_side):
+                return True
+
+    if itype == "anomaly":
+        tl = title.lower()
+        if "multivariate" in tl:
+            return False
+        m = re.search(r"(?i)anomalies in\s+([^:()\s]+)", title)
+        if m and _is_price_family_column(m.group(1)):
+            return True
+
+    if itype == "concentration":
+        in_m = re.search(r"\bin\s+(\S+)\s*$", title, re.IGNORECASE)
+        if in_m and _is_price_family_column(in_m.group(1).rstrip(".,;)")):
+            return True
+
+    return False
+
+
 def suppress_for_dataset_context(
     insights: list[dict],
     context: DatasetContext,
@@ -156,6 +195,9 @@ def suppress_for_dataset_context(
             col = _extract_high_cardinality_column(str(ins.get("title", "")))
             if col and _is_asset_identifier_column(col):
                 continue
+
+        if _generic_price_level_structure_insight(ins):
+            continue
 
         out.append(ins)
 

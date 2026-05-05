@@ -83,6 +83,8 @@ def test_snapshot_suppresses_moving_average_and_price_derived_correlations() -> 
     titles = [i.get("title") for i in out]
     assert "Keep" in titles
     assert _PRICE_OVERLAP_FINDING_TITLE in titles
+
+
 def test_caveat_added_when_two_or_more_price_noise_removed() -> None:
     ctx = _snapshot_ctx()
     insights = [
@@ -136,6 +138,32 @@ def test_snapshot_drops_asset_id_high_cardinality() -> None:
     out = suppress_for_dataset_context(insights, ctx)
     assert len(out) == 1
     assert "region_bucket" in out[0].get("title", "")
+
+
+def test_snapshot_suppresses_segment_gap_when_numeric_side_is_price_family() -> None:
+    ctx = _snapshot_ctx()
+    insights = [
+        {"type": "segment", "title": "Segment gap: asset_class → previousClose", "finding": "f"},
+        {"type": "segment", "title": "Segment gap: asset_class → open", "finding": "f"},
+        {"type": "segment", "title": "Segment gap: asset_class → ytd_return", "finding": "f"},
+    ]
+    out = suppress_for_dataset_context(insights, ctx)
+    titles = [i.get("title") for i in out]
+    assert "Segment gap: asset_class → ytd_return" in titles
+    assert "Segment gap: asset_class → previousClose" not in titles
+    assert "Segment gap: asset_class → open" not in titles
+
+
+def test_snapshot_suppresses_univariate_anomaly_on_price_column() -> None:
+    ctx = _snapshot_ctx()
+    insights = [
+        {"type": "anomaly", "title": "Anomalies in currentPrice", "finding": "f"},
+        {"type": "anomaly", "title": "Anomalies in ytd_return", "finding": "f"},
+    ]
+    out = suppress_for_dataset_context(insights, ctx)
+    titles = [i.get("title") for i in out]
+    assert "Anomalies in currentPrice" not in titles
+    assert "Anomalies in ytd_return" in titles
 
 
 def _snapshot_with_price_overlap_df(n: int = 80) -> pd.DataFrame:

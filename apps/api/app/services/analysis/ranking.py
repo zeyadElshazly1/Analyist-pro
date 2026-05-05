@@ -10,10 +10,10 @@ This module uses a semantic key: (insight_type, frozenset_of_involved_columns).
 For insights without explicit column references, it falls back to a normalised
 title prefix so the behaviour degrades gracefully rather than failing.
 
-For confidently detected ``financial_markets_snapshot`` datasets, headline tiles are
-ordered domain-first (return leaders through 52-week positioning), generic
-correlations sink below structured snapshot findings, and composite scoring
-still applies within each tier.
+For confidently detected ``financial_markets_snapshot`` datasets (above the context
+threshold), premium finance tiles are emitted in a fixed analyst narrative order,
+then other domain insights, the price-overlap caveat, generic non-correlations, and
+correlations last. Outside that mode, tier-based composite sorting applies.
 
 rank_insights: composite sort — severity 50%, confidence 25%, target-driver 25%,
 plus optional financial snapshot domain boosts (Task 73C).
@@ -91,6 +91,63 @@ _TARGET_DRIVER_BONUS = 0.30
 
 # Pull generic correlations down when ranking mixed pools for market snapshots.
 _CORRELATION_SNAPSHOT_DEMOTE = 0.52
+
+
+def _snapshot_rank_active(ctx: DatasetContext | None) -> bool:
+    return (
+        ctx is not None
+        and ctx.dataset_type == FINANCIAL_MARKETS_SNAPSHOT
+        and ctx.confidence >= CONFIDENCE_THRESHOLD
+    )
+
+
+def _finance_snapshot_ordered_list(insights: list[dict], ctx: DatasetContext | None) -> list:
+    """
+    Fixed narrative order for confident market snapshots:
+
+    1–8  Premium finance tiles (only titles present in ``insights``)
+    9+   Other domain insights (composite order)
+         Single price-overlap caveat
+         Generic non-correlation insights (composite order)
+         Correlations last (composite order)
+    """
+    premium_by_title: dict[str, dict] = {}
+    for ins in insights:
+        if ins.get("domain") != FINANCIAL_MARKETS_SNAPSHOT:
+            continue
+        t = str(ins.get("title", "") or "").strip()
+        if t in _FINANCE_SNAPSHOT_TITLE_ORDER and t not in premium_by_title:
+            premium_by_title[t] = ins
+
+    premium_block = [premium_by_title[t] for t in _FINANCE_SNAPSHOT_TITLE_ORDER if t in premium_by_title]
+    used = {id(x) for x in premium_block}
+
+    caveat_block: list[dict] = []
+    other_domain: list[dict] = []
+    generic_non_corr: list[dict] = []
+    correlations: list[dict] = []
+
+    for ins in insights:
+        if id(ins) in used:
+            continue
+        t = str(ins.get("title", "") or "").strip()
+        dom = ins.get("domain")
+        itype = ins.get("type", "")
+        if dom == FINANCIAL_MARKETS_SNAPSHOT and t == _PRICE_OVERLAP_CAVEAT_TITLE:
+            caveat_block.append(ins)
+        elif dom == FINANCIAL_MARKETS_SNAPSHOT:
+            other_domain.append(ins)
+        elif itype == "correlation":
+            correlations.append(ins)
+        else:
+            generic_non_corr.append(ins)
+
+    caveat_pick = sorted(caveat_block, key=lambda x: -_composite_score(x, ctx))[:1]
+    other_domain.sort(key=lambda x: -_composite_score(x, ctx))
+    generic_non_corr.sort(key=lambda x: -_composite_score(x, ctx))
+    correlations.sort(key=lambda x: -_composite_score(x, ctx))
+
+    return premium_block + other_domain + caveat_pick + generic_non_corr + correlations
 
 
 def _snapshot_rank_sort_tuple(ins: dict, ctx: DatasetContext | None) -> tuple[int | float, ...]:
@@ -212,12 +269,18 @@ def rank_insights(
 ) -> tuple[list[dict], int]:
     """
     Sort insights for display: confident ``financial_markets_snapshot`` runs use
-    domain-first tiers; otherwise sort by composite score only.
+    explicit premium-title ordering, caveat placement, then generics and correlations.
 
-    Dedupes via semantic keys, then caps at MAX_INSIGHTS.
+    Other contexts: tier tuple sort (includes composite), dedupe, cap.
 
     Returns (ranked_deduped_list, total_before_cap).
     """
+    if _snapshot_rank_active(ctx):
+        deduped = deduplicate_insights(list(insights))
+        ordered = _finance_snapshot_ordered_list(deduped, ctx)
+        total_found = len(deduped)
+        return ordered[:MAX_INSIGHTS], total_found
+
     insights.sort(key=lambda x: _snapshot_rank_sort_tuple(x, ctx))
     deduped = deduplicate_insights(insights)
     total_found = len(deduped)
