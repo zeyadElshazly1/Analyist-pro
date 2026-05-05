@@ -158,7 +158,7 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
     try:
         profile = profile_dataset(df_clean)
         health_score = calculate_health_score(df_clean)
-        health_result = build_health_result(df_clean, health_score, profile).model_dump()
+        health_result = build_health_result(df_clean, health_score, profile, df_raw=df).model_dump()
     except Exception as e:
         logger.error(f"Column profiling failed for project {project_id}: {e}", exc_info=True)
         _publish(r, run_key, {

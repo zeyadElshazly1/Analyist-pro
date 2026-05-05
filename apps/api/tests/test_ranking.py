@@ -10,7 +10,7 @@ from app.services.analysis.ranking import (
     _composite_score,
     rank_insights,
 )
-from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT
+from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT, DatasetContext
 
 
 def _base_composite_legacy(ins: dict) -> float:
@@ -136,3 +136,30 @@ def test_analyze_finance_snapshot_surfaces_multiple_premium_finance_titles() -> 
     titles = [i.get("title") for i in insights]
     premiers_present = sum(1 for t in titles if t in _SNAPSHOT_FINANCE_PREMIUM_TITLES)
     assert premiers_present >= 2
+
+
+def test_snapshot_ctx_orders_finance_before_high_correlations() -> None:
+    ctx = DatasetContext(
+        dataset_type=FINANCIAL_MARKETS_SNAPSHOT,
+        confidence=0.9,
+        semantic_roles={},
+    )
+    corr = {
+        "type": "correlation",
+        "severity": "high",
+        "confidence": 95.0,
+        "title": "Relationship detected: fee_a & fee_b",
+        "col_a": "fee_a",
+        "col_b": "fee_b",
+    }
+    fin = {
+        "type": "segment",
+        "severity": "medium",
+        "confidence": 85.0,
+        "domain": FINANCIAL_MARKETS_SNAPSHOT,
+        "title": "Top return leaders",
+        "finding": "f",
+        "action": "a",
+    }
+    ranked, _ = rank_insights([corr, fin], ctx)
+    assert ranked[0]["title"] == "Top return leaders"

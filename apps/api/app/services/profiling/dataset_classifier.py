@@ -1,6 +1,11 @@
 """
 Dataset type classifier.
 
+Financial markets snapshot rows (cross-sectional Yahoo-style panels) are detected
+via the same signal weights as ``dataset_context.detector`` so health scoring
+can apply snapshot-specific dimension weights before falling back to the
+legacy timeseries / transactional / survey / general model.
+
 BUG FIX: The original profiler.py used a single rule:
     if datetime_cols and numeric_cols: return "timeseries"
 
@@ -20,6 +25,9 @@ confidence to users.
 import numpy as np
 import pandas as pd
 
+from app.services.dataset_context.detector import _score_snapshot
+from app.services.dataset_context.schema import CONFIDENCE_THRESHOLD, FINANCIAL_MARKETS_SNAPSHOT
+
 
 def _detect_dataset_type(df: pd.DataFrame) -> tuple[str, int]:
     """
@@ -28,9 +36,14 @@ def _detect_dataset_type(df: pd.DataFrame) -> tuple[str, int]:
     Returns
     -------
     (dataset_type, confidence_pct)
-        dataset_type : "timeseries" | "transactional" | "survey" | "general"
+        dataset_type : "financial_markets_snapshot" | "timeseries" | "transactional" | "survey" | "general"
         confidence_pct : int in [40, 95]
     """
+    snap_conf, _ = _score_snapshot(df)
+    if snap_conf >= CONFIDENCE_THRESHOLD:
+        conf_int = int(min(95, max(40, round(snap_conf * 100))))
+        return FINANCIAL_MARKETS_SNAPSHOT, conf_int
+
     scores: dict[str, int] = {
         "timeseries":    0,
         "transactional": 0,

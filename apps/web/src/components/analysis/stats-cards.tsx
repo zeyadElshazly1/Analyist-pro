@@ -34,13 +34,15 @@ const DOMAIN_BADGE: Record<string, string> = {
   "Transactional":         "bg-emerald-500/15 text-emerald-300 border-emerald-500/20",
   "Time Series":           "bg-teal-500/15 text-teal-300 border-teal-500/20",
   "Survey":                "bg-purple-500/15 text-purple-300 border-purple-500/20",
+  "Financial Markets Snapshot": "bg-sky-500/15 text-sky-300 border-sky-500/20",
 };
 
 const DATASET_TYPE_DISPLAY: Record<string, string> = {
-  timeseries:    "Time Series",
-  transactional: "Transactional",
-  survey:        "Survey",
-  general:       "General",
+  timeseries:                   "Time Series",
+  transactional:                "Transactional",
+  survey:                       "Survey",
+  general:                      "General",
+  financial_markets_snapshot:   "Financial Markets Snapshot",
 };
 
 export function StatsCards({ healthResult, profileResult, summary }: Props) {

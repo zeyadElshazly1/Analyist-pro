@@ -1,7 +1,7 @@
 """
 Health score engine.
 
-_HEALTH_WEIGHTS         — dimension weights by dataset type
+_HEALTH_WEIGHTS         — dimension weights by dataset type (includes ``financial_markets_snapshot``)
 _column_health_score    — 0–100 score for a single column
 calculate_health_score  — overall dataset health with grade, deductions,
                           business impact, fix suggestions, and per-column breakdown
@@ -10,17 +10,30 @@ New field added (backward-compat): "dataset_type_confidence"
 """
 import pandas as pd
 
+from app.services.dataset_context import detect_dataset_context
+from app.services.dataset_context.schema import (
+    CONFIDENCE_THRESHOLD,
+    FINANCIAL_MARKETS_SNAPSHOT,
+    FINANCIAL_MARKETS_TIMESERIES,
+)
+
 from .dataset_classifier import _detect_dataset_type
 
 
 # ── Weights by dataset type ───────────────────────────────────────────────────
 
 _HEALTH_WEIGHTS: dict[str, dict[str, int]] = {
-    "timeseries":    {"completeness": 35, "uniqueness": 15, "consistency": 20, "validity": 15, "structure": 15},
-    "transactional": {"completeness": 25, "uniqueness": 30, "consistency": 20, "validity": 15, "structure": 10},
-    "survey":        {"completeness": 30, "uniqueness": 10, "consistency": 25, "validity": 20, "structure": 15},
-    "general":       {"completeness": 30, "uniqueness": 20, "consistency": 20, "validity": 15, "structure": 15},
+    "timeseries":                 {"completeness": 35, "uniqueness": 15, "consistency": 20, "validity": 15, "structure": 15},
+    "financial_markets_snapshot": {"completeness": 32, "uniqueness": 18, "consistency": 18, "validity": 17, "structure": 15},
+    "transactional":              {"completeness": 25, "uniqueness": 30, "consistency": 20, "validity": 15, "structure": 10},
+    "survey":                     {"completeness": 30, "uniqueness": 10, "consistency": 25, "validity": 20, "structure": 15},
+    "general":                    {"completeness": 30, "uniqueness": 20, "consistency": 20, "validity": 15, "structure": 15},
 }
+
+
+def _health_classifier_confidence(conf: float) -> int:
+    """Map normalised classifier confidence [0, 1] to legacy health UI integer [40, 95]."""
+    return int(min(95, max(40, round(float(conf) * 100))))
 
 
 def _column_health_score(col_data: pd.Series, df_len: int) -> dict:
@@ -72,7 +85,15 @@ def calculate_health_score(df: pd.DataFrame) -> dict:
         breakdown, deductions, max_scores, column_health,
         business_impact, fix_suggestions
     """
-    dataset_type, dataset_type_confidence = _detect_dataset_type(df)
+    ctx = detect_dataset_context(df)
+    if ctx.dataset_type == FINANCIAL_MARKETS_TIMESERIES:
+        dataset_type = "timeseries"
+        dataset_type_confidence = _health_classifier_confidence(ctx.confidence)
+    elif ctx.dataset_type == FINANCIAL_MARKETS_SNAPSHOT and ctx.confidence >= CONFIDENCE_THRESHOLD:
+        dataset_type = FINANCIAL_MARKETS_SNAPSHOT
+        dataset_type_confidence = _health_classifier_confidence(ctx.confidence)
+    else:
+        dataset_type, dataset_type_confidence = _detect_dataset_type(df)
     weights = _HEALTH_WEIGHTS[dataset_type]
     scores: dict[str, float] = {}
     deductions: list[str] = []

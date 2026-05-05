@@ -208,3 +208,19 @@ class TestBuildHealthResultBreakdownMax:
         assert payload["health_score"]["breakdown_max"] != {}, (
             "breakdown_max must not be empty in the JSON payload"
         )
+
+    def test_missingness_raw_parallels_upload_when_df_raw_provided(self):
+        df_clean = pd.DataFrame({"a": [1.0, 2.0], "b": [float("nan"), 3.0]})
+        df_raw = pd.DataFrame({"a": [float("nan"), 2.0], "b": [float("nan"), 3.0]})
+        health = calculate_health_score(df_clean)
+        result = build_health_result(
+            df_clean,
+            health,
+            self._minimal_profile(df_clean),
+            df_raw=df_raw,
+        )
+        ms = result.missingness_stats
+        assert ms.total_missing_cells == 1
+        assert ms.raw_total_missing_cells == 2
+        assert ms.raw_missing_cell_pct == 50.0
+        assert ms.missing_cell_pct == 25.0

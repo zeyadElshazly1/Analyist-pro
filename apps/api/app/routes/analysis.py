@@ -123,7 +123,12 @@ def run_analysis(
 
         profile = profile_dataset(df_clean)
         health_score = calculate_health_score(df_clean)
-        health_result = build_health_result(df_clean, health_score, profile).model_dump()
+        health_result = build_health_result(
+            df_clean,
+            health_score,
+            profile,
+            df_raw=df if payload.use_cleaned else None,
+        ).model_dump()
 
         set_run_status(db, run, "profiling_complete")
 

@@ -150,7 +150,7 @@ def analyze_dataset(df: pd.DataFrame) -> tuple[list[dict], str]:
     insights = suppress_for_dataset_context(insights, ctx)
 
     # ── Rank, deduplicate, cap ────────────────────────────────────────────────
-    top_insights, total_found = rank_insights(insights)
+    top_insights, total_found = rank_insights(insights, ctx)
 
     # ── Enrich + narrative ────────────────────────────────────────────────────
     top_insights = [_enrich_insight(ins) for ins in top_insights]

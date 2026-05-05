@@ -477,11 +477,18 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
             return []
 
         values = pd.to_numeric(df[pos_col], errors="coerce")
-        valid = values.dropna()
+        parsed = values.dropna()
+        if parsed.shape[0] < 3:
+            return []
+
+        scale, low_b, high_b = _infer_52w_position_bounds(parsed)
+        in_range = (values >= low_b) & (values <= high_b)
+        valid = values.where(in_range).dropna()
+        invalid_ct = int(values.notna().sum() - valid.shape[0])
+
         if valid.shape[0] < 3:
             return []
 
-        scale = _detect_percent_scale(valid)
         label_col = _select_label_column(df, context)
         near_named = _named_extremes(df, valid, label_col, k=3, largest=True)
         low_named = _named_extremes(df, valid, label_col, k=3, largest=False)
@@ -491,12 +498,40 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
         high_names = near_pair[0][0], near_pair[1][0]
         low_names = low_pair[0][0], low_pair[1][0]
 
+        range_hint = "0–1 fraction of the 52-week range" if scale == "decimal" else "0–100% position in the 52-week range"
         finding = (
             f"52-week positioning is split: {high_names[0]} and {high_names[1]} are closest to their highs, "
             f"while {low_names[0]} and {low_names[1]} sit furthest from their highs."
         )
+        if invalid_ct > 0:
+            finding += (
+                f" ({invalid_ct} row(s) had values outside the expected {range_hint} "
+                "and were excluded from this ranking.)"
+            )
 
         columns_used = _columns_used(pos_col, label_col)
+
+        evidence: dict = {
+            "selected_52w_position_column": pos_col,
+            "near_high_assets": [
+                {"asset": name, "position_52w": _format_percent(value, scale)}
+                for name, value in near_named
+            ],
+            "low_position_assets": [
+                {"asset": name, "position_52w": _format_percent(value, scale)}
+                for name, value in low_named
+            ],
+            "valid_row_count": int(valid.shape[0]),
+            "position_scale": scale,
+            "expected_min": low_b,
+            "expected_max": high_b,
+        }
+        if invalid_ct > 0:
+            evidence["invalid_position_value_count"] = invalid_ct
+            evidence["position_validation_note"] = (
+                f"Values outside [{low_b:g}, {high_b:g}] are not valid percent positions for this scale "
+                f"({range_hint}) and were excluded from extremes."
+            )
 
         return [
             {
@@ -505,18 +540,7 @@ class SnapshotFinanceInsightPack(DomainInsightPack):
                 "finding": finding,
                 "severity": "medium",
                 "confidence": 79,
-                "evidence": {
-                    "selected_52w_position_column": pos_col,
-                    "near_high_assets": [
-                        {"asset": name, "position_52w": _format_percent(value, scale)}
-                        for name, value in near_named
-                    ],
-                    "low_position_assets": [
-                        {"asset": name, "position_52w": _format_percent(value, scale)}
-                        for name, value in low_named
-                    ],
-                    "valid_row_count": int(valid.shape[0]),
-                },
+                "evidence": evidence,
                 "action": (
                     "Use 52-week position as a momentum/context screen, then compare it with return, "
                     "volatility, and asset class."
@@ -684,6 +708,21 @@ def _detect_percent_scale(valid: pd.Series) -> str:
     abs_max = float(valid.abs().max())
     # Treat [-1, 1] magnitude as fractional returns; larger magnitudes as already in percent units.
     return "decimal" if abs_max <= 1.0 else "unit"
+
+
+def _infer_52w_position_bounds(parsed: pd.Series) -> tuple[str, float, float]:
+    """
+    Decide whether a 52-week position column is stored as a 0–1 range fraction or 0–100 percent points.
+
+    Uses a majority rule so a few stray percent-scale points do not re-label an otherwise fractional column.
+    """
+    if parsed.empty:
+        return "decimal", 0.0, 1.0
+    abs_max = float(parsed.abs().max())
+    in_01_ratio = float(((parsed >= 0.0) & (parsed <= 1.0)).mean())
+    if in_01_ratio >= 0.85 or abs_max <= 1.001:
+        return "decimal", 0.0, 1.0
+    return "unit", 0.0, 100.0
 
 
 def _format_percent(value: float, scale: str) -> str:

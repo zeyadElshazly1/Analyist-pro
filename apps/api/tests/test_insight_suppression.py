@@ -72,6 +72,17 @@ def test_snapshot_keeps_multicollinearity_when_mixed_columns() -> None:
     assert len(out) == 1
 
 
+def test_snapshot_suppresses_moving_average_and_price_derived_correlations() -> None:
+    ctx = _snapshot_ctx()
+    insights = [
+        {"type": "correlation", "col_a": "sma_50", "col_b": "currentPrice", "title": "M1"},
+        {"type": "correlation", "col_a": "fiftyDayAverage", "col_b": "price_vs_sma200_pct", "title": "M2"},
+        {"type": "correlation", "col_a": "ytd_return", "col_b": "volatility", "title": "Keep"},
+    ]
+    out = suppress_for_dataset_context(insights, ctx)
+    titles = [i.get("title") for i in out]
+    assert "Keep" in titles
+    assert _PRICE_OVERLAP_FINDING_TITLE in titles
 def test_caveat_added_when_two_or_more_price_noise_removed() -> None:
     ctx = _snapshot_ctx()
     insights = [

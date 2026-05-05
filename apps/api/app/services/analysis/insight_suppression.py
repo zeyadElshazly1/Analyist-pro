@@ -20,6 +20,15 @@ _PRICE_FAMILY_COLUMNS: frozenset[str] = frozenset(
         "regularMarketPrice",
         "fiftyTwoWeekLow",
         "fiftyTwoWeekHigh",
+        "fiftyDayAverage",
+        "twoHundredDayAverage",
+        "price_latest",
+        "sma_50",
+        "sma_200",
+        "sma50",
+        "sma200",
+        "price_vs_sma50_pct",
+        "price_vs_sma200_pct",
     )
 )
 

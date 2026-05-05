@@ -1,6 +1,14 @@
 type MissingnessStats = {
   missing_cell_pct?: number;
+  total_missing_cells?: number;
+  rows_with_any_missing?: number;
+  rows_with_any_missing_pct?: number;
+  raw_missing_cell_pct?: number | null;
+  raw_total_missing_cells?: number | null;
+  raw_rows_with_any_missing?: number | null;
+  raw_rows_with_any_missing_pct?: number | null;
   columns_with_missing?: Array<{ column: string; missing_pct: number }>;
+  raw_columns_with_missing?: Array<{ column: string; missing_pct: number }>;
 };
 
 type DuplicateStats = {
@@ -76,8 +84,11 @@ const DIMENSION_LABEL: Record<string, string> = {
   consistency: "Consistency",   validity: "Validity",  structure: "Structure",
 };
 const DATASET_TYPE_LABEL: Record<string, string> = {
-  timeseries: "Time Series", transactional: "Transactional",
-  survey: "Survey",           general: "General",
+  timeseries: "Time Series",
+  transactional: "Transactional",
+  survey: "Survey",
+  general: "General",
+  financial_markets_snapshot: "Financial Markets Snapshot",
 };
 
 // ── Score metadata helpers ────────────────────────────────────────────────────
@@ -274,6 +285,27 @@ export function HealthScore({ score, healthResult }: Props) {
             )}
           </div>
           <p className={`text-sm font-medium ${theme.text}`}>{verdictLabel(value)}</p>
+          {(missingness?.raw_missing_cell_pct != null) && (
+            <p className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] leading-relaxed text-white/45">
+              <span className="font-medium text-white/55">Missing data · raw upload:</span>{" "}
+              {(missingness.raw_missing_cell_pct ?? 0).toFixed(2)}% of cells
+              {missingness.raw_rows_with_any_missing != null && (
+                <>
+                  {" "}
+                  (~{missingness.raw_rows_with_any_missing.toLocaleString()} rows with any gap)
+                </>
+              )}
+              <span className="mx-2 text-white/20">·</span>
+              <span className="font-medium text-white/55">after cleaning:</span>{" "}
+              {(missingness.missing_cell_pct ?? 0).toFixed(2)}% of cells
+              {missingness.rows_with_any_missing != null && (
+                <>
+                  {" "}
+                  (~{missingness.rows_with_any_missing.toLocaleString()} rows with any gap)
+                </>
+              )}
+            </p>
+          )}
           {(rowCount != null || colCount != null) && (
             <p className="mt-0.5 text-[11px] text-white/30">
               {rowCount != null && `${rowCount.toLocaleString()} rows`}

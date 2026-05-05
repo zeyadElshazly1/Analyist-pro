@@ -10,6 +10,11 @@ This module uses a semantic key: (insight_type, frozenset_of_involved_columns).
 For insights without explicit column references, it falls back to a normalised
 title prefix so the behaviour degrades gracefully rather than failing.
 
+For confidently detected ``financial_markets_snapshot`` datasets, headline tiles are
+ordered domain-first (return leaders through 52-week positioning), generic
+correlations sink below structured snapshot findings, and composite scoring
+still applies within each tier.
+
 rank_insights: composite sort — severity 50%, confidence 25%, target-driver 25%,
 plus optional financial snapshot domain boosts (Task 73C).
 
@@ -24,7 +29,11 @@ for users who need actionable business intelligence first.
 """
 from __future__ import annotations
 
-from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT
+from app.services.dataset_context.schema import (
+    CONFIDENCE_THRESHOLD,
+    DatasetContext,
+    FINANCIAL_MARKETS_SNAPSHOT,
+)
 from app.config import MAX_INSIGHTS
 
 
@@ -33,19 +42,20 @@ _SEV_WEIGHT = {"high": 1.0, "medium": 0.6, "low": 0.2}
 # ── Snapshot domain boosts (additive on composite, ~0–1 scale) ────────────────
 _PRICE_OVERLAP_CAVEAT_TITLE = "Price fields are highly overlapping"
 
-# Headline SnapshotFinanceInsightPack tiles — strongest boost (~+17 composite).
-_SNAPSHOT_FINANCE_PREMIUM_TITLES: frozenset[str] = frozenset(
-    {
-        "Top return leaders",
-        "Largest return laggards",
-        "Highest volatility assets",
-        "Best risk-adjusted performers",
-        "Asset classes show different return profiles",
-        "Sectors show different return profiles",
-        "Highest analyst-implied upside",
-        "Assets cluster at different 52-week positions",
-    }
+# Domain-first ordering for headline tiles (must match SnapshotFinanceInsightPack titles).
+_FINANCE_SNAPSHOT_TITLE_ORDER: tuple[str, ...] = (
+    "Top return leaders",
+    "Largest return laggards",
+    "Highest volatility assets",
+    "Best risk-adjusted performers",
+    "Asset classes show different return profiles",
+    "Sectors show different return profiles",
+    "Highest analyst-implied upside",
+    "Assets cluster at different 52-week positions",
 )
+
+# Headline SnapshotFinanceInsightPack tiles — strongest boost (~+17 composite).
+_SNAPSHOT_FINANCE_PREMIUM_TITLES: frozenset[str] = frozenset(_FINANCE_SNAPSHOT_TITLE_ORDER)
 
 _BOOST_SNAPSHOT_DEFAULT = 0.11       # modest lift for other domain-labelled insights
 _BOOST_SNAPSHOT_PREMIUM = 0.17        # headline finance tiles (+12–18pt-style lift)
@@ -78,6 +88,31 @@ def _snapshot_domain_rank_bonus(ins: dict) -> float:
 # business outcomes (churn, fraud, conversion) are ranked above unrelated
 # pattern-detection findings of equivalent severity.
 _TARGET_DRIVER_BONUS = 0.30
+
+# Pull generic correlations down when ranking mixed pools for market snapshots.
+_CORRELATION_SNAPSHOT_DEMOTE = 0.52
+
+
+def _snapshot_rank_sort_tuple(ins: dict, ctx: DatasetContext | None) -> tuple[int | float, ...]:
+    """Tier financial headline tiles first when analysing a confident snapshot context."""
+    score = _composite_score(ins, ctx)
+    if ctx is None or ctx.dataset_type != FINANCIAL_MARKETS_SNAPSHOT:
+        return (0, 0, -score)
+    if ctx.confidence < CONFIDENCE_THRESHOLD:
+        return (0, 0, -score)
+
+    title = str(ins.get("title", "") or "").strip()
+    dom = ins.get("domain")
+
+    if dom == FINANCIAL_MARKETS_SNAPSHOT and title in _FINANCE_SNAPSHOT_TITLE_ORDER:
+        return (0, _FINANCE_SNAPSHOT_TITLE_ORDER.index(title), -score)
+    if dom == FINANCIAL_MARKETS_SNAPSHOT and title == _PRICE_OVERLAP_CAVEAT_TITLE:
+        return (1, 0, -score)
+    if dom == FINANCIAL_MARKETS_SNAPSHOT:
+        return (2, 0, -score)
+    if ins.get("type") == "correlation":
+        return (4, 0, -score)
+    return (3, 0, -score)
 
 
 def _insight_key(ins: dict) -> tuple:
@@ -134,7 +169,7 @@ def deduplicate_insights(insights: list[dict]) -> list[dict]:
     return deduped
 
 
-def _composite_score(ins: dict) -> float:
+def _composite_score(ins: dict, ctx: DatasetContext | None = None) -> float:
     """
     Composite ranking score for a single insight.
 
@@ -159,17 +194,31 @@ def _composite_score(ins: dict) -> float:
     conf  = float(ins.get("confidence", 50)) / 100.0
     bonus = _TARGET_DRIVER_BONUS if ins.get("is_target_driver") else 0.0
     base = sev * 0.50 + conf * 0.25 + bonus * 0.25
-    return min(1.0, base + _snapshot_domain_rank_bonus(ins))
+    score = min(1.0, base + _snapshot_domain_rank_bonus(ins))
+    if (
+        ctx is not None
+        and ctx.dataset_type == FINANCIAL_MARKETS_SNAPSHOT
+        and ctx.confidence >= CONFIDENCE_THRESHOLD
+        and ins.get("type") == "correlation"
+        and ins.get("domain") != FINANCIAL_MARKETS_SNAPSHOT
+    ):
+        score *= _CORRELATION_SNAPSHOT_DEMOTE
+    return score
 
 
-def rank_insights(insights: list[dict]) -> list[dict]:
+def rank_insights(
+    insights: list[dict],
+    ctx: DatasetContext | None = None,
+) -> tuple[list[dict], int]:
     """
-    Sort insights by composite score (severity 50%, confidence 25%,
-    target-driver bonus 25%), deduplicate, then cap at MAX_INSIGHTS.
+    Sort insights for display: confident ``financial_markets_snapshot`` runs use
+    domain-first tiers; otherwise sort by composite score only.
+
+    Dedupes via semantic keys, then caps at MAX_INSIGHTS.
 
     Returns (ranked_deduped_list, total_before_cap).
     """
-    insights.sort(key=lambda x: -_composite_score(x))
+    insights.sort(key=lambda x: _snapshot_rank_sort_tuple(x, ctx))
     deduped = deduplicate_insights(insights)
     total_found = len(deduped)
     return deduped[:MAX_INSIGHTS], total_found
