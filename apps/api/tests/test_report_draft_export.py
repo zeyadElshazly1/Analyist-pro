@@ -1097,3 +1097,222 @@ class TestPdfFallbackMarkup:
         r = client.get(f"/reports/export/{pid}?format=html", headers=consultant_auth_headers)
         assert r.status_code == 200, r.text
         assert "PDF export includes chart metadata" in r.text
+
+
+# ── End-to-end parity: full Report Builder → export chain ────────────────────
+
+class TestReportBuilderExportParity:
+    """Single regression checkpoint: seed a run with insights + charts, apply a
+    draft that selects a subset of each, then verify every export surface
+    (draft API, preview, HTML, XLSX) reflects exactly those selections.
+    """
+
+    # ── fixtures ─────────────────────────────────────────────────────────────
+
+    def _seed_parity_run(self, project_id: int) -> int:
+        db = TestingSessionLocal()
+        try:
+            result = {
+                "project_id": project_id,
+                "narrative": "AUTO_NARRATIVE_TOKEN",
+                "insight_results": [
+                    {
+                        "insight_id": "par_ins_keep",
+                        "title": "PAR_INSIGHT_KEEP",
+                        "explanation": "Keep this finding.",
+                        "severity": "high",
+                        "recommendation": "Act on it.",
+                    },
+                    {
+                        "insight_id": "par_ins_drop",
+                        "title": "PAR_INSIGHT_DROP",
+                        "explanation": "Drop this finding.",
+                        "severity": "medium",
+                        "recommendation": "Ignore.",
+                    },
+                ],
+                "health_score": {"total": 72, "breakdown": {"Completeness": 72}},
+                "dataset_summary": {
+                    "rows": 20,
+                    "columns": 4,
+                    "numeric_cols": 3,
+                    "categorical_cols": 1,
+                    "missing_pct": 2.5,
+                },
+                "cleaning_report": [],
+                "profile": [],
+                "charts": [
+                    {
+                        "chart_id": "par_chart_keep",
+                        "title": "PAR_CHART_KEEP_TITLE",
+                        "type": "bar",
+                        "chart_type": "bar",
+                        "data": {
+                            "labels": ["A", "B"],
+                            "datasets": [{"label": "s", "data": [10, 20]}],
+                        },
+                    },
+                    {
+                        "chart_id": "par_chart_drop",
+                        "title": "PAR_CHART_DROP_TITLE",
+                        "type": "line",
+                        "chart_type": "line",
+                        "data": {
+                            "labels": ["C"],
+                            "datasets": [{"label": "t", "data": [5]}],
+                        },
+                    },
+                ],
+            }
+            run = AnalysisResult(
+                project_id=project_id,
+                file_hash="parity-hash",
+                result_json=json.dumps(result),
+                status="report_ready",
+            )
+            db.add(run)
+            db.commit()
+            db.refresh(run)
+            return run.id
+        finally:
+            db.close()
+
+    def _apply_parity_draft(
+        self,
+        client,
+        project_id: int,
+        run_id: int,
+        headers,
+    ) -> None:
+        """Save a draft with an edited summary, one selected insight, one chart."""
+        _save_draft(
+            client, project_id, headers,
+            summary="PAR_EDITED_SUMMARY_TOKEN",
+            selected=["par_ins_keep"],
+        )
+        _link_draft_to_run(project_id, run_id)
+        db = TestingSessionLocal()
+        try:
+            draft = (
+                db.query(ReportDraft)
+                .filter(ReportDraft.project_id == project_id)
+                .order_by(ReportDraft.created_at.desc())
+                .first()
+            )
+            assert draft is not None
+            draft.selected_chart_ids_json = json.dumps(["par_chart_keep"])
+            db.commit()
+        finally:
+            db.close()
+
+    # ── draft API parity ──────────────────────────────────────────────────────
+
+    def test_draft_api_exposes_selected_insight_and_chart_ids(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        run_id = self._seed_parity_run(pid)
+        self._apply_parity_draft(client, pid, run_id, consultant_auth_headers)
+
+        r = client.get(f"/reports/draft/{pid}", headers=consultant_auth_headers)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert "par_ins_keep" in (body.get("selected_insight_ids") or [])
+        assert "par_chart_keep" in (body.get("selected_chart_ids") or [])
+
+    def test_draft_api_report_result_included_insights_and_charts(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        run_id = self._seed_parity_run(pid)
+        self._apply_parity_draft(client, pid, run_id, consultant_auth_headers)
+
+        r = client.get(f"/reports/draft/{pid}", headers=consultant_auth_headers)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        rr = body.get("report_result", {})
+
+        insight_ids = [i.get("insight_id") for i in (rr.get("included_insights") or [])]
+        assert "par_ins_keep" in insight_ids
+        assert "par_ins_drop" not in insight_ids
+
+        chart_ids = [c.get("chart_id") for c in (rr.get("included_charts") or [])]
+        assert "par_chart_keep" in chart_ids
+        assert "par_chart_drop" not in chart_ids
+
+    # ── preview parity ────────────────────────────────────────────────────────
+
+    def test_preview_returns_edited_summary_and_selected_insights(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        run_id = self._seed_parity_run(pid)
+        self._apply_parity_draft(client, pid, run_id, consultant_auth_headers)
+
+        r = client.get(f"/reports/preview/{pid}", headers=consultant_auth_headers)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body.get("narrative") == "PAR_EDITED_SUMMARY_TOKEN"
+        titles = [i.get("title") for i in (body.get("insight_results") or [])]
+        assert "PAR_INSIGHT_KEEP" in titles
+        assert "PAR_INSIGHT_DROP" not in titles
+
+    # ── HTML export parity ────────────────────────────────────────────────────
+
+    def test_html_export_full_chain(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        run_id = self._seed_parity_run(pid)
+        self._apply_parity_draft(client, pid, run_id, consultant_auth_headers)
+
+        r = client.get(f"/reports/export/{pid}?format=html", headers=consultant_auth_headers)
+        assert r.status_code == 200, r.text
+        body = r.text
+
+        # Edited summary
+        assert "PAR_EDITED_SUMMARY_TOKEN" in body
+        # Selected insight present; dropped insight absent
+        assert "PAR_INSIGHT_KEEP" in body
+        assert "PAR_INSIGHT_DROP" not in body
+        # Chart Gallery section
+        assert "Chart Gallery" in body
+        assert "PAR_CHART_KEEP_TITLE" in body
+        assert "PAR_CHART_DROP_TITLE" not in body
+        # PDF fallback metadata block present
+        assert 'class="chart-pdf-fallback"' in body
+        assert "PDF export includes chart metadata" in body
+
+    # ── Excel export parity ───────────────────────────────────────────────────
+
+    def test_xlsx_export_full_chain(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        run_id = self._seed_parity_run(pid)
+        self._apply_parity_draft(client, pid, run_id, consultant_auth_headers)
+
+        r = client.get(f"/reports/export/{pid}?format=xlsx", headers=consultant_auth_headers)
+        assert r.status_code == 200, r.text
+        wb = load_workbook(io.BytesIO(r.content), data_only=True)
+
+        # Summary sheet carries the edited executive summary
+        summary_text = "\n".join(
+            str(c.value) for row in wb["Summary"].iter_rows() for c in row if c.value
+        )
+        assert "PAR_EDITED_SUMMARY_TOKEN" in summary_text
+
+        # Insights sheet: selected present, dropped absent
+        insights_text = "\n".join(
+            str(c.value) for row in wb["Insights"].iter_rows() for c in row if c.value
+        )
+        assert "PAR_INSIGHT_KEEP" in insights_text
+        assert "PAR_INSIGHT_DROP" not in insights_text
+
+        # Selected Charts sheet: selected chart present, dropped chart absent
+        assert "Selected Charts" in wb.sheetnames
+        charts_text = "\n".join(
+            str(c.value) for row in wb["Selected Charts"].iter_rows() for c in row if c.value
+        )
+        assert "PAR_CHART_KEEP_TITLE" in charts_text
+        assert "PAR_CHART_DROP_TITLE" not in charts_text
