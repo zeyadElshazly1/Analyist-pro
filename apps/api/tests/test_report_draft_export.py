@@ -972,3 +972,128 @@ class TestExcelChartManifestSheet:
         wb = self._get_xlsx(client, pid, consultant_auth_headers)
         for expected in ("Summary", "Insights", "Column Profiles", "Cleaning Report"):
             assert expected in wb.sheetnames, f"Sheet '{expected}' must still exist"
+
+
+# ── HTML: PDF-safe fallback markup for selected charts ───────────────────────
+
+class TestPdfFallbackMarkup:
+    """Verify the chart-pdf-fallback block is present in HTML export."""
+
+    def _seed_run_with_charts(self, project_id: int) -> int:
+        db = TestingSessionLocal()
+        try:
+            result = {
+                "project_id": project_id,
+                "narrative": "Narrative.",
+                "insight_results": [],
+                "health_score": {"total": 80, "breakdown": {"Overall": 80}},
+                "dataset_summary": {"rows": 5, "columns": 2, "numeric_cols": 1, "categorical_cols": 1, "missing_pct": 0.0},
+                "cleaning_report": [],
+                "profile": [],
+                "charts": [
+                    {
+                        "chart_id": "pdf_chart_a",
+                        "title": "PDF_CHART_A_TITLE",
+                        "type": "bar",
+                        "chart_type": "bar",
+                        "data": {"labels": ["X"], "datasets": [{"data": [1]}]},
+                    },
+                    {
+                        "chart_id": "pdf_chart_b",
+                        "title": "PDF_CHART_B_TITLE",
+                        "type": "line",
+                        "chart_type": "line",
+                        "data": {"labels": ["Y"], "datasets": [{"data": [2]}]},
+                    },
+                ],
+            }
+            run = AnalysisResult(
+                project_id=project_id,
+                file_hash="pdf-seed-hash",
+                result_json=json.dumps(result),
+                status="report_ready",
+            )
+            db.add(run)
+            db.commit()
+            db.refresh(run)
+            return run.id
+        finally:
+            db.close()
+
+    def _save_draft_with_charts(self, client, project_id: int, headers, *, chart_ids: list) -> None:
+        _save_draft(client, project_id, headers, summary="PDF fallback summary.")
+        db = TestingSessionLocal()
+        try:
+            draft = (
+                db.query(ReportDraft)
+                .filter(ReportDraft.project_id == project_id)
+                .order_by(ReportDraft.created_at.desc())
+                .first()
+            )
+            assert draft is not None
+            draft.selected_chart_ids_json = json.dumps(chart_ids)
+            db.commit()
+        finally:
+            db.close()
+
+    def test_fallback_markup_present_when_charts_selected(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        self._seed_run_with_charts(pid)
+        self._save_draft_with_charts(client, pid, consultant_auth_headers, chart_ids=["pdf_chart_a"])
+
+        r = client.get(f"/reports/export/{pid}?format=html", headers=consultant_auth_headers)
+        assert r.status_code == 200, r.text
+        assert "chart-pdf-fallback" in r.text
+
+    def test_fallback_includes_chart_title_type_id(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        self._seed_run_with_charts(pid)
+        self._save_draft_with_charts(client, pid, consultant_auth_headers, chart_ids=["pdf_chart_a"])
+
+        r = client.get(f"/reports/export/{pid}?format=html", headers=consultant_auth_headers)
+        assert r.status_code == 200, r.text
+        body = r.text
+        assert "PDF_CHART_A_TITLE" in body
+        assert "BAR" in body
+        assert "pdf_chart_a" in body
+
+    def test_fallback_excludes_unselected_chart(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        self._seed_run_with_charts(pid)
+        # Only select chart_a; chart_b must not appear
+        self._save_draft_with_charts(client, pid, consultant_auth_headers, chart_ids=["pdf_chart_a"])
+
+        r = client.get(f"/reports/export/{pid}?format=html", headers=consultant_auth_headers)
+        assert r.status_code == 200, r.text
+        assert "PDF_CHART_A_TITLE" in r.text
+        assert "PDF_CHART_B_TITLE" not in r.text
+
+    def test_no_fallback_when_no_charts_selected(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        self._seed_run_with_charts(pid)
+        self._save_draft_with_charts(client, pid, consultant_auth_headers, chart_ids=[])
+
+        r = client.get(f"/reports/export/{pid}?format=html", headers=consultant_auth_headers)
+        assert r.status_code == 200, r.text
+        # The CSS class appears in the <style> block, but no actual fallback div
+        # should be rendered when no charts are selected.
+        assert 'class="chart-pdf-fallback"' not in r.text
+
+    def test_fallback_note_text_present(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        self._seed_run_with_charts(pid)
+        self._save_draft_with_charts(client, pid, consultant_auth_headers, chart_ids=["pdf_chart_a"])
+
+        r = client.get(f"/reports/export/{pid}?format=html", headers=consultant_auth_headers)
+        assert r.status_code == 200, r.text
+        assert "PDF export includes chart metadata" in r.text
