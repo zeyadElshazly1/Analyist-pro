@@ -221,6 +221,41 @@ def generate_excel_report(
         ws6.append([label, str(val)])
     _auto_width(ws6)
 
+    # ── Sheet 7: Selected Charts (manifest — no native chart objects) ────────
+    from .charts import resolve_selected_chart_payloads  # noqa: PLC0415
+    selected_chart_payloads = resolve_selected_chart_payloads(analysis_result)
+    if selected_chart_payloads:
+        ws7 = wb.create_sheet("Selected Charts")
+        ws7.sheet_view.showGridLines = False
+
+        headers7 = ["Order", "Chart ID", "Title", "Chart Type", "Data Status"]
+        ws7.append(headers7)
+        _style_header(ws7, 1, len(headers7))
+        ws7.freeze_panes = "A2"
+
+        for pos, ch in enumerate(selected_chart_payloads, 1):
+            data_block = ch.get("data")
+            has_data = (
+                isinstance(data_block, dict)
+                and (
+                    (isinstance(data_block.get("datasets"), list) and data_block["datasets"])
+                    or (isinstance(data_block.get("labels"), list) and data_block["labels"])
+                )
+            )
+            ws7.append([
+                pos,
+                ch.get("chart_id", ""),
+                ch.get("title", ""),
+                ch.get("chart_type") or ch.get("type", ""),
+                "available" if has_data else "unavailable",
+            ])
+
+        ws7.column_dimensions["A"].width = 8
+        ws7.column_dimensions["B"].width = 28
+        ws7.column_dimensions["C"].width = 36
+        ws7.column_dimensions["D"].width = 14
+        ws7.column_dimensions["E"].width = 14
+
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
