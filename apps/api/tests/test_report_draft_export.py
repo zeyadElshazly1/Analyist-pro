@@ -792,3 +792,183 @@ class TestHtmlExportChartGallery:
         r = client.get(f"/reports/export/{pid}?format=html", headers=consultant_auth_headers)
         assert r.status_code == 200, r.text
         assert "Chart Gallery" not in r.text
+
+
+# ── Excel export: Selected Charts manifest sheet ─────────────────────────────
+
+class TestExcelChartManifestSheet:
+    """Verify the 'Selected Charts' worksheet is produced correctly."""
+
+    # Re-use the same chart-seeding helper as TestHtmlExportChartGallery.
+    def _seed_run_with_charts(self, project_id: int) -> int:
+        db = TestingSessionLocal()
+        try:
+            result = {
+                "project_id": project_id,
+                "narrative": "Narrative text.",
+                "insight_results": [
+                    {
+                        "insight_id": "ins_0",
+                        "title": "Finding A",
+                        "severity": "high",
+                        "explanation": "Detail.",
+                        "recommendation": "Fix it",
+                    }
+                ],
+                "health_score": {"total": 80, "breakdown": {"Overall": 80}},
+                "dataset_summary": {"rows": 10, "columns": 3, "numeric_cols": 2, "categorical_cols": 1, "missing_pct": 0.0},
+                "cleaning_report": [],
+                "profile": [],
+                "charts": [
+                    {
+                        "chart_id": "xls_a",
+                        "title": "XLS_CHART_A_TITLE",
+                        "type": "bar",
+                        "chart_type": "bar",
+                        "data": {"labels": ["X", "Y"], "datasets": [{"label": "s", "data": [1, 2]}]},
+                    },
+                    {
+                        "chart_id": "xls_b",
+                        "title": "XLS_CHART_B_TITLE",
+                        "type": "line",
+                        "chart_type": "line",
+                        "data": {"labels": ["P", "Q"], "datasets": [{"label": "t", "data": [3, 4]}]},
+                    },
+                    {
+                        "chart_id": "xls_c",
+                        "title": "XLS_CHART_C_NODATA",
+                        "type": "scatter",
+                        "chart_type": "scatter",
+                    },
+                ],
+            }
+            run = AnalysisResult(
+                project_id=project_id,
+                file_hash="xls-chart-seed-hash",
+                result_json=json.dumps(result),
+                status="report_ready",
+            )
+            db.add(run)
+            db.commit()
+            db.refresh(run)
+            return run.id
+        finally:
+            db.close()
+
+    def _save_draft_with_charts(self, client, project_id: int, headers, *, chart_ids: list) -> None:
+        _save_draft(client, project_id, headers, summary="Excel gallery summary.")
+        db = TestingSessionLocal()
+        try:
+            draft = (
+                db.query(ReportDraft)
+                .filter(ReportDraft.project_id == project_id)
+                .order_by(ReportDraft.created_at.desc())
+                .first()
+            )
+            assert draft is not None
+            draft.selected_chart_ids_json = json.dumps(chart_ids)
+            db.commit()
+        finally:
+            db.close()
+
+    def _get_xlsx(self, client, project_id: int, headers):
+        r = client.get(f"/reports/export/{project_id}?format=xlsx", headers=headers)
+        assert r.status_code == 200, r.text
+        return load_workbook(io.BytesIO(r.content), data_only=True)
+
+    def test_selected_charts_sheet_present_when_charts_selected(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        self._seed_run_with_charts(pid)
+        self._save_draft_with_charts(client, pid, consultant_auth_headers, chart_ids=["xls_a"])
+
+        wb = self._get_xlsx(client, pid, consultant_auth_headers)
+        assert "Selected Charts" in wb.sheetnames
+
+    def test_sheet_includes_selected_chart_titles(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        self._seed_run_with_charts(pid)
+        self._save_draft_with_charts(
+            client, pid, consultant_auth_headers, chart_ids=["xls_a", "xls_b"]
+        )
+
+        wb = self._get_xlsx(client, pid, consultant_auth_headers)
+        text = "\n".join(
+            str(c.value) for row in wb["Selected Charts"].iter_rows() for c in row if c.value
+        )
+        assert "XLS_CHART_A_TITLE" in text
+        assert "XLS_CHART_B_TITLE" in text
+
+    def test_sheet_preserves_selection_order(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        self._seed_run_with_charts(pid)
+        # Select B before A
+        self._save_draft_with_charts(
+            client, pid, consultant_auth_headers, chart_ids=["xls_b", "xls_a"]
+        )
+
+        wb = self._get_xlsx(client, pid, consultant_auth_headers)
+        ws = wb["Selected Charts"]
+        # Row 1 is the header; data starts at row 2.
+        titles = [ws.cell(row=r, column=3).value for r in range(2, ws.max_row + 1)]
+        titles = [t for t in titles if t]
+        assert titles.index("XLS_CHART_B_TITLE") < titles.index("XLS_CHART_A_TITLE")
+
+    def test_sheet_excludes_unselected_charts(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        self._seed_run_with_charts(pid)
+        # Only xls_a selected
+        self._save_draft_with_charts(client, pid, consultant_auth_headers, chart_ids=["xls_a"])
+
+        wb = self._get_xlsx(client, pid, consultant_auth_headers)
+        text = "\n".join(
+            str(c.value) for row in wb["Selected Charts"].iter_rows() for c in row if c.value
+        )
+        assert "XLS_CHART_A_TITLE" in text
+        assert "XLS_CHART_B_TITLE" not in text
+
+    def test_no_selected_charts_sheet_when_empty_selection(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        self._seed_run_with_charts(pid)
+        self._save_draft_with_charts(client, pid, consultant_auth_headers, chart_ids=[])
+
+        wb = self._get_xlsx(client, pid, consultant_auth_headers)
+        assert "Selected Charts" not in wb.sheetnames
+
+    def test_data_status_available_and_unavailable(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        self._seed_run_with_charts(pid)
+        # xls_a has data; xls_c has no data block
+        self._save_draft_with_charts(
+            client, pid, consultant_auth_headers, chart_ids=["xls_a", "xls_c"]
+        )
+
+        wb = self._get_xlsx(client, pid, consultant_auth_headers)
+        ws = wb["Selected Charts"]
+        statuses = [ws.cell(row=r, column=5).value for r in range(2, ws.max_row + 1)]
+        statuses = [s for s in statuses if s]
+        assert "available" in statuses
+        assert "unavailable" in statuses
+
+    def test_existing_sheets_unchanged(
+        self, client, uploaded_project, consultant_auth_headers
+    ):
+        pid = uploaded_project["id"]
+        _seed_run(pid, insight_titles=["EXISTING_FINDING"])
+        self._seed_run_with_charts(pid)
+        self._save_draft_with_charts(client, pid, consultant_auth_headers, chart_ids=["xls_a"])
+
+        wb = self._get_xlsx(client, pid, consultant_auth_headers)
+        for expected in ("Summary", "Insights", "Column Profiles", "Cleaning Report"):
+            assert expected in wb.sheetnames, f"Sheet '{expected}' must still exist"
