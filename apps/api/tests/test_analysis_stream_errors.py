@@ -15,6 +15,12 @@ import pytest
 from app.routes.analysis_stream import _run_analysis_stream
 
 
+@pytest.fixture
+def anyio_backend():
+    """Force pytest-anyio to run async tests on asyncio only (Trio is optional)."""
+    return "asyncio"
+
+
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 async def _collect(gen) -> list[dict]:
