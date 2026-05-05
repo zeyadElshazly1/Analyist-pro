@@ -7,6 +7,7 @@ import pandas as pd
 
 from app.services.analysis.orchestrator import analyze_dataset
 from app.services.dataset_context import FINANCIAL_MARKETS_SNAPSHOT, detect_dataset_context
+from app.services.insight_adapter import build_insight_results
 from app.services.profiler import calculate_health_score
 
 
@@ -52,3 +53,12 @@ def test_yahoo_finance_fixture_top_findings_are_finance_first() -> None:
         assert first_generic_corr_idx > last_premium_idx
 
     assert titles[0] == "Top return leaders"
+
+
+def test_yahoo_finance_insight_adapter_stringifies_structured_evidence() -> None:
+    """Regression: finance insights use dict evidence — InsightResult must stay schema-valid."""
+    df = pd.read_csv(_FIXTURE)
+    insights, _ = analyze_dataset(df)
+    results = build_insight_results(insights)
+    assert len(results) >= 1
+    assert all(isinstance(r.evidence, str) for r in results)
