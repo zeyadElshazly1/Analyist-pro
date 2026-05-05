@@ -20,7 +20,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { getDraftReport, saveDraftReport, exportReport, ApiError } from "@/lib/api";
-import type { CompareResult } from "@/lib/api";
+import type { CompareResult, IncludedChart } from "@/lib/api";
 import {
   buildDeterministicExecutiveSummary,
   selectRecommendedInsightKeys,
@@ -378,6 +378,7 @@ export function ReportBuilder({
   const [loaded,    setLoaded]    = useState(false);
   const [previewOpen, setPreviewOpen] = useState(true);
   const [draftLoadError, setDraftLoadError] = useState<string | null>(null);
+  const [includedCharts, setIncludedCharts] = useState<IncludedChart[]>([]);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const insightsRef = useRef(insights);
@@ -482,6 +483,7 @@ export function ReportBuilder({
           .filter((x): x is ExportRecord => x !== null)
           .slice(0, 6);
         setExportHistory(remoteHistory);
+        setIncludedCharts(rr?.included_charts ?? []);
         setLoaded(true);
       })
       .catch(() => {
@@ -821,6 +823,53 @@ export function ReportBuilder({
             )}
           </div>
         )}
+
+        {/* Selected Charts (read-only — auto-selected by Report Builder) */}
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <label className="text-xs font-semibold uppercase tracking-wider text-white/40">
+              Selected charts
+            </label>
+            {includedCharts.length > 0 && (
+              <span className="text-xs text-white/25">
+                {includedCharts.length} chart{includedCharts.length !== 1 ? "s" : ""} selected
+              </span>
+            )}
+          </div>
+
+          {includedCharts.length === 0 ? (
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3">
+              <p className="text-xs text-white/30">
+                No charts selected for this report yet.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                {includedCharts.map((ch) => (
+                  <div
+                    key={ch.chart_id}
+                    className="flex items-center gap-3 rounded-xl border border-indigo-500/20 bg-indigo-600/[0.06] px-3 py-2.5"
+                  >
+                    <BarChart2 className="h-3.5 w-3.5 flex-shrink-0 text-indigo-400/60" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-medium text-white/80">
+                        {ch.title || ch.chart_id}
+                      </p>
+                    </div>
+                    <span className="flex-shrink-0 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-indigo-300">
+                      {ch.chart_type}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] text-white/30">
+                These charts will be included in HTML export and listed in Excel export.
+              </p>
+            </>
+          )}
+        </div>
+
       </div>
 
       {/* ── Live Preview ───────────────────────────────────────────────────── */}
@@ -908,6 +957,27 @@ export function ReportBuilder({
                 </div>
               )}
             </PreviewSection>
+
+            {/* Selected Charts */}
+            {includedCharts.length > 0 && (
+              <PreviewSection icon={BarChart2} title="Selected Charts" accent="indigo">
+                <div className="space-y-1.5">
+                  {includedCharts.map((ch) => (
+                    <div
+                      key={ch.chart_id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-2.5"
+                    >
+                      <p className="min-w-0 flex-1 truncate text-xs text-white/70">
+                        {ch.title || ch.chart_id}
+                      </p>
+                      <span className="flex-shrink-0 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-indigo-300">
+                        {ch.chart_type}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </PreviewSection>
+            )}
 
             {/* Comparison Summary — only rendered when compare data is available */}
             {hasCompare && (
