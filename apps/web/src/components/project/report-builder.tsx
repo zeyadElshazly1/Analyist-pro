@@ -20,7 +20,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { getDraftReport, saveDraftReport, exportReport, ApiError } from "@/lib/api";
-import type { CompareResult, IncludedChart } from "@/lib/api";
+import type { AvailableChart, CompareResult, IncludedChart } from "@/lib/api";
 import {
   buildDeterministicExecutiveSummary,
   selectRecommendedInsightKeys,
@@ -379,6 +379,8 @@ export function ReportBuilder({
   const [previewOpen, setPreviewOpen] = useState(true);
   const [draftLoadError, setDraftLoadError] = useState<string | null>(null);
   const [includedCharts, setIncludedCharts] = useState<IncludedChart[]>([]);
+  const [availableCharts, setAvailableCharts] = useState<AvailableChart[]>([]);
+  const [selectedChartIds, setSelectedChartIds] = useState<string[]>([]);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const insightsRef = useRef(insights);
@@ -387,6 +389,8 @@ export function ReportBuilder({
   insightResultsRef.current = insightResults;
   const allInsightsRef = useRef(allInsights);
   allInsightsRef.current = allInsights;
+  const selectedChartIdsRef = useRef(selectedChartIds);
+  selectedChartIdsRef.current = selectedChartIds;
 
   const richSummaryInput = useCallback(
     (insightsList: InsightItem[]): ExecutiveSummaryRichInput => ({
@@ -429,7 +433,7 @@ export function ReportBuilder({
           title:                next.title,
           summary:              next.summary,
           selected_insight_ids: next.selected,
-          selected_chart_ids:   [],
+          selected_chart_ids:   selectedChartIdsRef.current,
           template:             next.template ?? null,
         });
         setSaved(true);
@@ -484,6 +488,8 @@ export function ReportBuilder({
           .slice(0, 6);
         setExportHistory(remoteHistory);
         setIncludedCharts(rr?.included_charts ?? []);
+        setAvailableCharts(d.available_charts ?? []);
+        setSelectedChartIds((d.selected_chart_ids ?? []).filter((id): id is string => typeof id === "string"));
         setLoaded(true);
       })
       .catch(() => {
@@ -532,6 +538,31 @@ export function ReportBuilder({
     setDraft((prev) => {
       const next = { ...prev, ...patch };
       persistDraft(next);
+      return next;
+    });
+  }
+
+  function toggleChart(chartId: string) {
+    setSelectedChartIds((prev) => {
+      const next = prev.includes(chartId)
+        ? prev.filter((id) => id !== chartId)
+        : [...prev, chartId];
+      // Persist using the already-queued insight draft state — fire a save
+      // immediately (not debounced via persistDraft) so chart toggles are
+      // independent of any in-flight summary edit.
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      setSaved(false);
+      setSaving(true);
+      saveDraftReport(projectId, {
+        title:                draft.title,
+        summary:              draft.summary,
+        selected_insight_ids: draft.selected,
+        selected_chart_ids:   next,
+        template:             draft.template ?? null,
+      })
+        .then(() => setSaved(true))
+        .catch(() => {/* silent — local state still updated */})
+        .finally(() => setSaving(false));
       return next;
     });
   }
@@ -824,48 +855,73 @@ export function ReportBuilder({
           </div>
         )}
 
-        {/* Selected Charts (read-only — auto-selected by Report Builder) */}
+        {/* Chart selection */}
         <div>
-          <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <label className="text-xs font-semibold uppercase tracking-wider text-white/40">
-              Selected charts
+              Charts to include
             </label>
-            {includedCharts.length > 0 && (
+            {availableCharts.length > 0 && (
               <span className="text-xs text-white/25">
-                {includedCharts.length} chart{includedCharts.length !== 1 ? "s" : ""} selected
+                {selectedChartIds.length} / {availableCharts.length} selected
               </span>
             )}
           </div>
 
-          {includedCharts.length === 0 ? (
+          {availableCharts.length === 0 ? (
             <div className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-3">
               <p className="text-xs text-white/30">
-                No charts selected for this report yet.
+                No chart suggestions are available for this run yet.
               </p>
             </div>
           ) : (
             <>
               <div className="space-y-1.5">
-                {includedCharts.map((ch) => (
-                  <div
-                    key={ch.chart_id}
-                    className="flex items-center gap-3 rounded-xl border border-indigo-500/20 bg-indigo-600/[0.06] px-3 py-2.5"
-                  >
-                    <BarChart2 className="h-3.5 w-3.5 flex-shrink-0 text-indigo-400/60" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-medium text-white/80">
-                        {ch.title || ch.chart_id}
-                      </p>
-                    </div>
-                    <span className="flex-shrink-0 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-indigo-300">
-                      {ch.chart_type}
-                    </span>
-                  </div>
-                ))}
+                {availableCharts.map((ch) => {
+                  const isSelected = selectedChartIds.includes(ch.chart_id);
+                  return (
+                    <button
+                      key={ch.chart_id}
+                      type="button"
+                      onClick={() => toggleChart(ch.chart_id)}
+                      className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all ${
+                        isSelected
+                          ? "border-indigo-500/40 bg-indigo-600/8"
+                          : "border-white/[0.06] bg-white/[0.015] hover:border-white/10"
+                      }`}
+                    >
+                      <div className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded border transition-colors ${
+                        isSelected ? "border-indigo-500 bg-indigo-600" : "border-white/20"
+                      }`}>
+                        {isSelected && <CheckCircle className="h-3 w-3 text-white" />}
+                      </div>
+                      <BarChart2 className="h-3.5 w-3.5 flex-shrink-0 text-white/25" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-medium text-white/80">
+                          {ch.title || ch.chart_id}
+                        </p>
+                      </div>
+                      <span className={`flex-shrink-0 rounded-full border px-1.5 py-px text-[10px] font-medium uppercase tracking-wide transition-colors ${
+                        isSelected
+                          ? "border-indigo-500/25 bg-indigo-500/10 text-indigo-300"
+                          : "border-white/10 bg-white/[0.03] text-white/35"
+                      }`}>
+                        {ch.chart_type}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-              <p className="mt-2 text-[11px] text-white/30">
-                These charts will be included in HTML export and listed in Excel export.
-              </p>
+              {selectedChartIds.length === 0 && (
+                <p className="mt-2 text-[11px] text-white/30">
+                  No charts selected for this report yet.
+                </p>
+              )}
+              {selectedChartIds.length > 0 && (
+                <p className="mt-2 text-[11px] text-white/30">
+                  These charts will be included in HTML export and listed in Excel export.
+                </p>
+              )}
             </>
           )}
         </div>
@@ -958,26 +1014,32 @@ export function ReportBuilder({
               )}
             </PreviewSection>
 
-            {/* Selected Charts */}
-            {includedCharts.length > 0 && (
-              <PreviewSection icon={BarChart2} title="Selected Charts" accent="indigo">
-                <div className="space-y-1.5">
-                  {includedCharts.map((ch) => (
-                    <div
-                      key={ch.chart_id}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-2.5"
-                    >
-                      <p className="min-w-0 flex-1 truncate text-xs text-white/70">
-                        {ch.title || ch.chart_id}
-                      </p>
-                      <span className="flex-shrink-0 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-indigo-300">
-                        {ch.chart_type}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </PreviewSection>
-            )}
+            {/* Selected Charts preview */}
+            {(() => {
+              const previewCharts = availableCharts.length > 0
+                ? availableCharts.filter((ch) => selectedChartIds.includes(ch.chart_id))
+                : includedCharts.map((ch) => ({ ...ch, selected: true }));
+              if (previewCharts.length === 0) return null;
+              return (
+                <PreviewSection icon={BarChart2} title="Selected Charts" accent="indigo">
+                  <div className="space-y-1.5">
+                    {previewCharts.map((ch) => (
+                      <div
+                        key={ch.chart_id}
+                        className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-4 py-2.5"
+                      >
+                        <p className="min-w-0 flex-1 truncate text-xs text-white/70">
+                          {ch.title || ch.chart_id}
+                        </p>
+                        <span className="flex-shrink-0 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-indigo-300">
+                          {ch.chart_type}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </PreviewSection>
+              );
+            })()}
 
             {/* Comparison Summary — only rendered when compare data is available */}
             {hasCompare && (

@@ -642,6 +642,13 @@ export interface IncludedChart {
   title: string;
 }
 
+export interface AvailableChart {
+  chart_id: string;
+  chart_type: string;
+  title: string;
+  selected: boolean;
+}
+
 export interface UserEdit {
   field: string;
   edited_at: string;
@@ -697,6 +704,7 @@ export interface DraftResponse {
   summary: string | null;
   selected_insight_ids: Array<string | number>;
   selected_chart_ids: string[];
+  available_charts: AvailableChart[];
   template: string | null;
   created_at: string | null;
   updated_at: string | null;
