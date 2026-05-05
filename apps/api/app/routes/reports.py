@@ -367,6 +367,86 @@ def _one_included_chart(
     return None
 
 
+def _result_data_for_draft(
+    draft: ReportDraft,
+    db: Session,
+) -> dict[str, Any] | None:
+    """Fetch and parse the analysis result linked to ``draft``.
+
+    Returns ``None`` when no linked result exists, the result belongs to a
+    different project (tampered draft), or the JSON is malformed.
+    """
+    if not draft.analysis_result_id:
+        return None
+    try:
+        analysis = (
+            db.query(AnalysisResult)
+            .filter(
+                AnalysisResult.id == draft.analysis_result_id,
+                AnalysisResult.project_id == draft.project_id,
+            )
+            .first()
+        )
+        if analysis:
+            return json.loads(analysis.result_json)
+    except Exception:
+        pass
+    return None
+
+
+def _build_available_charts_list(
+    draft: ReportDraft,
+    result_data: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Return an ordered catalog of all charts available in the linked run.
+
+    Each entry: ``{chart_id, title, chart_type, selected}``.
+    ``selected`` is ``True`` when the chart is present in the draft's
+    ``selected_chart_ids_json`` list.  The list is in stored chart order
+    (first non-empty chart block wins: charts / chart_results /
+    suggested_charts / chart_gallery).  Charts without an explicit ID
+    fall back to ``idx_N`` so every entry has a stable key.  Returns
+    ``[]`` when no chart block is found.
+    """
+    ordered = _chart_block_from_run(result_data)
+    if not ordered:
+        return []
+
+    by_id = _chart_catalog_by_id(ordered)
+
+    # Resolve raw selection slots → set of selected chart_id strings.
+    raw_selected = _draft_selected_chart_ids_safe(draft)
+    selected_ids: set[str] = set()
+    for slot in raw_selected:
+        row = _one_included_chart(slot, by_id=by_id, ordered=ordered)
+        if row is not None:
+            selected_ids.add(row[0])
+
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for idx, ch in enumerate(ordered):
+        cid: str | None = None
+        for field in ("chart_id", "id"):
+            v = ch.get(field)
+            if isinstance(v, str) and v.strip():
+                cid = v.strip()[:512]
+                break
+        if cid is None:
+            cid = f"idx_{idx}"
+        if cid in seen:
+            continue
+        seen.add(cid)
+        title, ctype = _coerce_run_chart_meta(ch, fallback_title=cid)
+        out.append({
+            "chart_id": cid,
+            "title": title,
+            "chart_type": ctype,
+            "selected": cid in selected_ids,
+        })
+
+    return out
+
+
 def _build_included_charts_list(draft: ReportDraft, result_data: dict[str, Any] | None) -> list:
     """Map draft.chart selection (+ optional persisted run chart payloads) to IncludedChart."""
     from app.schemas.report import IncludedChart
@@ -390,55 +470,50 @@ def _build_included_charts_list(draft: ReportDraft, result_data: dict[str, Any] 
     return out
 
 
-def _build_report_result(draft: ReportDraft, db: Session) -> dict:
+def _build_report_result(
+    draft: ReportDraft,
+    db: Session,
+    *,
+    result_data: dict[str, Any] | None = None,
+) -> dict:
     """
     Assemble a canonical ReportResult from a draft, linked analysis, and audit log.
 
     All data already exists in the DB — this is a pure assembly step.
     Fields without V1 persistence (user_edits, export_artifact_refs) are empty lists.
+
+    Pass ``result_data`` when the caller has already fetched the analysis
+    result to avoid a second DB round-trip.
     """
     from app.schemas.report import IncludedInsight, ReportResult, ReportSection
 
-    # Resolve selected insights from the linked analysis result.
-    # Defensive: only consider the linked analysis if it actually belongs to
-    # the draft's project, so a tampered draft can never pull data from an
-    # analysis owned by a different project.
-    included_insights: list[IncludedInsight] = []
-    result_for_charts: dict[str, Any] | None = None
-    if draft.analysis_result_id:
-        analysis = (
-            db.query(AnalysisResult)
-            .filter(
-                AnalysisResult.id == draft.analysis_result_id,
-                AnalysisResult.project_id == draft.project_id,
-            )
-            .first()
-        )
-        if analysis:
-            try:
-                result_data = json.loads(analysis.result_json)
-                result_for_charts = result_data
-                raw = result_data.get("insight_results") or result_data.get("insights") or []
-                # Resolve stable IDs (preferred) and legacy integer indices
-                # against the same insight list the export will render, so
-                # the draft response and the export agree on what's included.
-                from app.services.reporting.draft_context import _select_indices
-                resolved = _select_indices(raw, draft.selected_insights)
-                for idx in resolved:
-                    ins = raw[idx]
-                    included_insights.append(IncludedInsight(
-                        insight_id=ins.get("insight_id") or f"idx_{idx}",
-                        title=(
-                            ins.get("title") or ins.get("explanation")
-                            or ins.get("finding") or f"Finding {idx + 1}"
-                        ),
-                        severity=ins.get("severity") or "medium",
-                        index_in_run=idx,
-                    ))
-            except Exception:
-                pass
+    if result_data is None:
+        result_data = _result_data_for_draft(draft, db)
 
-    included_charts = _build_included_charts_list(draft, result_for_charts)
+    included_insights: list[IncludedInsight] = []
+    if result_data is not None:
+        try:
+            raw = result_data.get("insight_results") or result_data.get("insights") or []
+            # Resolve stable IDs (preferred) and legacy integer indices
+            # against the same insight list the export will render, so
+            # the draft response and the export agree on what's included.
+            from app.services.reporting.draft_context import _select_indices
+            resolved = _select_indices(raw, draft.selected_insights)
+            for idx in resolved:
+                ins = raw[idx]
+                included_insights.append(IncludedInsight(
+                    insight_id=ins.get("insight_id") or f"idx_{idx}",
+                    title=(
+                        ins.get("title") or ins.get("explanation")
+                        or ins.get("finding") or f"Finding {idx + 1}"
+                    ),
+                    severity=ins.get("severity") or "medium",
+                    index_in_run=idx,
+                ))
+        except Exception:
+            pass
+
+    included_charts = _build_included_charts_list(draft, result_data)
 
     # Default section list — all included; compare_summary excluded unless compare ran
     _SECTIONS = [
@@ -494,6 +569,7 @@ def _build_report_result(draft: ReportDraft, db: Session) -> dict:
 
 def _draft_response(draft: ReportDraft, db: Session) -> dict:
     """Build the standard draft response dict with embedded canonical report_result."""
+    result_data = _result_data_for_draft(draft, db)
     return {
         "id": draft.id,
         "project_id": draft.project_id,
@@ -501,10 +577,11 @@ def _draft_response(draft: ReportDraft, db: Session) -> dict:
         "summary": draft.summary,
         "selected_insight_ids": draft.selected_insights,
         "selected_chart_ids": _draft_selected_chart_ids_safe(draft),
+        "available_charts": _build_available_charts_list(draft, result_data),
         "template": draft.template,
         "created_at": draft.created_at.isoformat() if draft.created_at else None,
         "updated_at": draft.updated_at.isoformat() if draft.updated_at else None,
-        "report_result": _build_report_result(draft, db),
+        "report_result": _build_report_result(draft, db, result_data=result_data),
     }
 
 
