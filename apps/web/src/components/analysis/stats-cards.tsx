@@ -1,3 +1,5 @@
+import type { LargeDatasetMeta } from "@/lib/api";
+
 type ProfileColumnStub = { type?: string };
 
 type HealthResultStats = {
@@ -20,6 +22,7 @@ type Props = {
   healthResult?: HealthResultStats | null;
   profileResult?: ProfileColumnStub[] | null;
   summary?: LegacySummary | null;
+  largeDataset?: LargeDatasetMeta | null;
 };
 
 const DOMAIN_BADGE: Record<string, string> = {
@@ -47,7 +50,7 @@ const DATASET_TYPE_DISPLAY: Record<string, string> = {
   financial_markets_timeseries: "Financial Markets Time Series",
 };
 
-export function StatsCards({ healthResult, profileResult, summary }: Props) {
+export function StatsCards({ healthResult, profileResult, summary, largeDataset }: Props) {
   // Canonical-first reads — fall back to legacy summary values for old stored results.
   const rowCount       = healthResult?.row_count    ?? summary?.rows    ?? 0;
   const colCount       = healthResult?.column_count ?? summary?.columns ?? 0;
@@ -88,6 +91,18 @@ export function StatsCards({ healthResult, profileResult, summary }: Props) {
             <p className={`mt-1.5 text-2xl font-semibold ${"warn" in item && item.warn ? "text-amber-400" : "text-white"}`}>
               {item.value}
             </p>
+            {item.label === "Rows" &&
+              largeDataset?.large_dataset_mode &&
+              typeof largeDataset.analyzed_rows === "number" && (
+                <p className="mt-2 border-t border-white/[0.06] pt-2 text-[11px] leading-snug text-white/38">
+                  Full file: {(typeof largeDataset.full_rows === "number"
+                    ? largeDataset.full_rows
+                    : rowCount
+                  ).toLocaleString()}{" "}
+                  rows. Pattern detection sample: {largeDataset.analyzed_rows.toLocaleString()} rows — your upload is
+                  intact.
+                </p>
+              )}
           </div>
         ))}
       </div>

@@ -5,8 +5,9 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
-import { getProject, getAnalysisHistory, getAnalysisResult, shareAnalysis, exportReport, ApiError } from "@/lib/api";
+import { getProject, getAnalysisHistory, getAnalysisResult, shareAnalysis, exportReport, ApiError, pickLargeDatasetMeta } from "@/lib/api";
 import { StatsCards } from "@/components/analysis/stats-cards";
+import { LargeDatasetTransparencyBanner } from "@/components/analysis/large-dataset-transparency";
 import { HealthScore } from "@/components/analysis/health-score";
 import { InsightHighlights } from "@/components/analysis/insight-highlights";
 import { InsightsList } from "@/components/analysis/insights-list";
@@ -219,10 +220,18 @@ export default function ReportDetailPage() {
           {/* Report body */}
           {result && !loading && (() => {
             const insights = (result.insights ?? result.insight_results ?? []) as any;
+            const ldRep = pickLargeDatasetMeta(result as Record<string, unknown>);
             return (
               <div className="space-y-6">
+                {ldRep ? <LargeDatasetTransparencyBanner meta={ldRep} variant="full" /> : null}
+
                 {/* Stats */}
-                <StatsCards healthResult={result.health_result as any} profileResult={(result.profile_result ?? result.profile) as any} summary={result.dataset_summary as any} />
+                <StatsCards
+                  healthResult={result.health_result as any}
+                  profileResult={(result.profile_result ?? result.profile) as any}
+                  summary={result.dataset_summary as any}
+                  largeDataset={ldRep}
+                />
 
                 {/* Executive Panel — above insights */}
                 {!!result.executive_panel && (
@@ -235,7 +244,11 @@ export default function ReportDetailPage() {
                 {/* Health + Cleaning */}
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                   <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
-                    <HealthScore healthResult={result.health_result as any} score={result.health_score as any} />
+                    <HealthScore
+                      healthResult={result.health_result as any}
+                      score={result.health_score as any}
+                      largeDataset={ldRep}
+                    />
                   </div>
                   <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
                     <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-white/70">

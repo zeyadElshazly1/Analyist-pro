@@ -150,6 +150,38 @@ def build_context(
     if not isinstance(compare_result, dict):
         compare_result = None
 
+    # ── Large dataset transparency (Task 77D) ─────────────────────────────────
+    ld_active = analysis_result.get("large_dataset_mode") is True
+    large_dataset_note: str | None = None
+    large_dataset_row_detail: str | None = None
+    large_dataset_symbol_line: str | None = None
+    large_dataset_date_line: str | None = None
+    if ld_active:
+        large_dataset_note = (
+            "Large dataset mode was used for expensive pattern detection; "
+            "full dataset metadata and quality checks were preserved."
+        )
+        fr = analysis_result.get("full_rows")
+        ar = analysis_result.get("analyzed_rows")
+        if isinstance(fr, (int, float)) and isinstance(ar, (int, float)):
+            fr_i, ar_i = int(fr), int(ar)
+            large_dataset_row_detail = (
+                f"Full file contains {fr_i:,} rows. Expensive pattern detection ran on {ar_i:,} representative rows."
+            )
+
+        sc = analysis_result.get("symbol_count")
+        if isinstance(sc, (int, float)):
+            large_dataset_symbol_line = f"Symbols covered: {int(sc):,}"
+
+        ds = analysis_result.get("date_range_start")
+        de = analysis_result.get("date_range_end")
+        if isinstance(ds, str) and ds.strip() and isinstance(de, str) and de.strip():
+            large_dataset_date_line = f"Date range: {ds.strip()} → {de.strip()}"
+        elif isinstance(ds, str) and ds.strip():
+            large_dataset_date_line = f"Date range starts: {ds.strip()}"
+        elif isinstance(de, str) and de.strip():
+            large_dataset_date_line = f"Date range ends: {de.strip()}"
+
     return {
         "title":           project_name,
         "date":            datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -173,4 +205,10 @@ def build_context(
         # ignore it.
         "compare_result":  compare_result,
         "has_compare":     compare_result is not None,
+        # Large dataset (optional — template ignores when ld_active is false)
+        "large_dataset_mode":       ld_active,
+        "large_dataset_note":       large_dataset_note,
+        "large_dataset_row_detail": large_dataset_row_detail,
+        "large_dataset_symbol_line": large_dataset_symbol_line,
+        "large_dataset_date_line":   large_dataset_date_line,
     }

@@ -407,6 +407,25 @@ def get_run_results(
         val = stored.get(key)
         return val if val else None
 
+    def _opt_int(key: str) -> int | None:
+        v = stored.get(key)
+        if isinstance(v, bool):
+            return None
+        if isinstance(v, int):
+            return v
+        if isinstance(v, float) and v.is_integer():
+            return int(v)
+        return None
+
+    def _opt_str(key: str) -> str | None:
+        v = stored.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+        return None
+
+    ld_mode = stored.get("large_dataset_mode")
+    large_active = ld_mode is True or ld_mode == "true"
+
     return RunResults(
         run_id=r.id,
         project_id=r.project_id,
@@ -423,6 +442,14 @@ def get_run_results(
         # compare_result is written separately by /explore/multifile and is None
         # for runs that were never paired against another project.
         compare_result=_block("compare_result"),
+        large_dataset_mode=True if large_active else None,
+        full_rows=_opt_int("full_rows"),
+        full_columns=_opt_int("full_columns"),
+        analyzed_rows=_opt_int("analyzed_rows"),
+        sample_strategy=_opt_str("sample_strategy"),
+        symbol_count=_opt_int("symbol_count"),
+        date_range_start=_opt_str("date_range_start"),
+        date_range_end=_opt_str("date_range_end"),
     )
 
 

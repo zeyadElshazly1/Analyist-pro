@@ -51,6 +51,7 @@
   .chart-pdf-fallback td { padding: 0.25rem 0.5rem; border: 1px solid #334155; }
   .chart-pdf-fallback td:first-child { font-weight: 600; width: 7rem; }
   .chart-pdf-note { font-size: 0.75rem; color: #64748b; margin-top: 0.5rem; font-style: italic; }
+  .large-dataset-note { border-left: 3px solid #6366f1; }
   @media print {
     body { background: white; color: black; }
     .card { border: 1px solid #ccc; background: #f9f9f9; }
@@ -76,6 +77,16 @@
     <div class="stat-card"><div class="stat-value">{{ missing_pct }}%</div><div class="stat-label">Missing</div></div>
     <div class="stat-card"><div class="health-grade grade-{{ grade }}">{{ grade }}</div><div class="stat-label">Health Grade</div></div>
   </div>
+
+  {% if large_dataset_mode %}
+  <div class="card large-dataset-note">
+    <h3 style="font-size:1rem;font-weight:600;color:#cbd5e1;margin-bottom:0.75rem;">Large dataset mode</h3>
+    {% if large_dataset_note %}<p class="narrative" style="margin-bottom:0.5rem;">{{ large_dataset_note }}</p>{% endif %}
+    {% if large_dataset_row_detail %}<p class="narrative" style="margin-bottom:0.35rem;">{{ large_dataset_row_detail }}</p>{% endif %}
+    {% if large_dataset_symbol_line %}<p class="narrative" style="margin-bottom:0.35rem;">{{ large_dataset_symbol_line }}</p>{% endif %}
+    {% if large_dataset_date_line %}<p class="narrative">{{ large_dataset_date_line }}</p>{% endif %}
+  </div>
+  {% endif %}
 
   {% if narrative %}
   <h2>Executive Summary</h2>
@@ -226,6 +237,9 @@
     <div class="footer-row">
       <span>Analyst Pro{% if trust_meta.project_name %} &nbsp;·&nbsp; {{ trust_meta.project_name }}{% endif %}</span>
     </div>
+    {% if large_dataset_mode and large_dataset_note %}
+    <div class="footer-row"><span>{{ large_dataset_note }}</span></div>
+    {% endif %}
     <span class="footer-ai">AI-assisted draft — review before sharing with clients</span>
   </footer>
 </div>

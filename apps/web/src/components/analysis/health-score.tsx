@@ -1,3 +1,6 @@
+import type { LargeDatasetMeta } from "@/lib/api";
+import { LARGE_DATASET_METHODOLOGY_NOTE } from "@/lib/api";
+
 type MissingnessStats = {
   missing_cell_pct?: number;
   total_missing_cells?: number;
@@ -45,6 +48,7 @@ type LegacyScore = {
 type Props = {
   healthResult?: HealthResult | null;
   score?: LegacyScore | null;
+  largeDataset?: LargeDatasetMeta | null;
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -200,7 +204,7 @@ function derivePositives(
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function HealthScore({ score, healthResult }: Props) {
+export function HealthScore({ score, healthResult, largeDataset }: Props) {
   // Canonical-first reads
   const hs           = healthResult?.health_score;
   const value        = Math.round(hs?.total_score ?? score?.total ?? score?.score ?? 0);
@@ -251,6 +255,13 @@ export function HealthScore({ score, healthResult }: Props) {
 
   return (
     <div className="space-y-5">
+      {largeDataset?.large_dataset_mode ? (
+        <div className="rounded-lg border border-violet-500/25 bg-violet-500/[0.06] px-3.5 py-2.5 text-[11px] leading-snug text-violet-100/85">
+          <span className="font-semibold text-violet-200">Large dataset mode</span>
+          <span className="text-white/45"> — </span>
+          {LARGE_DATASET_METHODOLOGY_NOTE} Row and column counts here reflect the full upload.
+        </div>
+      ) : null}
 
       {/* ── Verdict banner ────────────────────────────────────────────────── */}
       <div className={`flex items-center gap-4 rounded-xl border px-4 py-3.5 ${theme.banner}`}>
@@ -314,6 +325,14 @@ export function HealthScore({ score, healthResult }: Props) {
               {colCount != null && `${colCount} columns`}
             </p>
           )}
+          {largeDataset?.large_dataset_mode &&
+            typeof largeDataset.analyzed_rows === "number" &&
+            typeof rowCount === "number" && (
+              <p className="mt-1 text-[11px] text-indigo-300/75">
+                Pattern detection used {largeDataset.analyzed_rows.toLocaleString()} representative rows; health metrics
+                above still describe all {rowCount.toLocaleString()} rows in your file.
+              </p>
+            )}
         </div>
       </div>
 

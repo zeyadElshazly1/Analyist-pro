@@ -5,8 +5,9 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { BarChart2, AlertCircle, Loader2, Lock } from "lucide-react";
-import { getSharedAnalysis } from "@/lib/api";
+import { getSharedAnalysis, pickLargeDatasetMeta } from "@/lib/api";
 import { StatsCards } from "@/components/analysis/stats-cards";
+import { LargeDatasetTransparencyBanner } from "@/components/analysis/large-dataset-transparency";
 import { HealthScore } from "@/components/analysis/health-score";
 import { InsightHighlights } from "@/components/analysis/insight-highlights";
 import { InsightsList } from "@/components/analysis/insights-list";
@@ -82,6 +83,7 @@ export default function SharePage() {
         {data && !loading && (() => {
           // insight_results replaced insights for new analyses; fall back for old stored results.
           const insights = (data.result.insights ?? data.result.insight_results ?? []) as any;
+          const ldShare = pickLargeDatasetMeta(data.result);
           return (
           <>
             {/* Meta */}
@@ -92,13 +94,24 @@ export default function SharePage() {
               </p>
             </div>
 
+            {ldShare ? <LargeDatasetTransparencyBanner meta={ldShare} variant="full" /> : null}
+
             {/* Stats */}
-            <StatsCards healthResult={data.result.health_result as any} profileResult={(data.result.profile_result ?? data.result.profile) as any} summary={data.result.dataset_summary as any} />
+            <StatsCards
+              healthResult={data.result.health_result as any}
+              profileResult={(data.result.profile_result ?? data.result.profile) as any}
+              summary={data.result.dataset_summary as any}
+              largeDataset={ldShare}
+            />
 
             {/* Health + Cleaning */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
-                <HealthScore healthResult={data.result.health_result as any} score={data.result.health_score as any} />
+                <HealthScore
+                  healthResult={data.result.health_result as any}
+                  score={data.result.health_score as any}
+                  largeDataset={ldShare}
+                />
               </div>
               <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
                 <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-white/70">

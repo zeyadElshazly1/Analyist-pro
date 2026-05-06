@@ -18,6 +18,7 @@ import { CleaningReview } from "./cleaning-review";
 import { IntakeReview, type IntakeResult } from "./intake-review";
 import { CleaningSummaryCards } from "@/components/analysis/cleaning-summary-cards";
 import { InsightHighlights } from "@/components/analysis/insight-highlights";
+import { LargeDatasetTransparencyBanner } from "@/components/analysis/large-dataset-transparency";
 import { RecommendedAction } from "@/components/analysis/recommended-action";
 import { ChartViewer } from "@/components/analysis/chart-viewer";
 import { ProfileView } from "@/components/analysis/profile-view";
@@ -38,8 +39,8 @@ import { QueryView } from "@/components/analysis/query-view";
 import { DataStoryView } from "@/components/analysis/data-story-view";
 import { DataTableView } from "@/components/analysis/data-table-view";
 import { DiffView } from "@/components/analysis/diff-view";
-import { ApiError, getFreshToken, shareAnalysis, downloadCleanedData } from "@/lib/api";
-import type { CompareResult } from "@/lib/api";
+import { ApiError, getFreshToken, shareAnalysis, downloadCleanedData, pickLargeDatasetMeta } from "@/lib/api";
+import type { CompareResult, LargeDatasetMeta } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 import { SafePanel } from "@/components/ui/error-boundary";
 
@@ -136,6 +137,7 @@ export type AnalysisResult = {
   // Compare block — populated when the user has run /explore/multifile against
   // this project; pinned to the active run via run_tracker.persist_compare_result.
   compare_result?: CompareResult | null;
+} & Partial<LargeDatasetMeta> & {
   [key: string]: unknown;
 };
 
@@ -337,6 +339,10 @@ export function RunAnalysis({
   const [sharing, setSharing] = useState(false);
   const [copied, setCopied] = useState(false);
   const esRef = useRef<EventSource | null>(null);
+
+  const largeDatasetMeta = result
+    ? pickLargeDatasetMeta(result as Record<string, unknown>)
+    : undefined;
 
   async function handleRun() {
     if (esRef.current) {
@@ -547,6 +553,10 @@ export function RunAnalysis({
             stepStatuses={deriveStepStatuses(result, visitedSteps, compareResult)}
           />
 
+          {largeDatasetMeta ? (
+            <LargeDatasetTransparencyBanner meta={largeDatasetMeta} variant="full" />
+          ) : null}
+
           {/* ── Intake Review ────────────────────────────────────────── */}
           {tab === "intake" && (
             <SafePanel label="Intake Review">
@@ -589,7 +599,12 @@ export function RunAnalysis({
           {tab === "overview" && (
             <SafePanel label="Overview">
               <div className="space-y-4">
-                <StatsCards healthResult={result.health_result} profileResult={result.profile_result ?? result.profile} summary={result.dataset_summary} />
+                <StatsCards
+                  healthResult={result.health_result}
+                  profileResult={result.profile_result ?? result.profile}
+                  summary={result.dataset_summary}
+                  largeDataset={largeDatasetMeta}
+                />
                 <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 lg:items-start lg:gap-6">
                   <TabPanel>
                     <h2 className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-white/50">
@@ -598,7 +613,11 @@ export function RunAnalysis({
                     <p className="mb-5 max-w-prose text-[13px] leading-relaxed text-white/38">
                       Health score, dimensions, and readiness signals for this dataset.
                     </p>
-                    <HealthScore healthResult={result.health_result} score={result.health_score} />
+                    <HealthScore
+                      healthResult={result.health_result}
+                      score={result.health_score}
+                      largeDataset={largeDatasetMeta}
+                    />
                   </TabPanel>
                   <TabPanel>
                     <CleaningSummaryCards cleaningResult={result.cleaning_result} summary={result.cleaning_summary} />
@@ -622,6 +641,7 @@ export function RunAnalysis({
                   <HealthScore
                     healthResult={result.health_result}
                     score={result.health_score}
+                    largeDataset={largeDatasetMeta}
                   />
                 ) : (
                   <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-6 py-8 text-center">
@@ -804,6 +824,7 @@ export function RunAnalysis({
                     compareResult={compareResult}
                     healthResult={result.health_result as ReportHealthBlock | null | undefined}
                     cleaningResult={result.cleaning_result as ReportCleaningBlock | null | undefined}
+                    largeDataset={largeDatasetMeta}
                     onNavigateTo={handleTabChange}
                   />
                   <div className="border-t border-white/[0.06] pt-4">

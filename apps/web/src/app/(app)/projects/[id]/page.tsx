@@ -83,6 +83,14 @@ function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
     // compare_result: rehydrate the Compare tab and Report Builder context on
     // reopened runs (null when this run was never paired against another file).
     compare_result: stored.compare_result ?? null,
+    large_dataset_mode: stored.large_dataset_mode === true ? true : undefined,
+    full_rows: typeof stored.full_rows === "number" ? stored.full_rows : undefined,
+    full_columns: typeof stored.full_columns === "number" ? stored.full_columns : undefined,
+    analyzed_rows: typeof stored.analyzed_rows === "number" ? stored.analyzed_rows : undefined,
+    sample_strategy: typeof stored.sample_strategy === "string" ? stored.sample_strategy : undefined,
+    symbol_count: typeof stored.symbol_count === "number" ? stored.symbol_count : undefined,
+    date_range_start: typeof stored.date_range_start === "string" ? stored.date_range_start : undefined,
+    date_range_end: typeof stored.date_range_end === "string" ? stored.date_range_end : undefined,
   };
 }
 
