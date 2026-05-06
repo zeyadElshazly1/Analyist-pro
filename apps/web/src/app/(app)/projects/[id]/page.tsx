@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
@@ -257,6 +257,13 @@ export default function ProjectPage() {
       .catch(() => {});
   }, [projectId]);
 
+  const handleFreshRunComplete = useCallback(() => {
+    setStoredResult(null);
+    getProject(projectId)
+      .then(setProject)
+      .catch(() => {});
+  }, [projectId]);
+
   async function handleOpenPrevious() {
     const runId = project?.latest_run?.run_id;
     if (!runId) return;
@@ -379,6 +386,7 @@ export default function ProjectPage() {
               projectName={project?.name}
               initialResult={storedResult ?? undefined}
               initialRunId={project?.latest_run?.run_id}
+              onFreshRunComplete={handleFreshRunComplete}
             />
           </section>
 

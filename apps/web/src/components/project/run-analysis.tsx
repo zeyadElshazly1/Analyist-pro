@@ -147,6 +147,8 @@ type Props = {
   initialResult?: AnalysisResult;          // pre-populated from stored run
   initialRunId?: number;                   // run_id for the stored result (used as analysisId)
   initialCompareResult?: CompareResult;    // pre-populated compare (e.g. demo mode)
+  /** Called when a live SSE run finishes successfully — parent can refresh project/latest_run for banners. */
+  onFreshRunComplete?: () => void;
 };
 
 type ProgressState = {
@@ -278,6 +280,7 @@ export function RunAnalysis({
   initialResult,
   initialRunId,
   initialCompareResult,
+  onFreshRunComplete,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
@@ -401,6 +404,7 @@ export function RunAnalysis({
           setLoading(false);
           setProgress(null);
           es.close();
+          onFreshRunComplete?.();
           return;
         }
 
