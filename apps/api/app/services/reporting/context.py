@@ -156,6 +156,7 @@ def build_context(
     large_dataset_row_detail: str | None = None
     large_dataset_symbol_line: str | None = None
     large_dataset_date_line: str | None = None
+    large_dataset_strategy_line: str | None = None
     if ld_active:
         large_dataset_note = (
             "Large dataset mode was used for expensive pattern detection; "
@@ -181,6 +182,10 @@ def build_context(
             large_dataset_date_line = f"Date range starts: {ds.strip()}"
         elif isinstance(de, str) and de.strip():
             large_dataset_date_line = f"Date range ends: {de.strip()}"
+
+        strat = analysis_result.get("sample_strategy")
+        if isinstance(strat, str) and strat.strip():
+            large_dataset_strategy_line = f"Sample strategy: {strat.strip().replace('_', ' ')}"
 
     return {
         "title":           project_name,
@@ -211,4 +216,5 @@ def build_context(
         "large_dataset_row_detail": large_dataset_row_detail,
         "large_dataset_symbol_line": large_dataset_symbol_line,
         "large_dataset_date_line":   large_dataset_date_line,
+        "large_dataset_strategy_line": large_dataset_strategy_line,
     }

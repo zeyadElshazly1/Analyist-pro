@@ -1326,12 +1326,14 @@ class TestBuildContextLargeDataset:
         ctx = build_context(_MINIMAL_DF, result, "Test")
         assert ctx["large_dataset_mode"] is False
         assert ctx["large_dataset_note"] is None
+        assert ctx["large_dataset_strategy_line"] is None
 
     def test_surfaces_note_when_active(self):
         result = {
             "large_dataset_mode": True,
             "full_rows": 1_000_000,
             "analyzed_rows": 100_000,
+            "sample_strategy": "timeseries_recent_rows_per_symbol",
             "symbol_count": 400,
             "date_range_start": "2020-01-01",
             "date_range_end": "2024-06-01",
@@ -1346,6 +1348,8 @@ class TestBuildContextLargeDataset:
         assert detail
         assert "1,000,000" in detail
         assert "100,000" in detail
+        assert ctx["large_dataset_strategy_line"]
+        assert "timeseries" in ctx["large_dataset_strategy_line"].replace("_", " ").lower()
         assert ctx["large_dataset_symbol_line"] == "Symbols covered: 400"
         assert ctx["large_dataset_date_line"]
         assert "2020-01-01" in ctx["large_dataset_date_line"]
