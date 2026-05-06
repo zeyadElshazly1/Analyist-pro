@@ -89,6 +89,7 @@ const DATASET_TYPE_LABEL: Record<string, string> = {
   survey: "Survey",
   general: "General",
   financial_markets_snapshot: "Financial Markets Snapshot",
+  financial_markets_timeseries: "Financial Markets Time Series",
 };
 
 // ── Score metadata helpers ────────────────────────────────────────────────────

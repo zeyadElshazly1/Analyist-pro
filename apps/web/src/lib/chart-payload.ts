@@ -11,6 +11,8 @@ export interface ChartFinanceFormattingMeta {
   y_scale?: "decimal" | "unit" | string;
 }
 
+export type LineSeriesSpec = { key: string; label?: string };
+
 export type SuggestedChartPayload = ChartFinanceFormattingMeta & {
   type: "bar" | "line" | "pie" | "scatter" | "boxplot" | "heatmap";
   title: string;
@@ -29,6 +31,8 @@ export type SuggestedChartPayload = ChartFinanceFormattingMeta & {
   /** Numeric 0/1 flag column — prefer short, unrotated category labels. */
   is_binary?: boolean;
   color_key?: string | null;
+  /** Multiple line series on one time axis (indexed OHLC panels). */
+  line_series?: LineSeriesSpec[];
 };
 
 /** True when the payload carries finance percent-display hints (Task 74D). */

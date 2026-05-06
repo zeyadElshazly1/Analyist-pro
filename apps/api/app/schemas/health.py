@@ -44,6 +44,7 @@ DatasetType = Literal[
     "survey",
     "general",
     "financial_markets_snapshot",
+    "financial_markets_timeseries",
 ]
 
 

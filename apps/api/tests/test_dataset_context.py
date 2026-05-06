@@ -17,6 +17,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
+from pathlib import Path
 
 from app.services.dataset_context import (
     DatasetContext,
@@ -529,15 +530,24 @@ class TestDetectDatasetContext:
 
     def test_timeseries_matched_signals_mention_datetime(self):
         ctx = detect_dataset_context(_ohlc_timeseries_df())
-        assert any("Datetime" in s or "datetime" in s for s in ctx.matched_signals)
+        assert any(
+            "time axis" in s.lower() or "datetime" in s.lower()
+            for s in ctx.matched_signals
+        )
 
     def test_timeseries_matched_signals_mention_ohlc(self):
         ctx = detect_dataset_context(_ohlc_timeseries_df())
         assert any("OHLC" in s or "ohlc" in s for s in ctx.matched_signals)
 
-    def test_timeseries_has_future_version_warning(self):
+    def test_timeseries_warnings_describe_finance_panel(self):
         ctx = detect_dataset_context(_ohlc_timeseries_df())
-        assert any("future version" in w.lower() for w in ctx.warnings)
+        assert any("financial markets time-series" in w.lower() for w in ctx.warnings)
+
+    def test_etf_fixture_classifies_as_financial_timeseries(self):
+        path = Path(__file__).resolve().parent / "fixtures" / "etf_prices_sample.csv"
+        df = pd.read_csv(path, parse_dates=["price_date"])
+        ctx = detect_dataset_context(df)
+        assert ctx.dataset_type == FINANCIAL_MARKETS_TIMESERIES
 
     def test_snapshot_without_datetime_not_timeseries(self):
         ctx = detect_dataset_context(_yahoo_snapshot_df())

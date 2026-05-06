@@ -1,7 +1,8 @@
 """
 Health score engine.
 
-_HEALTH_WEIGHTS         — dimension weights by dataset type (includes ``financial_markets_snapshot``)
+_HEALTH_WEIGHTS         — dimension weights by dataset type (includes ``financial_markets_snapshot``
+                          and ``financial_markets_timeseries``)
 _column_health_score    — 0–100 score for a single column
 calculate_health_score  — overall dataset health with grade, deductions,
                           business impact, fix suggestions, and per-column breakdown
@@ -23,7 +24,8 @@ from .dataset_classifier import _detect_dataset_type
 # ── Weights by dataset type ───────────────────────────────────────────────────
 
 _HEALTH_WEIGHTS: dict[str, dict[str, int]] = {
-    "timeseries":                 {"completeness": 35, "uniqueness": 15, "consistency": 20, "validity": 15, "structure": 15},
+    "timeseries":                   {"completeness": 35, "uniqueness": 15, "consistency": 20, "validity": 15, "structure": 15},
+    "financial_markets_timeseries": {"completeness": 34, "uniqueness": 16, "consistency": 20, "validity": 15, "structure": 15},
     "financial_markets_snapshot": {"completeness": 32, "uniqueness": 18, "consistency": 18, "validity": 17, "structure": 15},
     "transactional":              {"completeness": 25, "uniqueness": 30, "consistency": 20, "validity": 15, "structure": 10},
     "survey":                     {"completeness": 30, "uniqueness": 10, "consistency": 25, "validity": 20, "structure": 15},
@@ -87,7 +89,7 @@ def calculate_health_score(df: pd.DataFrame) -> dict:
     """
     ctx = detect_dataset_context(df)
     if ctx.dataset_type == FINANCIAL_MARKETS_TIMESERIES:
-        dataset_type = "timeseries"
+        dataset_type = "financial_markets_timeseries"
         dataset_type_confidence = _health_classifier_confidence(ctx.confidence)
     elif ctx.dataset_type == FINANCIAL_MARKETS_SNAPSHOT and ctx.confidence >= CONFIDENCE_THRESHOLD:
         dataset_type = FINANCIAL_MARKETS_SNAPSHOT

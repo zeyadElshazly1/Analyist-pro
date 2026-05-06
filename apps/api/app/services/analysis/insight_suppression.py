@@ -2,14 +2,21 @@
 Finance-aware insight suppression before ranking.
 
 Removes repetitive generic findings that add little value on cross-sectional
-financial market snapshots while leaving domain-pack insights untouched.
+financial market snapshots and panel OHLC histories while leaving domain-pack
+insights untouched.
 """
 from __future__ import annotations
 
 import re
 
 from app.services.dataset_context import FINANCIAL_MARKETS_SNAPSHOT, _normalise_col
-from app.services.dataset_context.schema import DatasetContext
+from app.services.dataset_context.schema import DatasetContext, FINANCIAL_MARKETS_TIMESERIES
+from app.services.dataset_context.signals import OHLC_NAMES
+
+_FIN_MARKETS_TYPES: frozenset[str] = frozenset({
+    FINANCIAL_MARKETS_SNAPSHOT,
+    FINANCIAL_MARKETS_TIMESERIES,
+})
 
 _PRICE_FAMILY_COLUMNS: frozenset[str] = frozenset(
     _normalise_col(c)
@@ -32,7 +39,7 @@ _PRICE_FAMILY_COLUMNS: frozenset[str] = frozenset(
         "price_vs_sma50_pct",
         "price_vs_sma200_pct",
     )
-)
+) | frozenset(OHLC_NAMES)
 
 
 _ASSET_IDENTIFIER_COLUMNS: frozenset[str] = frozenset(
@@ -42,7 +49,8 @@ _ASSET_IDENTIFIER_COLUMNS: frozenset[str] = frozenset(
         "symbol",
         "shortName",
         "longName",
-        "name",
+        "fund_symbol",
+        "fundSymbol",
     )
 )
 
@@ -100,7 +108,7 @@ def _generic_price_level_structure_insight(ins: dict) -> bool:
     Generic detectors often emit asset_class → OHLC or univariate anomalies on price columns.
     Those are redundant with the finance pack and price-overlap caveat on snapshots.
     """
-    if ins.get("domain") == FINANCIAL_MARKETS_SNAPSHOT:
+    if ins.get("domain") in _FIN_MARKETS_TYPES:
         return False
 
     itype = ins.get("type", "")
@@ -139,14 +147,14 @@ def suppress_for_dataset_context(
     """
     Return a filtered insight list for ranking.
 
-    Non-financial snapshot contexts leave ``insights`` unchanged (same object).
-    For ``financial_markets_snapshot``, drop selected generic detectors; domain
-    insights ``domain == financial_markets_snapshot`` are never removed.
+    Non-financial contexts leave ``insights`` unchanged (same object).
+    For ``financial_markets_snapshot`` and ``financial_markets_timeseries``, drop
+    selected generic detectors; domain insights are never removed.
 
     May append a single caveat insight when ≥2 qualifying price-structure
     findings were removed.
     """
-    if context.dataset_type != FINANCIAL_MARKETS_SNAPSHOT:
+    if context.dataset_type not in _FIN_MARKETS_TYPES:
         return insights
 
     out: list[dict] = []
@@ -164,7 +172,7 @@ def suppress_for_dataset_context(
                     affected_price_columns.append(c)
 
     for ins in insights:
-        if ins.get("domain") == FINANCIAL_MARKETS_SNAPSHOT:
+        if ins.get("domain") in _FIN_MARKETS_TYPES:
             out.append(ins)
             continue
 
@@ -209,9 +217,8 @@ def suppress_for_dataset_context(
                 "confidence": 85,
                 "title": _PRICE_OVERLAP_FINDING_TITLE,
                 "finding": (
-                    "Open, high, low, close, and current price style fields often move "
-                    "together in market snapshot data, so they should not be interpreted "
-                    "as independent drivers."
+                    "Open, high, low, close, and related price fields usually move together "
+                    "on market data, so they should not be interpreted as independent drivers."
                 ),
                 "evidence": (
                     f"Affected overlapping price-series columns ({len(affected_price_columns)}): "
@@ -225,10 +232,10 @@ def suppress_for_dataset_context(
                     "building reports or models."
                 ),
                 "why_it_matters": (
-                    "Suppressing repeated price-field correlations keeps the analysis focused "
-                    "on return, risk, asset class, sector, and analyst context."
+                    "Suppressing redundant price-field correlations keeps findings focused "
+                    "on domain metrics instead of duplicate OHLC structure."
                 ),
-                "domain": FINANCIAL_MARKETS_SNAPSHOT,
+                "domain": context.dataset_type,
                 "columns_used": list(affected_price_columns),
             }
         )

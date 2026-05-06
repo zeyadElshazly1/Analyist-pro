@@ -24,7 +24,7 @@ import pandas as pd
 from itertools import combinations
 
 from app.services.dataset_context import detect_dataset_context
-from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT
+from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT, FINANCIAL_MARKETS_TIMESERIES
 
 from .budget import (
     MAX_TIMESERIES_DATES,
@@ -143,12 +143,20 @@ def build_chart_data(df: pd.DataFrame, dataset_context: "DatasetContext | None" 
     financial_markets_snapshot datasets use domain-aware cross-section charts
     (returns, volatility, risk–return scatter) instead of misleading price
     pseudo time-series charts (Task 74A).
+
+    financial_markets_timeseries datasets use indexed multi-symbol lines plus
+    finance leaderboard / distribution charts (Task 77A).
     """
     ctx = dataset_context if dataset_context is not None else detect_dataset_context(df)
     if ctx.dataset_type == FINANCIAL_MARKETS_SNAPSHOT:
         from app.services.chart_suggestions import build_financial_snapshot_charts
 
         return rank_and_cap(build_financial_snapshot_charts(df, ctx))
+
+    if ctx.dataset_type == FINANCIAL_MARKETS_TIMESERIES:
+        from app.services.chart_suggestions import build_financial_timeseries_charts
+
+        return rank_and_cap(build_financial_timeseries_charts(df, ctx))
 
     charts: list[dict] = []
 

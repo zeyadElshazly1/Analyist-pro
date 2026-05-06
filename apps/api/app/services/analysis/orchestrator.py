@@ -17,6 +17,7 @@ import pandas as pd
 from app.services.dataset_context import (
     CONFIDENCE_THRESHOLD,
     FINANCIAL_MARKETS_SNAPSHOT,
+    FINANCIAL_MARKETS_TIMESERIES,
     detect_dataset_context,
 )
 
@@ -139,7 +140,9 @@ def analyze_dataset(df: pd.DataFrame) -> tuple[list[dict], str]:
 
     # 10. Domain-specific insights (financial snapshot, when confidently detected)
     try:
-        if (
+        if ctx.dataset_type == FINANCIAL_MARKETS_TIMESERIES:
+            insights.extend(run_domain_pack(df, ctx))
+        elif (
             ctx.dataset_type == FINANCIAL_MARKETS_SNAPSHOT
             and ctx.confidence >= CONFIDENCE_THRESHOLD
         ):

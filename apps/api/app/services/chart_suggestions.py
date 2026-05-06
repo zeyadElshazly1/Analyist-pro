@@ -19,7 +19,7 @@ from app.services.analysis.domain import snapshot_finance as _sf
 from app.services.charting.budget import MAX_SCATTER_POINTS
 from app.services.charting.narrator import _narrate_scatter
 from app.services.charting.stats import _pearson, _spearman
-from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT, DatasetContext
+from app.services.dataset_context.schema import DatasetContext, FINANCIAL_MARKETS_SNAPSHOT, FINANCIAL_MARKETS_TIMESERIES
 
 # Minimum valid rows / groups (Task 74A)
 _MIN_ROWS_LEADERBOARD = 5
@@ -373,5 +373,164 @@ def build_financial_snapshot_charts(df: pd.DataFrame, ctx: DatasetContext) -> li
         )
         if ch:
             out.append(ch)
+
+    return out
+
+
+def build_financial_timeseries_charts(df: pd.DataFrame, ctx: DatasetContext) -> list[dict]:
+    """
+    Domain-aware charts for panel OHLC histories (ETF / equity daily bars).
+
+    Caller must ensure ``ctx.dataset_type == FINANCIAL_MARKETS_TIMESERIES``.
+    """
+    if ctx.dataset_type != FINANCIAL_MARKETS_TIMESERIES:
+        return []
+
+    from app.services.analysis.domain.timeseries_finance import (
+        build_ts_workframe,
+        collect_daily_returns,
+        per_symbol_metrics,
+        resolve_ts_finance_columns,
+    )
+    from app.services.charting.budget import MAX_TIMESERIES_POINTS
+    from app.services.charting.payloads import build_histogram_payload
+
+    cols = resolve_ts_finance_columns(df)
+    if cols is None:
+        return []
+    w = build_ts_workframe(df, cols)
+    if w is None:
+        return []
+
+    metrics = per_symbol_metrics(w)
+    if metrics.empty:
+        return []
+    m = metrics.loc[metrics["n_obs"] >= 8].copy()
+    if len(m) < _MIN_ROWS_LEADERBOARD:
+        return []
+
+    out: list[dict] = []
+
+    ch = _bar_leaderboard(
+        m,
+        "symbol",
+        "total_return",
+        title="Total return leaderboard",
+        description=f"Top {_LEADERBOARD_TOP_N} symbols by cumulative price change over each symbol's window",
+        insight="Ranked by last/first observation ratio minus one per symbol.",
+        ascending=False,
+        score=8.9,
+        percent_value_role="return_period",
+    )
+    if ch:
+        out.append(ch)
+
+    mv = m.dropna(subset=["vol_ann"])
+    if len(mv) >= _MIN_ROWS_LEADERBOARD:
+        ch = _bar_leaderboard(
+            mv,
+            "symbol",
+            "vol_ann",
+            title="Volatility leaderboard",
+            description="Symbols with highest annualised realised volatility (scaled from daily returns)",
+            insight="Based on standard deviation of daily simple returns.",
+            ascending=False,
+            score=8.82,
+            percent_value_role="volatility",
+        )
+        if ch:
+            out.append(ch)
+
+    md = m.dropna(subset=["max_drawdown"])
+    if len(md) >= _MIN_ROWS_LEADERBOARD:
+        ch = _bar_leaderboard(
+            md,
+            "symbol",
+            "max_drawdown",
+            title="Drawdown chart",
+            description="Most negative peak-to-trough drawdowns on cumulative wealth within the sample",
+            insight="More negative values indicate deeper drops from a running peak.",
+            ascending=True,
+            score=8.78,
+            percent_value_role="return_period",
+        )
+        if ch:
+            out.append(ch)
+
+    if cols.volume_col:
+        mv_vol = m.dropna(subset=["volume_sum"])
+        mv_vol = mv_vol[mv_vol["volume_sum"] > 0]
+        if len(mv_vol) >= _MIN_ROWS_LEADERBOARD:
+            ch = _bar_leaderboard(
+                mv_vol,
+                "symbol",
+                "volume_sum",
+                title="Volume leaderboard",
+                description=f"Highest cumulative {cols.volume_col} over the sample window",
+                insight="Useful liquidity lens when comparing actively traded names.",
+                ascending=False,
+                score=8.65,
+                percent_value_role=None,
+            )
+            if ch:
+                out.append(ch)
+
+    dr_all = collect_daily_returns(w)
+    if len(dr_all) >= 12:
+        tmp = pd.DataFrame({"daily_return": pd.to_numeric(dr_all["ret"], errors="coerce")}).dropna()
+        if len(tmp) >= 12:
+            h = build_histogram_payload(tmp, "daily_return", False)
+            if h:
+                h["title"] = "Return distribution"
+                h["description"] = "Pooled daily simple returns across symbols in this extract"
+                h["score"] = 8.45
+                out.append(h)
+
+    if cols.volume_col and bool(m["volume_sum"].gt(0).any()):
+        ranked_vol = m.sort_values("volume_sum", ascending=False)
+    else:
+        ranked_vol = m
+    syms = ranked_vol["symbol"].head(5).tolist()
+    sub = w[w["_sym"].isin(syms)].copy()
+    series_keys: list[str] = []
+    norm_frames: list[pd.Series] = []
+    for sym in syms:
+        g = sub[sub["_sym"] == sym].sort_values("_dt")
+        if len(g) < 4:
+            continue
+        px = g["_px"].to_numpy(dtype=float)
+        idx = g["_dt"].to_numpy()
+        norm = px / max(px[0], 1e-12) * 100.0
+        sk = str(sym)
+        series_keys.append(sk)
+        norm_frames.append(pd.Series(norm, index=pd.DatetimeIndex(idx), name=sk))
+
+    if norm_frames:
+        wide = pd.concat(norm_frames, axis=1).sort_index().ffill()
+        last_rows = min(MAX_TIMESERIES_POINTS, len(wide.index))
+        wide = wide.iloc[-last_rows:]
+        data_rows: list[dict] = []
+        for dt_idx, row in wide.iterrows():
+            entry: dict = {"date": pd.Timestamp(dt_idx).strftime("%Y-%m-%d")}
+            for k in series_keys:
+                if k in row.index and pd.notna(row[k]):
+                    entry[k] = round(float(row[k]), 6)
+            data_rows.append(entry)
+
+        line_series = [{"key": k, "label": k} for k in series_keys]
+        out.append({
+            "type": "line",
+            "title": "Price trend by symbol",
+            "description": f"Normalised {cols.price_col} (first observation = 100) for selected symbols",
+            "insight": "Compare relative trajectories with a common indexed baseline.",
+            "x_key": "date",
+            "y_key": series_keys[0],
+            "line_series": line_series,
+            "x_label": cols.date_col,
+            "y_label": f"Indexed {cols.price_col}",
+            "data": data_rows,
+            "recommended": True,
+            "score": 9.05,
+        })
 
     return out
