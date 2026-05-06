@@ -8,9 +8,18 @@ calculate_health_score  — overall dataset health with grade, deductions,
                           business impact, fix suggestions, and per-column breakdown
 
 New field added (backward-compat): "dataset_type_confidence"
+
+Large datasets (> ``LARGE_DATASET_ROWS`` rows): duplicate/uniqueness structure checks and
+several validity passes run on a deterministic subsample so multi‑million‑row frames stay
+responsive; completeness / missing‑cell rate always uses the full frame.
 """
 import pandas as pd
 
+from app.services.analysis.large_dataset_mode import (
+    LARGE_CONTEXT_PEEK_ROWS,
+    LARGE_DATASET_ROWS,
+    LARGE_HEALTH_HEAVY_SAMPLE_ROWS,
+)
 from app.services.dataset_context import detect_dataset_context
 from app.services.dataset_context.schema import (
     CONFIDENCE_THRESHOLD,
@@ -78,7 +87,11 @@ def _column_health_score(col_data: pd.Series, df_len: int) -> dict:
     }
 
 
-def calculate_health_score(df: pd.DataFrame) -> dict:
+def calculate_health_score(
+    df: pd.DataFrame,
+    *,
+    heavy_sample_budget: int | None = None,
+) -> dict:
     """
     Return an overall health score dict for the dataset.
 
@@ -86,8 +99,24 @@ def calculate_health_score(df: pd.DataFrame) -> dict:
         total, grade, label, color, dataset_type, dataset_type_confidence,
         breakdown, deductions, max_scores, column_health,
         business_impact, fix_suggestions
+
+    ``heavy_sample_budget`` optionally caps rows used for duplicate/uniqueness and
+    structural validity scoring (defaults activate automatically when row count
+    exceeds ``LARGE_DATASET_ROWS``). Completeness always uses the full frame.
     """
-    ctx = detect_dataset_context(df)
+    row_n = len(df)
+    budget = heavy_sample_budget
+    if budget is None and row_n > LARGE_DATASET_ROWS:
+        budget = LARGE_HEALTH_HEAVY_SAMPLE_ROWS
+
+    heavy_df = df
+    used_heavy_sample = False
+    if budget is not None and row_n > budget > 0:
+        heavy_df = df.sample(n=min(budget, row_n), random_state=42)
+        used_heavy_sample = True
+
+    peek_ctx = df.iloc[: min(LARGE_CONTEXT_PEEK_ROWS, row_n)]
+    ctx = detect_dataset_context(peek_ctx)
     if ctx.dataset_type == FINANCIAL_MARKETS_TIMESERIES:
         dataset_type = "financial_markets_timeseries"
         dataset_type_confidence = _health_classifier_confidence(ctx.confidence)
@@ -113,9 +142,9 @@ def calculate_health_score(df: pd.DataFrame) -> dict:
             f"({missing_pct:.1f}% of cells; ~{affected_rows:,} rows will produce unreliable results)"
         )
 
-    # 2. Uniqueness
+    # 2. Uniqueness (sample when heavy_df is a subset — keeps hashing cost bounded)
     w_u = weights["uniqueness"]
-    dupe_pct = df.duplicated().sum() / max(len(df), 1) * 100
+    dupe_pct = heavy_df.duplicated().sum() / max(len(heavy_df), 1) * 100
     uniqueness = max(0.0, w_u - dupe_pct * (w_u / 10))
     scores["uniqueness"] = round(uniqueness, 1)
     if dupe_pct > 0:
@@ -126,18 +155,18 @@ def calculate_health_score(df: pd.DataFrame) -> dict:
     # 3. Consistency
     w_con = weights["consistency"]
     consistency = float(w_con)
-    for col in df.select_dtypes(include="object").columns:
+    for col in heavy_df.select_dtypes(include="object").columns:
         try:
-            if df[col].dropna().astype(str).str.strip().ne(df[col].dropna().astype(str)).any():
+            if heavy_df[col].dropna().astype(str).str.strip().ne(heavy_df[col].dropna().astype(str)).any():
                 consistency -= 2
                 deductions.append(f"Whitespace issues in '{col}': -2 pts")
                 break
         except Exception:
             pass
     mixed_type_cols = sum(
-        1 for col in df.columns
-        if df[col].dtype == object
-        and 0.1 < pd.to_numeric(df[col], errors="coerce").notna().mean() < 0.9
+        1 for col in heavy_df.columns
+        if heavy_df[col].dtype == object
+        and 0.1 < pd.to_numeric(heavy_df[col], errors="coerce").notna().mean() < 0.9
     )
     if mixed_type_cols > 0:
         deduction = min(float(w_con) * 0.5, mixed_type_cols * 3.0)
@@ -148,10 +177,10 @@ def calculate_health_score(df: pd.DataFrame) -> dict:
     # 4. Validity
     w_v = weights["validity"]
     validity = float(w_v)
-    numeric_cols = df.select_dtypes(include="number").columns
+    numeric_cols = heavy_df.select_dtypes(include="number").columns
     outlier_cols = 0
     for col in numeric_cols:
-        clean = df[col].dropna()
+        clean = heavy_df[col].dropna()
         if len(clean) < 4:
             continue
         q1, q3 = clean.quantile(0.25), clean.quantile(0.75)
@@ -164,7 +193,7 @@ def calculate_health_score(df: pd.DataFrame) -> dict:
         deductions.append(f"IQR outliers in {outlier_cols} columns: -{deduction:.1f} pts")
     skewed_cols = [
         col for col in numeric_cols
-        if len(df[col].dropna()) > 10 and abs(float(df[col].skew())) > 2
+        if len(heavy_df[col].dropna()) > 10 and abs(float(heavy_df[col].skew())) > 2
     ]
     if skewed_cols:
         skew_pen = min(float(w_v) * 0.3, len(skewed_cols) * 1.0)
@@ -177,7 +206,7 @@ def calculate_health_score(df: pd.DataFrame) -> dict:
     # 5. Structure
     w_s = weights["structure"]
     structure = float(w_s)
-    constant_cols = [col for col in df.columns if df[col].nunique() <= 1]
+    constant_cols = [col for col in heavy_df.columns if heavy_df[col].nunique() <= 1]
     if constant_cols:
         deduction = min(float(w_s) * 0.6, len(constant_cols) * 2.0)
         structure -= deduction
@@ -187,7 +216,7 @@ def calculate_health_score(df: pd.DataFrame) -> dict:
         )
     very_skewed = [
         col for col in numeric_cols
-        if len(df[col].dropna()) > 10 and abs(float(df[col].skew())) > 3
+        if len(heavy_df[col].dropna()) > 10 and abs(float(heavy_df[col].skew())) > 3
     ]
     if very_skewed:
         deduction = min(float(w_s) * 0.4, len(very_skewed) * 1.5)
@@ -196,6 +225,12 @@ def calculate_health_score(df: pd.DataFrame) -> dict:
             f"Very highly skewed: -{deduction:.1f} pts ({len(very_skewed)} columns)"
         )
     scores["structure"] = round(max(0.0, structure), 1)
+
+    if used_heavy_sample:
+        deductions.append(
+            "Large dataset: duplicate/uniqueness and structural validity signals used a "
+            f"{len(heavy_df):,}-row representative sample; missing‑cell rate still reflects all rows."
+        )
 
     total = round(sum(scores.values()), 1)
 
@@ -211,15 +246,18 @@ def calculate_health_score(df: pd.DataFrame) -> dict:
         grade, label, color = "F", "Critical",  "#e53e3e"
 
     # Per-column health breakdown
-    column_health = {col: _column_health_score(df[col], len(df)) for col in df.columns}
+    column_health = {
+        col: _column_health_score(heavy_df[col], len(heavy_df)) for col in heavy_df.columns
+    }
 
     # Business impact summary
-    total_rows   = len(df)
+    total_rows   = row_n
     missing_rows = int(df.isnull().any(axis=1).sum())
-    dupe_rows    = int(df.duplicated().sum())
+    dupe_heavy = int(heavy_df.duplicated().sum())
+    dupe_rows = int(round(dupe_heavy / max(len(heavy_df), 1) * total_rows)) if used_heavy_sample else dupe_heavy
     outlier_rows_approx = 0
     for col in numeric_cols:
-        clean = df[col].dropna()
+        clean = heavy_df[col].dropna()
         if len(clean) >= 4:
             q1, q3 = clean.quantile(0.25), clean.quantile(0.75)
             iqr = q3 - q1

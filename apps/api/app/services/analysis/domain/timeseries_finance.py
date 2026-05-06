@@ -131,63 +131,67 @@ def build_ts_workframe(df: pd.DataFrame, cols: TsFinanceColumns) -> pd.DataFrame
     return w
 
 
-def per_symbol_metrics(w: pd.DataFrame) -> pd.DataFrame:
-    """One row per symbol with core risk/return stats."""
-    rows: list[dict] = []
-    for sym, g in w.groupby("_sym", sort=False):
-        g = g.sort_values("_dt")
-        px = g["_px"].to_numpy(dtype=float)
-        n = int(px.shape[0])
-        if n < 2:
-            continue
-        span_days = int(max(0, (g["_dt"].max() - g["_dt"].min()).days))
-
-        total_ret = float(px[-1] / px[0] - 1.0)
-
-        rets = np.diff(px) / np.clip(px[:-1], 1e-12, None)
-        rets = rets[np.isfinite(rets)]
-        vol_ann = float(np.std(rets, ddof=1) * np.sqrt(_TRADING_DAYS_PER_YEAR)) if rets.size > 1 else float("nan")
-
-        wealth = np.cumprod(np.concatenate([[1.0], 1.0 + rets]))
-        peak = np.maximum.accumulate(wealth)
-        max_dd = float(np.min(wealth / np.clip(peak, 1e-12, None) - 1.0)) if wealth.size > 1 else float("nan")
-
-        vol_sum = float(np.nansum(g["_vol"].to_numpy(dtype=float)))
-
-        logp = np.log(np.clip(px, 1e-12, None))
-        x = np.arange(len(logp), dtype=float)
-        try:
-            slope = float(np.polyfit(x, logp, 1)[0])
-        except Exception:
-            slope = float("nan")
-
-        rows.append({
-            "symbol": sym,
-            "n_obs": n,
-            "span_days": span_days,
-            "total_return": total_ret,
-            "vol_ann": vol_ann,
-            "max_drawdown": max_dd,
-            "volume_sum": vol_sum,
-            "trend_slope_log": slope,
-        })
-    return pd.DataFrame(rows)
-
-
 def collect_daily_returns(w: pd.DataFrame) -> pd.DataFrame:
     """Long frame of symbol, date, daily return."""
-    pieces: list[pd.DataFrame] = []
-    for sym, g in w.groupby("_sym", sort=False):
-        g = g.sort_values("_dt")
-        px = g["_px"].to_numpy(dtype=float)
-        if px.shape[0] < 2:
-            continue
-        r = np.diff(px) / np.clip(px[:-1], 1e-12, None)
-        dt = g["_dt"].iloc[1:].to_numpy()
-        pieces.append(pd.DataFrame({"symbol": sym, "date": dt, "ret": r}))
-    if not pieces:
-        return pd.DataFrame(columns=["symbol", "date", "ret"])
-    return pd.concat(pieces, ignore_index=True)
+    w = w.sort_values(["_sym", "_dt"])
+    r = w.groupby("_sym", sort=False)["_px"].pct_change()
+    out = pd.DataFrame({"symbol": w["_sym"].to_numpy(), "date": w["_dt"].to_numpy(), "ret": r.to_numpy()})
+    out = out[out["ret"].notna()].reset_index(drop=True)
+    return out
+
+
+def _max_dd_from_returns(rets: pd.Series) -> float:
+    arr = rets.to_numpy(dtype=float)
+    if arr.size < 1:
+        return float("nan")
+    wealth = np.cumprod(np.concatenate([[1.0], 1.0 + arr]))
+    peak = np.maximum.accumulate(wealth)
+    return float(np.min(wealth / np.clip(peak, 1e-12, None) - 1.0))
+
+
+def _trend_slope_log(px: pd.Series) -> float:
+    logp = np.log(np.clip(px.to_numpy(dtype=float), 1e-12, None))
+    if logp.size < 2:
+        return float("nan")
+    x = np.arange(logp.size, dtype=float)
+    try:
+        return float(np.polyfit(x, logp, 1)[0])
+    except Exception:
+        return float("nan")
+
+
+def per_symbol_metrics(w: pd.DataFrame) -> pd.DataFrame:
+    """One row per symbol with core risk/return stats."""
+    w = w.sort_values(["_sym", "_dt"])
+    gb = w.groupby("_sym", sort=False)
+    first_px = gb["_px"].first().astype(float)
+    last_px = gb["_px"].last().astype(float)
+    n_obs = gb["_px"].count()
+    span_days = (gb["_dt"].max() - gb["_dt"].min()).dt.days.fillna(0).astype(int)
+    denom = first_px.replace(0, np.nan)
+    total_ret = last_px / denom - 1.0
+
+    vol_sum = gb["_vol"].sum()
+
+    dr = collect_daily_returns(w)
+    vol_ann = dr.groupby("symbol")["ret"].std(ddof=1) * np.sqrt(_TRADING_DAYS_PER_YEAR)
+    max_dd = dr.groupby("symbol")["ret"].apply(_max_dd_from_returns)
+
+    trend_slope_log = gb["_px"].apply(_trend_slope_log)
+
+    sym_idx = total_ret.index.astype(str)
+    out = pd.DataFrame({
+        "symbol": sym_idx,
+        "n_obs": n_obs.reindex(sym_idx).fillna(0).astype(int).to_numpy(),
+        "span_days": span_days.reindex(sym_idx).fillna(0).astype(int).to_numpy(),
+        "total_return": total_ret.reindex(sym_idx).to_numpy(dtype=float),
+        "vol_ann": vol_ann.reindex(sym_idx).to_numpy(dtype=float),
+        "max_drawdown": max_dd.reindex(sym_idx).to_numpy(dtype=float),
+        "volume_sum": vol_sum.reindex(sym_idx).fillna(0.0).to_numpy(dtype=float),
+        "trend_slope_log": trend_slope_log.reindex(sym_idx).to_numpy(dtype=float),
+    })
+    out = out[out["n_obs"] >= 2].reset_index(drop=True)
+    return out
 
 
 class TimeseriesFinanceInsightPack(DomainInsightPack):

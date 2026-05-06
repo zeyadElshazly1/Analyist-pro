@@ -23,6 +23,11 @@ from app.services.access_guards import (
 )
 from app.services.run_resolver import build_run_detail, resolve_latest_run
 from app.services.analyzer import analyze_dataset, generate_executive_panel
+from app.services.analysis.large_dataset_mode import (
+    LARGE_DATASET_NARRATIVE_NOTE,
+    attach_large_dataset_meta,
+    prepare_analysis_frame,
+)
 from app.services.cache import get_cached_analysis, set_cached_analysis
 from app.services.cleaner import clean_dataset
 from app.services.file_loader import load_dataset
@@ -121,6 +126,8 @@ def run_analysis(
 
         set_run_status(db, run, "cleaning_complete")
 
+        df_analysis, ld_meta = prepare_analysis_frame(df_clean)
+
         profile = profile_dataset(df_clean)
         health_score = calculate_health_score(df_clean)
         health_result = build_health_result(
@@ -132,7 +139,9 @@ def run_analysis(
 
         set_run_status(db, run, "profiling_complete")
 
-        insights, narrative = analyze_dataset(df_clean)
+        insights, narrative = analyze_dataset(df_analysis)
+        if ld_meta["large_dataset_mode"]:
+            narrative = narrative + LARGE_DATASET_NARRATIVE_NOTE
         insight_results = [r.model_dump() for r in build_insight_results(insights)]
         executive_panel = generate_executive_panel(insights)
 
@@ -158,6 +167,7 @@ def run_analysis(
             "narrative": narrative,
             "executive_panel": to_jsonable(executive_panel),
         }
+        attach_large_dataset_meta(result, ld_meta)
 
         # ── Warm Redis cache before final DB commit ───────────────────────────
         set_cached_analysis(project_id, _file_hash, result)

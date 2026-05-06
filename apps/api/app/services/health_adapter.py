@@ -52,6 +52,9 @@ def build_health_result(
     health: dict,
     profile: list[dict],
     df_raw: pd.DataFrame | None = None,
+    *,
+    full_row_count: int | None = None,
+    full_column_count: int | None = None,
 ) -> HealthResult:
     """
     Convert raw health/profile pipeline output into a canonical HealthResult.
@@ -63,12 +66,15 @@ def build_health_result(
                  'semantic_type' field used to build semantic_column_types.
         df_raw:  Optional original upload; when provided (typically before cleaning),
                  raw missingness fields are populated alongside cleaned stats.
+        full_row_count: Optional override for HealthResult.row_count (same shape as
+                 the full cleaned upload when insights used a subsample).
+        full_column_count: Optional override for HealthResult.column_count.
 
     Returns:
         Fully-populated HealthResult ready for serialisation.
     """
-    row_count    = len(df)
-    column_count = len(df.columns)
+    row_count    = full_row_count if full_row_count is not None else len(df)
+    column_count = full_column_count if full_column_count is not None else len(df.columns)
 
     semantic_types = _build_semantic_types(profile)
     key_cols       = [s.column for s in semantic_types if s.semantic_type in _PROTECTED_TYPES]
