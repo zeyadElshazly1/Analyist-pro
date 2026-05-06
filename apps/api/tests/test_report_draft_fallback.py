@@ -6,7 +6,12 @@ import re
 
 import pytest
 
-from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT, GENERIC_TABULAR
+from app.services.analysis.domain.timeseries_finance import FINANCE_TS_PREMIUM_TITLE_ORDER
+from app.services.dataset_context.schema import (
+    FINANCIAL_MARKETS_SNAPSHOT,
+    FINANCIAL_MARKETS_TIMESERIES,
+    GENERIC_TABULAR,
+)
 from app.services.reporting.default_draft import (
     select_default_chart_selection_for_result,
     select_default_insight_selection,
@@ -23,6 +28,16 @@ def _ds_context_snapshot() -> dict:
         "dataset_type": FINANCIAL_MARKETS_SNAPSHOT,
         "confidence": 0.9,
         "matched_signals": ("return_period",),
+        "semantic_roles": {},
+        "warnings": [],
+    }
+
+
+def _ds_context_timeseries() -> dict:
+    return {
+        "dataset_type": FINANCIAL_MARKETS_TIMESERIES,
+        "confidence": 0.9,
+        "matched_signals": ("Time axis detected",),
         "semantic_roles": {},
         "warnings": [],
     }
@@ -341,6 +356,51 @@ def test_finance_chart_selection_uses_legacy_index_when_no_chart_id() -> None:
         ],
     }
     assert select_default_chart_selection_for_result(res, max_sel=4) == [3, 0, 2, 1]
+
+
+def test_timeseries_selection_prioritizes_titles_despite_payload_order() -> None:
+    titles_order = list(FINANCE_TS_PREMIUM_TITLE_ORDER)
+    res = {
+        "dataset_summary": {"rows": 1, "dataset_context": _ds_context_timeseries()},
+        "insight_results": [
+            {
+                "domain": FINANCIAL_MARKETS_TIMESERIES,
+                "title": titles_order[2],
+                "insight_id": "id_vol",
+                "severity": "medium",
+            },
+            {
+                "domain": FINANCIAL_MARKETS_TIMESERIES,
+                "title": titles_order[0],
+                "insight_id": "id_top",
+                "severity": "medium",
+            },
+            {
+                "domain": FINANCIAL_MARKETS_TIMESERIES,
+                "title": titles_order[1],
+                "insight_id": "id_worst",
+                "severity": "medium",
+            },
+        ],
+    }
+    sel = select_default_insight_selection_for_result(res)
+    assert sel == ["id_top", "id_worst", "id_vol"]
+
+
+def test_timeseries_chart_selection_prioritizes_titles_caps_four() -> None:
+    res = {
+        "dataset_summary": {"rows": 1, "dataset_context": _ds_context_timeseries()},
+        "charts": [
+            {"chart_id": "c_ret", "title": "Return distribution"},
+            {"chart_id": "c_dd", "title": "Drawdown chart"},
+            {"chart_id": "c_price", "title": "Price trend by symbol"},
+            {"chart_id": "c_tr", "title": "Total return leaderboard"},
+            {"chart_id": "c_vol", "title": "Volatility leaderboard"},
+            {"chart_id": "c_liq", "title": "Volume leaderboard"},
+        ],
+    }
+    sel = select_default_chart_selection_for_result(res, max_sel=4)
+    assert sel == ["c_price", "c_tr", "c_vol", "c_dd"]
 
 
 def test_chart_selection_returns_empty_for_non_finance_even_if_charts_exist() -> None:

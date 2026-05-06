@@ -6,7 +6,12 @@ import io
 import json
 
 from app.models import AnalysisResult, ReportDraft
-from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT, GENERIC_TABULAR
+from app.services.analysis.domain.timeseries_finance import FINANCE_TS_PREMIUM_TITLE_ORDER
+from app.services.dataset_context.schema import (
+    FINANCIAL_MARKETS_SNAPSHOT,
+    FINANCIAL_MARKETS_TIMESERIES,
+    GENERIC_TABULAR,
+)
 from app.services.reporting.default_draft import (
     build_fallback_executive_summary,
     select_default_insight_selection,
@@ -449,6 +454,182 @@ def test_get_draft_generic_does_not_auto_select_charts_even_with_finance_like_ti
     data = r.json()
     assert data["selected_chart_ids"] == []
     assert data["report_result"]["included_charts"] == []
+
+
+def test_get_draft_generic_does_not_auto_select_timeseries_finance_charts(client, project, auth_headers):
+    pid = project["id"]
+    body = {
+        "narrative": "n",
+        "dataset_summary": {
+            "rows": 5,
+            "columns": 3,
+            "dataset_context": {
+                "dataset_type": GENERIC_TABULAR,
+                "confidence": 1.0,
+                "warnings": [],
+            },
+        },
+        "health_score": {"total": 70},
+        "insight_results": [
+            {"insight_id": "g1", "title": "Insight one", "severity": "high", "report_safe": True},
+            {"insight_id": "g2", "title": "Insight two", "severity": "medium", "report_safe": True},
+            {"insight_id": "g3", "title": "Insight three", "severity": "low", "report_safe": True},
+        ],
+        "charts": [
+            {"chart_id": "bogus_ts", "title": "Price trend by symbol", "type": "line"},
+        ],
+    }
+    db = TestingSessionLocal()
+    try:
+        run = AnalysisResult(
+            project_id=pid,
+            file_hash="generic-with-ts-chart-titles",
+            result_json=json.dumps(body),
+            status="report_ready",
+        )
+        db.add(run)
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.get(f"/reports/draft/{pid}", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["selected_chart_ids"] == []
+    assert data["report_result"]["included_charts"] == []
+
+
+def test_get_draft_auto_create_timeseries_uses_finance_insight_priority(client, project, auth_headers):
+    pid = project["id"]
+    titles = list(FINANCE_TS_PREMIUM_TITLE_ORDER)
+    body = {
+        "narrative": "Short.",
+        "dataset_summary": {
+            "rows": 10,
+            "columns": 8,
+            "dataset_context": {
+                "dataset_type": FINANCIAL_MARKETS_TIMESERIES,
+                "confidence": 0.9,
+                "warnings": [],
+            },
+        },
+        "health_score": {"total": 75},
+        "insight_results": [
+            {
+                "domain": FINANCIAL_MARKETS_TIMESERIES,
+                "title": titles[2],
+                "insight_id": "ts_vol",
+                "severity": "medium",
+            },
+            {
+                "domain": FINANCIAL_MARKETS_TIMESERIES,
+                "title": titles[0],
+                "insight_id": "ts_top",
+                "severity": "medium",
+            },
+            {
+                "domain": FINANCIAL_MARKETS_TIMESERIES,
+                "title": titles[1],
+                "insight_id": "ts_worst",
+                "severity": "medium",
+            },
+            {
+                "domain": FINANCIAL_MARKETS_TIMESERIES,
+                "title": titles[3],
+                "insight_id": "ts_dd",
+                "severity": "medium",
+            },
+            {
+                "domain": FINANCIAL_MARKETS_TIMESERIES,
+                "title": titles[4],
+                "insight_id": "ts_liq",
+                "severity": "medium",
+            },
+        ],
+    }
+    db = TestingSessionLocal()
+    try:
+        run = AnalysisResult(
+            project_id=pid,
+            file_hash="ts-insight-default-hash",
+            result_json=json.dumps(body),
+            status="report_ready",
+        )
+        db.add(run)
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.get(f"/reports/draft/{pid}", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["selected_insight_ids"] == ["ts_top", "ts_worst", "ts_vol", "ts_dd", "ts_liq"]
+    assert data["selected_chart_ids"] == []
+    assert data["report_result"]["included_charts"] == []
+
+
+def test_get_draft_timeseries_auto_selects_default_charts_when_payload_present(client, project, auth_headers):
+    pid = project["id"]
+    titles = list(FINANCE_TS_PREMIUM_TITLE_ORDER)
+    insights = [
+        {
+            "domain": FINANCIAL_MARKETS_TIMESERIES,
+            "title": titles[i],
+            "insight_id": f"id_{i}",
+            "severity": "medium",
+        }
+        for i in range(min(5, len(titles)))
+    ]
+    charts = [
+        {"chart_id": "c_vol", "title": "Volatility leaderboard", "type": "bar"},
+        {"chart_id": "c_tr", "title": "Total return leaderboard", "type": "bar"},
+        {"chart_id": "c_price", "title": "Price trend by symbol", "type": "line"},
+        {"chart_id": "c_dd", "title": "Drawdown chart", "type": "bar"},
+        {"chart_id": "c_liq", "title": "Volume leaderboard", "type": "bar"},
+        {"chart_id": "c_ret", "title": "Return distribution", "type": "bar"},
+    ]
+    body = {
+        "narrative": "Short.",
+        "dataset_summary": {
+            "rows": 120,
+            "columns": 8,
+            "dataset_context": {
+                "dataset_type": FINANCIAL_MARKETS_TIMESERIES,
+                "confidence": 0.9,
+                "warnings": [],
+            },
+        },
+        "health_score": {"total": 75},
+        "insight_results": insights,
+        "charts": charts,
+    }
+    db = TestingSessionLocal()
+    try:
+        run = AnalysisResult(
+            project_id=pid,
+            file_hash="ts-chart-default-hash",
+            result_json=json.dumps(body),
+            status="report_ready",
+        )
+        db.add(run)
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.get(f"/reports/draft/{pid}", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    payload = r.json()
+    assert payload["selected_chart_ids"] == ["c_price", "c_tr", "c_vol", "c_dd"]
+    inc = payload["report_result"]["included_charts"]
+    assert len(inc) == 4
+    assert [c["chart_id"] for c in inc] == ["c_price", "c_tr", "c_vol", "c_dd"]
+    titles_in_order = [c["title"] for c in inc]
+    assert titles_in_order == [
+        "Price trend by symbol",
+        "Total return leaderboard",
+        "Volatility leaderboard",
+        "Drawdown chart",
+    ]
 
 
 def test_get_draft_populates_included_charts_from_selection_and_run(client, project, auth_headers):
