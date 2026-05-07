@@ -1,6 +1,6 @@
 # Launch Hardening QA Pass
 
-<!-- Last updated: 79C — all P1 blockers closed — 2026-05-07 -->
+<!-- Last updated: 80B — B1 and B2 resolved — 2026-05-07 -->
 
 ## Related Checkpoints
 - **Large Dataset Mode (77E):** [`docs/LARGE_DATASET_MODE_QA_CHECKPOINT.md`](docs/LARGE_DATASET_MODE_QA_CHECKPOINT.md)
@@ -27,10 +27,14 @@ Remaining active issues are P2/P3/Needs Runtime only._
 
 ### P2 — Fix before broad rollout
 
-| ID | Area | File | Notes |
-|----|------|------|-------|
-| B1 | Run Lifecycle | `apps/api/app/routes/analysis.py` | Cache hit returns without creating a run stub — the same file uploaded twice shows only one history entry. Low user-facing impact but confusing for consultants tracking runs. |
-| B2 | Billing / Infra | `apps/api/app/routes/billing.py` | `STRIPE_PLAN_MAP` falls back to legacy env var names (`STRIPE_PRO_PRICE_ID`, `STRIPE_TEAM_PRICE_ID`). Harmless with both set; risks drift on deploy. |
+**None. All P2 items resolved.**
+
+#### Resolved P2s
+
+| ID | Area | Resolution | Commit |
+|----|------|------------|--------|
+| B1 | Run Lifecycle | Cache-hit sync and SSE paths now create and finalise a new `report_ready` run record so consultants see every re-open in history. | `3d8459b` (80A) |
+| B2 | Billing / Infra | `STRIPE_PLAN_MAP` and `_PLAN_PRICE_MAP` no longer fall back to `STRIPE_PRO_PRICE_ID` / `STRIPE_TEAM_PRICE_ID`. Only canonical `STRIPE_CONSULTANT_PRICE_ID` and `STRIPE_STUDIO_PRICE_ID` are read. Legacy plan-name aliases (`"pro"` → `"consultant"`, `"team"` → `"studio"`) in API request bodies still work via `normalize_plan`. | `(80B)` |
 
 ### P3 — Polish / cleanup
 
