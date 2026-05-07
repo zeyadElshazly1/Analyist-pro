@@ -190,7 +190,11 @@ def accept_invite(
     if active >= TEAM_SEAT_LIMIT - 1:
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail={"message": "This team has reached its seat limit.", "feature": "team_seats"},
+            detail={
+                "message": "This team has reached its seat limit.",
+                "feature": "team_seats",
+                "current_plan": current_user.plan or PLAN_FREE,
+            },
         )
 
     invite.member_id = current_user.id

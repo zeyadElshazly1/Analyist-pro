@@ -56,6 +56,7 @@ PLAN_FEATURES: frozenset[str] = frozenset({
     "ai_story",
     "file_compare",
     "report_export",
+    "team",          # Studio-only: create/list/remove team invites
 })
 
 # ── Plan feature matrix ───────────────────────────────────────────────────────
@@ -68,6 +69,7 @@ PLAN_LIMITS: dict[str, dict] = {
         "ai_story":      False,
         "file_compare":  False,
         "report_export": False,
+        "team":          False,
     },
     PLAN_CONSULTANT: {
         "max_projects":  None,   # unlimited
@@ -76,6 +78,7 @@ PLAN_LIMITS: dict[str, dict] = {
         "ai_story":      True,
         "file_compare":  True,
         "report_export": True,
+        "team":          False,  # team management is Studio-only
     },
     PLAN_STUDIO: {
         "max_projects":  None,
@@ -84,6 +87,7 @@ PLAN_LIMITS: dict[str, dict] = {
         "ai_story":      True,
         "file_compare":  True,
         "report_export": True,
+        "team":          True,
     },
 }
 
@@ -105,6 +109,9 @@ UPGRADE_MESSAGES: dict[str, str] = {
     ),
     "file_size": (
         "Your file exceeds your plan's size limit. Upgrade for larger file support."
+    ),
+    "team": (
+        "Team management is a Studio plan feature. Upgrade to invite and manage team members."
     ),
 }
 
