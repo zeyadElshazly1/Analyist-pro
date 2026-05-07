@@ -85,7 +85,7 @@ export default function DashboardPage() {
               className="hidden items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-500 sm:flex"
             >
               <Plus className="h-4 w-4" />
-              New project
+              New workspace
             </Link>
           </div>
 
@@ -129,7 +129,7 @@ export default function DashboardPage() {
 
               {/* Quick create */}
               <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
-                <h2 className="mb-4 text-base font-semibold text-white">New project</h2>
+                <h2 className="mb-4 text-base font-semibold text-white">New workspace</h2>
                 <CreateProjectForm
                   onCreated={() => {
                     projectsListRef.current?.reload();
@@ -146,7 +146,7 @@ export default function DashboardPage() {
                     href="/projects"
                     className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
                   >
-                    All projects <ArrowRight className="h-3 w-3" />
+                    All workspaces <ArrowRight className="h-3 w-3" />
                   </Link>
                 </div>
                 <InsightsWidget />
