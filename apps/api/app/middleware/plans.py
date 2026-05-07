@@ -1,6 +1,22 @@
 """
 Freemium plan enforcement — FastAPI dependencies.
 
+HTTP 402 response contract
+--------------------------
+When a plan gate blocks a request the response body is always:
+
+    {
+        "detail": {
+            "message":      "<human-readable upgrade prompt>",
+            "feature":      "<feature key from PLAN_FEATURES>",
+            "current_plan": "<user's current plan name>"
+        }
+    }
+
+The frontend may rely on ``detail.feature`` and ``detail.current_plan``
+to show targeted upgrade-wall UI.  The set of stable feature keys is
+defined in ``PLAN_FEATURES`` below.
+
 Usage in a route:
 
     from app.middleware.plans import require_feature, check_project_limit
@@ -29,6 +45,18 @@ from app.db import get_db
 from app.middleware.auth import get_current_user
 from app.models import Project, User
 from app.plan_names import PLAN_CONSULTANT, PLAN_FREE, PLAN_STUDIO, normalize_plan
+
+# ── Stable feature keys ───────────────────────────────────────────────────────
+# These are the canonical feature strings used in require_feature() calls and
+# in HTTP 402 detail.feature responses.  Frontend upgrade-wall components and
+# tests should reference this set rather than hard-coding strings.
+
+PLAN_FEATURES: frozenset[str] = frozenset({
+    "ai_chat",
+    "ai_story",
+    "file_compare",
+    "report_export",
+})
 
 # ── Plan feature matrix ───────────────────────────────────────────────────────
 
