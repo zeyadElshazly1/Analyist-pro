@@ -9,9 +9,10 @@ Environment variables required for Stripe integration:
   STRIPE_SUCCESS_URL            — URL to redirect to after successful checkout
   STRIPE_CANCEL_URL             — URL to redirect to when checkout is abandoned
 
-Legacy aliases (kept until env vars are renamed in deployment):
-  STRIPE_PRO_PRICE_ID   → falls back to STRIPE_CONSULTANT_PRICE_ID if not set
-  STRIPE_TEAM_PRICE_ID  → falls back to STRIPE_STUDIO_PRICE_ID if not set
+Legacy plan-name aliases in API requests are still normalised by normalize_plan
+("pro" → "consultant", "team" → "studio"), but the legacy env vars
+STRIPE_PRO_PRICE_ID and STRIPE_TEAM_PRICE_ID are no longer read.
+Set STRIPE_CONSULTANT_PRICE_ID and STRIPE_STUDIO_PRICE_ID in all environments.
 
 Without STRIPE_SECRET_KEY the checkout endpoint returns a 503 with a clear message
 so the rest of the app continues to work during development.
@@ -37,8 +38,8 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 # Map Stripe price/product IDs → internal plan names.
 # Populate these with your actual Stripe IDs.
 STRIPE_PLAN_MAP: dict[str, str] = {
-    os.getenv("STRIPE_CONSULTANT_PRICE_ID", os.getenv("STRIPE_PRO_PRICE_ID", "price_consultant")): PLAN_CONSULTANT,
-    os.getenv("STRIPE_STUDIO_PRICE_ID", os.getenv("STRIPE_TEAM_PRICE_ID", "price_studio")): PLAN_STUDIO,
+    os.getenv("STRIPE_CONSULTANT_PRICE_ID", "price_consultant"): PLAN_CONSULTANT,
+    os.getenv("STRIPE_STUDIO_PRICE_ID", "price_studio"): PLAN_STUDIO,
 }
 
 
@@ -144,8 +145,8 @@ async def stripe_webhook(request: Request):
 CHECKOUT_PLANS: frozenset[str] = frozenset({PLAN_CONSULTANT, PLAN_STUDIO})
 
 _PLAN_PRICE_MAP: dict[str, str] = {
-    PLAN_CONSULTANT: os.getenv("STRIPE_CONSULTANT_PRICE_ID", os.getenv("STRIPE_PRO_PRICE_ID", "")),
-    PLAN_STUDIO:     os.getenv("STRIPE_STUDIO_PRICE_ID", os.getenv("STRIPE_TEAM_PRICE_ID", "")),
+    PLAN_CONSULTANT: os.getenv("STRIPE_CONSULTANT_PRICE_ID", ""),
+    PLAN_STUDIO:     os.getenv("STRIPE_STUDIO_PRICE_ID", ""),
 }
 
 _DEFAULT_SUCCESS_URL = os.getenv(
