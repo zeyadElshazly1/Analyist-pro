@@ -1,6 +1,6 @@
 # Launch Hardening QA Pass
 
-<!-- Last updated: 78A reconciliation pass — 2026-05-07 -->
+<!-- Last updated: 79C — all P1 blockers closed — 2026-05-07 -->
 
 ## Related Checkpoints
 - **Large Dataset Mode (77E):** [`docs/LARGE_DATASET_MODE_QA_CHECKPOINT.md`](docs/LARGE_DATASET_MODE_QA_CHECKPOINT.md)
@@ -10,16 +10,20 @@
 
 ## Current Active Launch Risks
 
-_Updated after 78A reconciliation (2026-05-07). All P0s and most P1s from the
-original audit are resolved. Three issues remain active._
+_Updated after 79C (2026-05-07). **All known P1 launch blockers are closed.**
+Remaining active issues are P2/P3/Needs Runtime only._
 
 ### P1 — Must fix before pilot
 
-| ID | Area | File | What to do |
-|----|------|------|------------|
-| A1 | Billing / Auth | `apps/api/app/routes/analysis.py:643` | Add `Depends(require_feature("file_compare"))` to `GET /analysis/diff` — free users can compare runs without upgrading. Next task: **79A** |
-| A2 | Billing / Auth | `apps/api/app/routes/analysis.py:928` | Add `Depends(require_feature("report_export"))` to `GET /analysis/download-cleaned/{project_id}` — free users can export cleaned CSV. Next task: **79A** |
-| A3 | Report Builder | `apps/web/src/components/project/report-builder.tsx:437` | `saveTimer` is never cleared on unmount — `setSaving`/`setSaved` fire on unmounted component. Add `useEffect` cleanup: `return () => { if (saveTimer.current) clearTimeout(saveTimer.current); }`. Next task: **79B** |
+**None. All P1 blockers resolved as of 79B.**
+
+#### Resolved P1s
+
+| ID | Area | Resolution | Commit |
+|----|------|------------|--------|
+| A1 | Billing / Auth | `GET /analysis/diff` now requires `feature="file_compare"` via `Depends(require_feature(...))`. Free users receive HTTP 402. | `35e9292` (79A) |
+| A2 | Billing / Auth | `GET /analysis/download-cleaned/{project_id}` now requires `feature="report_export"`. Free users receive HTTP 402. | `35e9292` (79A) |
+| A3 | Report Builder | `saveTimer` cleanup `useEffect` added to `report-builder.tsx` — timer cleared on unmount, preventing state updates on unmounted component. | `22e7d0a` (79B) |
 
 ### P2 — Fix before broad rollout
 
