@@ -212,19 +212,32 @@ def generate_executive_panel(insights: list[dict]) -> dict:
     }
 
 
+_LARGE_DATASET_THRESHOLD = 100_000
+_LARGE_DATASET_INFERENCE_SAMPLE = 10_000
+
+
 def get_dataset_summary(df: pd.DataFrame) -> dict:
     """Return a lightweight summary dict describing the dataset's shape."""
+    n_rows = len(df)
     ctx = detect_dataset_context(df)
+    large = n_rows > _LARGE_DATASET_THRESHOLD
     return {
-        "rows": len(df),
+        "rows": n_rows,
         "columns": len(df.columns),
         "numeric_cols": len(df.select_dtypes(include=[np.number]).columns),
         "categorical_cols": len(df.select_dtypes(include=["object"]).columns),
         "datetime_cols": len(df.select_dtypes(include=["datetime64"]).columns),
         "missing_pct": round(
-            df.isnull().sum().sum() / max(len(df) * len(df.columns), 1) * 100, 1
+            df.isnull().sum().sum() / max(n_rows * len(df.columns), 1) * 100, 1
         ),
         "domain": _detect_domain(df.columns.tolist()),
+        "large_dataset_mode": large,
+        "analyzed_rows": n_rows,
+        "sample_strategy": (
+            f"Statistical inference uses a representative {_LARGE_DATASET_INFERENCE_SAMPLE:,}-row sample "
+            f"for performance. All findings and cleaning cover the full {n_rows:,}-row dataset."
+            if large else None
+        ),
         "dataset_context": {
             "dataset_type":    ctx.dataset_type,
             "confidence":      ctx.confidence,

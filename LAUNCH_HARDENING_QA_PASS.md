@@ -1,5 +1,9 @@
 # Launch Hardening QA Pass
 
+## Related Checkpoints
+- **Large Dataset Mode (77E):** see [`docs/LARGE_DATASET_MODE_QA_CHECKPOINT.md`](docs/LARGE_DATASET_MODE_QA_CHECKPOINT.md)
+- **Report Builder Chart Selection (75N):** see [`docs/REPORT_BUILDER_CHART_SELECTION_QA.md`](docs/REPORT_BUILDER_CHART_SELECTION_QA.md)
+
 ## Goal
 Run a focused QA and hardening pass on the consultant workflow before demo mode and pilot outreach.
 

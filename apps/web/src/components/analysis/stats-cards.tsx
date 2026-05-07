@@ -16,6 +16,9 @@ type LegacySummary = {
   categorical_cols?: number;
   missing_pct?: number;
   domain?: string;
+  large_dataset_mode?: boolean;
+  analyzed_rows?: number;
+  sample_strategy?: string | null;
 };
 
 type Props = {
@@ -73,6 +76,8 @@ export function StatsCards({ healthResult, profileResult, summary, largeDataset 
     : (summary?.domain ?? "General");
   const domainClass   = DOMAIN_BADGE[domainLabel] ?? DOMAIN_BADGE["General"];
 
+  const isLarge = summary?.large_dataset_mode ?? false;
+
   return (
     <div className="space-y-3">
       {/* Domain / dataset-type badge */}
@@ -82,6 +87,18 @@ export function StatsCards({ healthResult, profileResult, summary, largeDataset 
         </span>
         <span className="text-xs text-white/30">{canonicalType ? "dataset type" : "detected domain"}</span>
       </div>
+
+      {/* Large-dataset transparency banner */}
+      {isLarge && (
+        <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-2.5 text-sm text-blue-300">
+          <span className="font-semibold text-blue-200">Large Dataset</span>
+          {" — "}
+          {(rowCount as number).toLocaleString()} rows analyzed
+          {summary?.sample_strategy && (
+            <span className="ml-1 text-blue-300/70">· {summary.sample_strategy}</span>
+          )}
+        </div>
+      )}
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">

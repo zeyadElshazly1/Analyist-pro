@@ -28,7 +28,7 @@ from fastapi.responses import StreamingResponse
 
 from app.db import SessionLocal
 from app.models import AnalysisResult
-from app.services.analyzer import analyze_dataset, generate_executive_panel
+from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
 from app.services.analysis.large_dataset_mode import (
     LARGE_DATASET_NARRATIVE_NOTE,
     attach_large_dataset_meta,
@@ -337,6 +337,7 @@ async def _run_analysis_stream(
             "insight_results": insight_results,                  # canonical V1 (replaces insights)
             "narrative": narrative,
             "executive_panel": to_jsonable(executive_panel),
+            "dataset_summary": get_dataset_summary(df_clean),   # large-dataset transparency metadata
         }
         attach_large_dataset_meta(result, ld_meta)
 

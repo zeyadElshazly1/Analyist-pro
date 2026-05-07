@@ -22,7 +22,7 @@ from app.services.access_guards import (
     get_run_for_user,
 )
 from app.services.run_resolver import build_run_detail, resolve_latest_run
-from app.services.analyzer import analyze_dataset, generate_executive_panel
+from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
 from app.services.analysis.large_dataset_mode import (
     LARGE_DATASET_NARRATIVE_NOTE,
     attach_large_dataset_meta,
@@ -166,6 +166,7 @@ def run_analysis(
             "insight_results": insight_results,                  # canonical V1 (replaces insights)
             "narrative": narrative,
             "executive_panel": to_jsonable(executive_panel),
+            "dataset_summary": get_dataset_summary(df_clean),   # large-dataset transparency metadata
         }
         attach_large_dataset_meta(result, ld_meta)
 
