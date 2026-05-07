@@ -213,7 +213,8 @@ def test_other_user_cannot_share_or_unshare(client, uploaded_project):
 def test_other_user_cannot_download_cleaned_csv(client, uploaded_project, auth_headers):
     pid = uploaded_project["id"]
     _run_analysis(client, pid, auth_headers)
-    other = _other_headers(client)
+    # Upgrade user B so the plan gate doesn't shadow the ownership guard.
+    other = _other_headers(client, plan="consultant")
     r = client.get(f"/analysis/download-cleaned/{pid}", headers=other)
     assert r.status_code == 404
 
@@ -270,7 +271,8 @@ def test_other_user_cannot_diff_runs(client, uploaded_project, auth_headers):
     runs = client.get(f"/analysis/runs/{pid}", headers=auth_headers).json()
     assert len(runs) >= 2
     a, b = runs[0]["run_id"], runs[1]["run_id"]
-    other = _other_headers(client)
+    # Upgrade user B so the plan gate doesn't shadow the ownership guard.
+    other = _other_headers(client, plan="consultant")
     r = client.get(f"/analysis/diff?run_a={a}&run_b={b}", headers=other)
     assert r.status_code == 404
 

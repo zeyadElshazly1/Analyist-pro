@@ -646,6 +646,7 @@ def get_analysis_diff(
     run_b: int = Query(..., description="ID of the comparison analysis run"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _plan: None = Depends(require_feature("file_compare")),
 ):
     """
     Compare two analysis runs for the same project.
@@ -930,6 +931,7 @@ def download_cleaned_dataset(
     project_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _plan: None = Depends(require_feature("report_export")),
 ):
     """
     Run the cleaning pipeline on the project's uploaded file and return the
