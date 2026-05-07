@@ -390,6 +390,15 @@ export function ReportBuilder({
   const [selectedChartIds, setSelectedChartIds] = useState<string[]>([]);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+      }
+    };
+  }, []);
+
   const insightsRef = useRef(insights);
   const insightResultsRef = useRef(insightResults);
   insightsRef.current = insights;
