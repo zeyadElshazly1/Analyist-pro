@@ -17,6 +17,7 @@ import {
   type RunResultsResponse,
 } from "@/lib/api";
 import {
+  AlertCircle,
   ArrowLeft,
   CheckCircle2,
   Clock,
@@ -161,6 +162,21 @@ function HistoryPanel({ projectId }: { projectId: number }) {
 
 // ── RunStateBanner ────────────────────────────────────────────────────────────
 
+const ACTIVE_RUN_STATUSES = new Set([
+  "created",
+  "cleaning_complete",
+  "profiling_complete",
+  "insights_complete",
+]);
+
+function formatRunStatus(status: string): string {
+  return status.replace(/_/g, " ");
+}
+
+function isActiveRunStatus(status: string): boolean {
+  return ACTIVE_RUN_STATUSES.has(status);
+}
+
 function RunStateBanner({
   run,
   onOpenPrevious,
@@ -212,12 +228,12 @@ function RunStateBanner({
         <div className="flex items-start gap-3">
           <XCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-400" strokeWidth={1.75} />
           <div>
-            <p className="text-sm font-medium text-white">Last run failed</p>
+            <p className="text-sm font-medium text-white">Last analysis failed</p>
             {run.error_summary && (
               <p className="mt-0.5 text-xs text-red-300/70">{run.error_summary}</p>
             )}
             <p className="mt-1 text-xs text-white/35">
-              Run the analysis again below to retry.
+              Upload a corrected file or run the analysis again below to retry.
             </p>
           </div>
         </div>
@@ -225,13 +241,28 @@ function RunStateBanner({
     );
   }
 
+  if (isActiveRunStatus(run.status)) {
+    return (
+      <div className="flex items-center gap-3 rounded-xl border border-indigo-500/20 bg-indigo-500/5 px-4 py-3">
+        <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin text-indigo-400" strokeWidth={1.75} />
+        <div>
+          <p className="text-sm font-medium text-white">Analysis in progress</p>
+          <p className="mt-0.5 text-xs text-white/40 capitalize">
+            {formatRunStatus(run.status)}…
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Unknown or stale status — do not imply something is actively running.
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-indigo-500/20 bg-indigo-500/5 px-4 py-3">
-      <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin text-indigo-400" strokeWidth={1.75} />
+    <div className="flex items-center gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3">
+      <AlertCircle className="h-4 w-4 flex-shrink-0 text-amber-400" strokeWidth={1.75} />
       <div>
-        <p className="text-sm font-medium text-white">Analysis in progress</p>
-        <p className="mt-0.5 text-xs text-white/40 capitalize">
-          {run.status.replace(/_/g, " ")}…
+        <p className="text-sm font-medium text-white">Analysis not complete</p>
+        <p className="mt-0.5 text-xs text-white/40">
+          This run did not finish. Run the analysis again to refresh the result.
         </p>
       </div>
     </div>
