@@ -114,6 +114,10 @@ We should finish this pass knowing:
 - what must be fixed before pilot users
 - what can wait until after first customer feedback
 
+## Task 77E — Large Dataset Mode checkpoint
+
+End-to-end QA for Large Dataset Mode transparency (workflow, reports, exports, reopen/share) is tracked in [`LARGE_DATASET_MODE_QA_CHECKPOINT.md`](./LARGE_DATASET_MODE_QA_CHECKPOINT.md). Use that doc for the 77E automation + manual checklist before adding new domain packs or expanding sampling behavior.
+
 ---
 
 ## Issues Log
