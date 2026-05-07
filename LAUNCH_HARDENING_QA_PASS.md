@@ -1,6 +1,6 @@
 # Launch Hardening QA Pass
 
-<!-- Last updated: 81G — all active P2 items closed — 2026-05-07 -->
+<!-- Last updated: 82C — all P1/P2/P3 items closed — 2026-05-07 -->
 
 ## Related Checkpoints
 - **Large Dataset Mode (77E):** [`docs/LARGE_DATASET_MODE_QA_CHECKPOINT.md`](docs/LARGE_DATASET_MODE_QA_CHECKPOINT.md)
@@ -10,8 +10,8 @@
 
 ## Current Active Launch Risks
 
-_Updated after 81G (2026-05-07). **All known P1 and P2 launch items are closed.**
-Remaining work is P3 polish and Needs Runtime only._
+_Updated after 82C (2026-05-07). **All P1, P2, and P3 launch-hardening items are closed.**
+NR2 remains intentionally deferred to runtime/infra observation._
 
 ### P1 — Must fix before pilot
 
@@ -44,9 +44,13 @@ Remaining work is P3 polish and Needs Runtime only._
 
 ### P3 — Polish / cleanup
 
-| ID | Area | Notes |
-|----|------|-------|
-| C1 | Navigation | Dashboard page header says "Client Workspaces" but section cards say "All projects / New project" — mixed vocabulary. |
+**None. All P3 items resolved.**
+
+#### Resolved P3s
+
+| ID | Area | Resolution | Commit |
+|----|------|------------|--------|
+| C1 | Navigation | "New project" / "All projects" labels replaced with "New workspace" / "All workspaces" across `projects/page.tsx`, `dashboard/page.tsx`, and `reports/page.tsx`. Vocabulary is now consistent with the "Client Workspaces" page header. | `5b838c5` (82B) |
 
 ### Needs Runtime
 
@@ -283,4 +287,4 @@ All items completed:
 9. ~~Plan feature contract (B7)~~ — **done** (81E, `7a8a50d`)
 10. ~~Studio team gates (B8)~~ — **done** (81F, `3b30890`)
 
-**Remaining:** P3 polish (C1 — navigation vocabulary) and Needs Runtime (NR2) only.
+**Remaining:** Needs Runtime (NR2) only — intentionally deferred, non-blocking for pilot.
