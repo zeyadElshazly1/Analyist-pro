@@ -258,6 +258,7 @@ export default function ProjectPage() {
   }, [projectId]);
 
   const handleFreshRunComplete = useCallback(() => {
+    setOpenError(null);
     setStoredResult(null);
     getProject(projectId)
       .then(setProject)
