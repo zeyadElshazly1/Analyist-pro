@@ -40,6 +40,8 @@ def resolve_latest_run(db: Session, project_id: int) -> AnalysisResult | None:
         (AnalysisResult.status != "failed", 1),
         else_=2,
     )
+    # Secondary sort by id DESC makes the result deterministic when multiple
+    # runs share the same priority class (e.g. two report_ready runs).
     return (
         db.query(AnalysisResult)
         .options(joinedload(AnalysisResult.source_file))
