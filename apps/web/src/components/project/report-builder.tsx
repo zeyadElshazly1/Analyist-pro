@@ -80,6 +80,9 @@ type Props = {
     columns?: number;
     numeric_cols?: number;
     categorical_cols?: number;
+    large_dataset_mode?: boolean;
+    analyzed_rows?: number;
+    sample_strategy?: string | null;
   } | null;
   /** Overall health score 0–100 when known */
   healthTotal?: number | null;
@@ -1091,8 +1094,10 @@ export function ReportBuilder({
 
             {/* Selected Charts preview */}
             {(() => {
+              const byAvailId = Object.fromEntries(availableCharts.map((c) => [c.chart_id, c]));
               const previewCharts = availableCharts.length > 0
-                ? availableCharts.filter((ch) => selectedChartIds.includes(ch.chart_id))
+                // Map selectedChartIds in order so the preview reflects any reordering.
+                ? selectedChartIds.map((id) => byAvailId[id]).filter((c): c is AvailableChart => Boolean(c))
                 : includedCharts.map((ch) => ({ ...ch, selected: true }));
               if (previewCharts.length === 0) return null;
               return (
@@ -1246,6 +1251,18 @@ export function ReportBuilder({
                   ))}
                 </div>
               </PreviewSection>
+            )}
+
+            {/* Large-dataset methodology note */}
+            {datasetSummary?.large_dataset_mode && (
+              <div className="rounded-lg border border-blue-500/25 bg-blue-500/[0.08] px-4 py-2.5 text-xs text-blue-300">
+                <span className="font-semibold text-blue-200">Large Dataset</span>
+                {" — "}
+                {(datasetSummary.analyzed_rows ?? datasetSummary.rows ?? 0).toLocaleString()} rows analyzed.
+                {datasetSummary.sample_strategy && (
+                  <span className="text-blue-300/70"> {datasetSummary.sample_strategy}</span>
+                )}
+              </div>
             )}
 
             {/* Report footer metadata */}
