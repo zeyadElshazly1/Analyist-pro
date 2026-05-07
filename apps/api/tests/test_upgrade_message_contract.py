@@ -41,9 +41,10 @@ class TestPlanFeatureContract:
             )
             assert len(UPGRADE_MESSAGES[feature]) > 0
 
-    def test_upgrade_messages_projects_and_file_size_present(self):
+    def test_upgrade_messages_ancillary_keys_present(self):
         assert "projects" in UPGRADE_MESSAGES
         assert "file_size" in UPGRADE_MESSAGES
+        assert "team" in UPGRADE_MESSAGES
 
     def test_free_plan_blocks_all_plan_features(self):
         free_limits = PLAN_LIMITS[PLAN_FREE]
@@ -52,12 +53,14 @@ class TestPlanFeatureContract:
                 f"Free plan should block '{feature}'"
             )
 
-    def test_consultant_plan_allows_all_plan_features(self):
+    def test_consultant_plan_allows_non_team_features(self):
+        # "team" is Studio-only; all other PLAN_FEATURES are enabled for Consultant.
         consultant_limits = PLAN_LIMITS[PLAN_CONSULTANT]
-        for feature in PLAN_FEATURES:
+        for feature in PLAN_FEATURES - {"team"}:
             assert consultant_limits[feature] is True, (
                 f"Consultant plan should allow '{feature}'"
             )
+        assert consultant_limits["team"] is False
 
     def test_studio_plan_allows_all_plan_features(self):
         studio_limits = PLAN_LIMITS[PLAN_STUDIO]
