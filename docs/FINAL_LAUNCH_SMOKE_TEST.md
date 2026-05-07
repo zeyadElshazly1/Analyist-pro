@@ -98,8 +98,10 @@ _Performed against the current branch codebase. Mark Pass / Fail / N/A._
 
 | ID | Tier | Description |
 |----|------|-------------|
-| C1 | P3 | Dashboard header says "Client Workspaces"; cards say "All projects / New project" — mixed vocabulary. |
-| NR2 | Needs Runtime | `finalise_run` swallows DB errors by design — real impact requires DB/Redis failure to observe. |
+| C1 | P3 — **Resolved** | Vocabulary aligned to "workspace" throughout — commit `5b838c5` (82B). |
+| NR2 | Needs Runtime | `finalise_run` swallows DB errors by design — real impact requires DB/Redis failure to observe. Non-blocking for pilot. |
+
+All P1, P2, and P3 launch-hardening items are closed. NR2 is the only remaining item and is intentionally deferred to runtime/infra observation.
 
 ---
 
