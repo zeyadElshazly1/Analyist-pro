@@ -223,8 +223,13 @@ async def _run_analysis_stream(
                 if intake_snapshot:
                     cached = {**cached, "intake_result": intake_snapshot}
                     set_cached_analysis(project_id, file_hash, cached)
+            # Record a new run-history entry for this cache-hit stream so
+            # consultants can see that analysis was reopened.
+            cache_run = create_run_stub(db, project_id, file_hash, user_id, trigger_source="user")
+            result = {**cached, "run_id": cache_run.id if cache_run else cached.get("run_id")}
+            finalise_run(db, cache_run, json.dumps(result, default=str))
             yield emit("Building your brief", 100, "Loaded from cache")
-            yield _sse({"step": "result", "progress": 100, "result": cached, "from_cache": True})
+            yield _sse({"step": "result", "progress": 100, "result": result, "from_cache": True})
             return
 
         yield _heartbeat()

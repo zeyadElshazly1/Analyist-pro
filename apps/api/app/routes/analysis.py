@@ -83,7 +83,13 @@ def run_analysis(
             if intake_snapshot:
                 cached = {**cached, "intake_result": intake_snapshot}
                 set_cached_analysis(project_id, _file_hash, cached)
-        return cached
+        # Record a new run-history entry for this cache-hit invocation so
+        # consultants can see that analysis was reopened even when the
+        # expensive pipeline was skipped.
+        cache_run = create_run_stub(db, project_id, _file_hash, current_user.id, trigger_source="user")
+        result = {**cached, "run_id": cache_run.id if cache_run else cached.get("run_id")}
+        finalise_run(db, cache_run, json.dumps(result, default=str))
+        return result
 
     try:
         df = load_dataset(file_path)
