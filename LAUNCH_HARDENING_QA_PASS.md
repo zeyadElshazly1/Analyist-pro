@@ -1,6 +1,6 @@
 # Launch Hardening QA Pass
 
-<!-- Last updated: 80B — B1 and B2 resolved — 2026-05-07 -->
+<!-- Last updated: 80C — P2 board reconciled — 2026-05-07 -->
 
 ## Related Checkpoints
 - **Large Dataset Mode (77E):** [`docs/LARGE_DATASET_MODE_QA_CHECKPOINT.md`](docs/LARGE_DATASET_MODE_QA_CHECKPOINT.md)
@@ -10,8 +10,8 @@
 
 ## Current Active Launch Risks
 
-_Updated after 79C (2026-05-07). **All known P1 launch blockers are closed.**
-Remaining active issues are P2/P3/Needs Runtime only._
+_Updated after 80C (2026-05-07). **All known P1 launch blockers are closed.**
+Six P2 items remain active for pilot hardening (B3–B8)._
 
 ### P1 — Must fix before pilot
 
@@ -27,14 +27,21 @@ Remaining active issues are P2/P3/Needs Runtime only._
 
 ### P2 — Fix before broad rollout
 
-**None. All P2 items resolved.**
+| ID | Area | File | Notes | Next task |
+|----|------|------|-------|-----------|
+| B3 | Frontend / UX | `apps/web/src/app/(app)/projects/[id]/page.tsx` | `RunStateBanner` doesn't distinguish "in-progress" from "all runs failed" — ambiguous state for projects with only failed runs | 81A |
+| B4 | Frontend / Data | `apps/web/src/app/(app)/projects/[id]/page.tsx` | `adaptStoredResults` passes through malformed `insight_results` items silently — no validation on required fields | 81B |
+| B5 | Backend / Safety | `apps/api/app/services/run_tracker.py:38` | `set_run_status` accepts any string — typos are persisted silently with no validation | 81C |
+| B6 | Backend / Data | `apps/api/app/services/run_resolver.py:25` | `resolve_latest_run` no secondary `id DESC` sort — a very old `report_ready` run can beat a newer in-progress run | 81D |
+| B7 | Backend / Contract | `apps/api/app/middleware/plans.py:69` | `UPGRADE_MESSAGES` not guaranteed to surface in frontend — no documented contract for feature string names | 81E |
+| B8 | Backend / Auth | `apps/api/app/routes/team.py` | Team invite/manage endpoints not verified to enforce Studio plan limit | 81F |
 
 #### Resolved P2s
 
 | ID | Area | Resolution | Commit |
 |----|------|------------|--------|
 | B1 | Run Lifecycle | Cache-hit sync and SSE paths now create and finalise a new `report_ready` run record so consultants see every re-open in history. | `3d8459b` (80A) |
-| B2 | Billing / Infra | `STRIPE_PLAN_MAP` and `_PLAN_PRICE_MAP` no longer fall back to `STRIPE_PRO_PRICE_ID` / `STRIPE_TEAM_PRICE_ID`. Only canonical `STRIPE_CONSULTANT_PRICE_ID` and `STRIPE_STUDIO_PRICE_ID` are read. Legacy plan-name aliases (`"pro"` → `"consultant"`, `"team"` → `"studio"`) in API request bodies still work via `normalize_plan`. | `(80B)` |
+| B2 | Billing / Infra | `STRIPE_PLAN_MAP` and `_PLAN_PRICE_MAP` no longer fall back to `STRIPE_PRO_PRICE_ID` / `STRIPE_TEAM_PRICE_ID`. Only canonical `STRIPE_CONSULTANT_PRICE_ID` and `STRIPE_STUDIO_PRICE_ID` are read. Legacy plan-name aliases (`"pro"` → `"consultant"`, `"team"` → `"studio"`) in API request bodies still work via `normalize_plan`. | `392124c` (80B) |
 
 ### P3 — Polish / cleanup
 
@@ -196,7 +203,7 @@ _Code-reviewed against current branch after tasks 75F–77E._
 | 17 | P1 | `getDraftReport()` catch silently swallows errors | **Resolved** | Shows `draftLoadError` banner with recovery message — `report-builder.tsx:502` |
 | 18 | P2 | `saveDraftReport()` failure swallowed | **Resolved (P3)** | Silent save failure kept by design; saving indicator covers normal flow; P3 to add toast |
 | 19 | P1 | Draft saves array indices as `selected_insight_ids` | **Resolved** | Stable `insight_id`-based `SelectionKey` — `report-builder.tsx:194` |
-| 20 | P1 | `saveTimer` not cleared on unmount | **Active → A3** | No `useEffect` cleanup found — still fires on unmounted component |
+| 20 | P1 | `saveTimer` not cleared on unmount | **Resolved** | `useEffect` cleanup added — `report-builder.tsx:394` — commit `22e7d0a` (79B) |
 | 21 | P2 | `template` field dead code in `persistDraft` | **Resolved (P3)** | Template is now persisted in `saveDraftReport` payload; harmless |
 | 22 | P1 | `pdfUnavailable` stays after non-PDF export | **Resolved** | `setPdfUnavailable(false)` at start of `handleExport` — `report-builder.tsx:644` |
 | 23 | P2 | Race condition in pdfUnavailable fallback buttons | **Resolved (low risk)** | State cleared before calling `handleExport`; async re-render race is cosmetic only |
@@ -212,8 +219,8 @@ _Code-reviewed against current branch after tasks 75F–77E._
 | 33 | P2 | `resolve_latest_run` no secondary sort | **Active (P2)** | → B6 below |
 | 34 | P1 | UpgradeWall `FEATURE_LABELS` says `"Pro"` / `"Team"` | **Resolved** | Now `"Consultant"` / `"Studio"` — `upgrade-wall.tsx:13` |
 | 35 | P1 | Pricing says rows, backend enforces MB | **Resolved** | Pricing page now shows MB consistently: "Up to 10 MB / 100 MB / 500 MB per file" |
-| 36 | P1 | `GET /analysis/diff` — no `require_feature` guard | **Active → A1** | Free users can compare runs |
-| 37 | P1 | `GET /analysis/download-cleaned` — no `require_feature` guard | **Active → A2** | Free users can export cleaned CSV |
+| 36 | P1 | `GET /analysis/diff` — no `require_feature` guard | **Resolved** | `Depends(require_feature("file_compare"))` added — commit `35e9292` (79A) |
+| 37 | P1 | `GET /analysis/download-cleaned` — no `require_feature` guard | **Resolved** | `Depends(require_feature("report_export"))` added — commit `35e9292` (79A) |
 | 38 | P2 | `UPGRADE_MESSAGES` no frontend contract | **Active (P2)** | → B7 below |
 | 39 | P2 | `/analysis/story` UpgradeWall label says `"Pro"` | **Resolved** | `FEATURE_LABELS["ai_story"]` says `"Consultant"` |
 | 40 | P2 | Team endpoints not verified for Studio plan limit | **Active (P2)** | → B8 below |
@@ -241,16 +248,18 @@ _Code-reviewed against current branch after tasks 75F–77E._
 | R6 | P1 | Draft saves array indices | **Resolved** | See P1-3 |
 | R7 | P1 | Upload hint hardcodes 100 MB | **Resolved** | See P1-4 |
 
-#### Additional active P2s (lower priority, post-78A)
+#### Active P2s (B3–B8) — pilot hardening queue
 
-| ID | File | Issue |
-|----|------|-------|
-| B3 | `apps/web/src/app/(app)/projects/[id]/page.tsx` | RunStateBanner doesn't distinguish "in-progress" from "all runs failed" — ambiguous state for projects with only failed runs |
-| B4 | `apps/web/src/app/(app)/projects/[id]/page.tsx` | `adaptStoredResults` passes through malformed `insight_results` items silently — no validation on required fields |
-| B5 | `apps/api/app/services/run_tracker.py:38` | `set_run_status` accepts any string — typos are persisted silently with no validation |
-| B6 | `apps/api/app/services/run_resolver.py:25` | `resolve_latest_run` no secondary `id DESC` sort — a very old `report_ready` run can beat a newer in-progress run |
-| B7 | `apps/api/app/middleware/plans.py:69` | `UPGRADE_MESSAGES` not guaranteed to surface in frontend — no documented contract for feature string names |
-| B8 | `apps/api/app/routes/team.py` | Team invite/manage endpoints not verified to enforce Studio plan limit |
+B1 and B2 resolved (see top Resolved P2s table). B3–B8 remain active.
+
+| ID | File | Issue | Next task |
+|----|------|-------|-----------|
+| B3 | `apps/web/src/app/(app)/projects/[id]/page.tsx` | RunStateBanner doesn't distinguish "in-progress" from "all runs failed" — ambiguous state for projects with only failed runs | 81A |
+| B4 | `apps/web/src/app/(app)/projects/[id]/page.tsx` | `adaptStoredResults` passes through malformed `insight_results` items silently — no validation on required fields | 81B |
+| B5 | `apps/api/app/services/run_tracker.py:38` | `set_run_status` accepts any string — typos are persisted silently with no validation | 81C |
+| B6 | `apps/api/app/services/run_resolver.py:25` | `resolve_latest_run` no secondary `id DESC` sort — a very old `report_ready` run can beat a newer in-progress run | 81D |
+| B7 | `apps/api/app/middleware/plans.py:69` | `UPGRADE_MESSAGES` not guaranteed to surface in frontend — no documented contract for feature string names | 81E |
+| B8 | `apps/api/app/routes/team.py` | Team invite/manage endpoints not verified to enforce Studio plan limit | 81F |
 
 ---
 
@@ -270,9 +279,11 @@ See the 78A table above for the full status of each item from that pass.
 upload → analyze → see findings → build report → export works end-to-end,
 including draft persistence and chart selection.
 
-**Fix order before pilot:**
-1. Plan gates on diff + download-cleaned (A1, A2) — add `require_feature` to two routes. **Task 79A.**
-2. Autosave timer cleanup on unmount (A3) — one `useEffect` cleanup. **Task 79B.**
-3. P2 items (B1–B8) — triage and schedule as part of pilot hardening.
+**Fix order before pilot (all P1s done):**
+1. ~~Plan gates on diff + download-cleaned (A1, A2)~~ — **done** (79A, `35e9292`)
+2. ~~Autosave timer cleanup on unmount (A3)~~ — **done** (79B, `22e7d0a`)
+3. ~~Cache-hit run history (B1)~~ — **done** (80A, `3d8459b`)
+4. ~~Legacy Stripe env-var fallback (B2)~~ — **done** (80B, `392124c`)
+5. P2 items B3–B8 — active, assigned to tasks 81A–81F (pilot hardening).
 
 **Can wait until after first customer feedback:** All P3 / B items not listed above.
