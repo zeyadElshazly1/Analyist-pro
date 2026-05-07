@@ -53,15 +53,36 @@ function normalizeInsightConfidence<T extends { confidence?: number }>(i: T): T 
   return clamped === i.confidence ? i : { ...i, confidence: clamped };
 }
 
+function isInsightLike(value: unknown): value is Record<string, unknown> {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (
+      typeof (value as Record<string, unknown>).title === "string" ||
+      typeof (value as Record<string, unknown>).explanation === "string" ||
+      typeof (value as Record<string, unknown>).finding === "string" ||
+      typeof (value as Record<string, unknown>).insight_id === "string"
+    )
+  );
+}
+
+function normalizeStoredInsights(raw: unknown): ReturnType<typeof normalizeInsightConfidence>[] {
+  if (!Array.isArray(raw)) return [];
+  // Malformed legacy items (non-objects or missing required fields) are dropped
+  // rather than passed through to UI components that assume a valid shape.
+  return raw.filter(isInsightLike).map((i) => normalizeInsightConfidence(i as { confidence?: number }));
+}
+
 function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
   const hr = stored.health_result;
   const cr = stored.cleaning_result;
-  const ir = stored.insight_results ?? [];
   const pr = stored.profile_result ?? [];
 
   // Preserve canonical 0.0–1.0 confidence (with defensive clamp for any
   // legacy 0–100 values still in older result_json blobs).
-  const normalizedInsights = ir.map((i: any) => normalizeInsightConfidence(i));
+  // Malformed items are filtered out by normalizeStoredInsights.
+  const normalizedInsights = normalizeStoredInsights(stored.insight_results);
 
   return {
     run_id: stored.run_id,
