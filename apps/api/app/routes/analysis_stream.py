@@ -29,6 +29,11 @@ from fastapi.responses import StreamingResponse
 from app.db import SessionLocal
 from app.models import AnalysisResult
 from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
+from app.services.analysis.large_dataset_mode import (
+    LARGE_DATASET_NARRATIVE_NOTE,
+    attach_large_dataset_meta,
+    prepare_analysis_frame,
+)
 from app.services.audit import log_event
 from app.services.cache import get_cached_analysis, set_cached_analysis
 from app.services.cleaning_adapter import build_cleaning_result
@@ -281,9 +286,12 @@ async def _run_analysis_stream(
         yield _heartbeat()
         yield emit("Finding key patterns", 45, f"Scanning {len(df_clean.columns)} columns for signals...")
         try:
+            df_analysis, ld_meta = prepare_analysis_frame(df_clean)
             profile = profile_dataset(df_clean)
             health_score = calculate_health_score(df_clean)
-            health_result = build_health_result(df_clean, health_score, profile).model_dump()
+            health_result = build_health_result(
+                df_clean, health_score, profile, df_raw=df if use_cleaned else None
+            ).model_dump()
         except Exception as e:
             logger.error(f"Column profiling failed for project {project_id}: {e}", exc_info=True)
             fail_run(db, run, f"profiling failed: {e}")
@@ -298,7 +306,9 @@ async def _run_analysis_stream(
         yield _heartbeat()
         yield emit("Finding key patterns", 70, "Running correlation, anomaly, and trend analysis...")
         try:
-            insights, narrative = analyze_dataset(df_clean)
+            insights, narrative = analyze_dataset(df_analysis)
+            if ld_meta["large_dataset_mode"]:
+                narrative = narrative + LARGE_DATASET_NARRATIVE_NOTE
             insight_results = [r.model_dump() for r in build_insight_results(insights)]
             executive_panel = generate_executive_panel(insights)
         except Exception as e:
@@ -329,6 +339,7 @@ async def _run_analysis_stream(
             "executive_panel": to_jsonable(executive_panel),
             "dataset_summary": get_dataset_summary(df_clean),   # large-dataset transparency metadata
         }
+        attach_large_dataset_meta(result, ld_meta)
 
         result_json_str = json.dumps(result, default=str)
         finalise_run(db, run, result_json_str)

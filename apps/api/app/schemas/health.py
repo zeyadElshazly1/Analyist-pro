@@ -38,7 +38,14 @@ HealthDimension = Literal[
 
 WarningSeverity = Literal["high", "medium", "low"]
 
-DatasetType = Literal["timeseries", "transactional", "survey", "general"]
+DatasetType = Literal[
+    "timeseries",
+    "transactional",
+    "survey",
+    "general",
+    "financial_markets_snapshot",
+    "financial_markets_timeseries",
+]
 
 
 # ── Sub-models ────────────────────────────────────────────────────────────────
@@ -86,7 +93,8 @@ class ColumnMissingness(BaseModel):
 
 
 class MissingnessStats(BaseModel):
-    """Dataset-level missing-value summary."""
+    """Dataset-level missing-value summary (cleaned / analysed frame)."""
+
     total_missing_cells: int   = Field(ge=0)
     missing_cell_pct: float    = Field(ge=0.0, le=100.0)
     rows_with_any_missing: int = Field(ge=0)
@@ -94,6 +102,23 @@ class MissingnessStats(BaseModel):
     columns_with_missing: list[ColumnMissingness] = Field(
         default_factory=list,
         description="Only columns that have at least one missing value.",
+    )
+    raw_total_missing_cells: int | None = Field(
+        default=None,
+        ge=0,
+        description="When raw upload differs from cleaning, missing cells in the raw file.",
+    )
+    raw_missing_cell_pct: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description="Percent of cells missing in the raw upload (same basis as missing_cell_pct).",
+    )
+    raw_rows_with_any_missing: int | None = Field(default=None, ge=0)
+    raw_rows_with_any_missing_pct: float | None = Field(default=None, ge=0.0, le=100.0)
+    raw_columns_with_missing: list[ColumnMissingness] = Field(
+        default_factory=list,
+        description="Per-column missingness on the raw upload when supplied.",
     )
 
 

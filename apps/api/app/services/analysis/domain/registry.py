@@ -8,10 +8,10 @@ three public helpers used by the analysis orchestrator:
   run_domain_pack(df, context)       → list[dict]
   get_suppression_keys(context)      → set[tuple]
 
-V1 registrations
-----------------
-  financial_markets_snapshot   → SnapshotFinanceInsightPack
-  financial_markets_timeseries → (not registered — V1.5)
+Registrations
+-------------
+  financial_markets_snapshot   → SnapshotFinanceInsightPack (cross-section)
+  financial_markets_timeseries → TimeseriesFinanceInsightPack (OHLC panel history)
   generic_tabular              → (not registered — uses generic pipeline)
 
 Safety
@@ -28,25 +28,20 @@ import pandas as pd
 from app.services.dataset_context.schema import (
     DatasetContext,
     FINANCIAL_MARKETS_SNAPSHOT,
-    GENERIC_TABULAR,
+    FINANCIAL_MARKETS_TIMESERIES,
 )
 from .base import DomainInsightPack
 from .snapshot_finance import SnapshotFinanceInsightPack
+from .timeseries_finance import TimeseriesFinanceInsightPack
 
 logger = logging.getLogger(__name__)
 
 
-# ── Placeholder pack ──────────────────────────────────────────────────────────
-
-
-
 # ── Registry ──────────────────────────────────────────────────────────────────
 
-# Map dataset_type → instantiated pack.
-# financial_markets_timeseries is intentionally absent in V1.
-# generic_tabular is intentionally absent — it uses the generic pipeline.
 DOMAIN_PACKS: dict[str, DomainInsightPack] = {
     FINANCIAL_MARKETS_SNAPSHOT: SnapshotFinanceInsightPack(),
+    FINANCIAL_MARKETS_TIMESERIES: TimeseriesFinanceInsightPack(),
 }
 
 
@@ -56,8 +51,7 @@ def get_domain_pack(dataset_type: str) -> DomainInsightPack | None:
     """
     Return the registered DomainInsightPack for dataset_type, or None.
 
-    Returns None for generic_tabular, financial_markets_timeseries (V1),
-    and any unrecognised type.
+    Returns None for generic_tabular and any unrecognised type.
     """
     return DOMAIN_PACKS.get(dataset_type)
 

@@ -1316,3 +1316,40 @@ class TestReportBuilderExportParity:
         )
         assert "PAR_CHART_KEEP_TITLE" in charts_text
         assert "PAR_CHART_DROP_TITLE" not in charts_text
+
+
+class TestBuildContextLargeDataset:
+    """Report HTML context: large-dataset transparency (Task 77D)."""
+
+    def test_inactive_by_default(self):
+        result = {"insight_results": [], "health_score": {"total": 80}}
+        ctx = build_context(_MINIMAL_DF, result, "Test")
+        assert ctx["large_dataset_mode"] is False
+        assert ctx["large_dataset_note"] is None
+        assert ctx["large_dataset_strategy_line"] is None
+
+    def test_surfaces_note_when_active(self):
+        result = {
+            "large_dataset_mode": True,
+            "full_rows": 1_000_000,
+            "analyzed_rows": 100_000,
+            "sample_strategy": "timeseries_recent_rows_per_symbol",
+            "symbol_count": 400,
+            "date_range_start": "2020-01-01",
+            "date_range_end": "2024-06-01",
+            "insight_results": [],
+            "health_score": {"total": 80},
+        }
+        ctx = build_context(_MINIMAL_DF, result, "Test")
+        assert ctx["large_dataset_mode"] is True
+        assert ctx["large_dataset_note"]
+        assert "expensive pattern detection" in ctx["large_dataset_note"].lower()
+        detail = ctx["large_dataset_row_detail"]
+        assert detail
+        assert "1,000,000" in detail
+        assert "100,000" in detail
+        assert ctx["large_dataset_strategy_line"]
+        assert "timeseries" in ctx["large_dataset_strategy_line"].replace("_", " ").lower()
+        assert ctx["large_dataset_symbol_line"] == "Symbols covered: 400"
+        assert ctx["large_dataset_date_line"]
+        assert "2020-01-01" in ctx["large_dataset_date_line"]

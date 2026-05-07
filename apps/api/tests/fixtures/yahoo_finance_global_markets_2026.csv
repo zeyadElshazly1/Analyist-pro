@@ -1,0 +1,10 @@
+ticker,shortName,asset_class,sector,ytd_return,volatility_1y_ann,sharpe_1y,analyst_upside_pct,pct_of_52w_high,open,currentPrice,dayHigh,dayLow,previousClose,fiftyDayAverage,twoHundredDayAverage,sma_50,sma_200,price_vs_sma50_pct,price_vs_sma200_pct
+C01,Crypto Alpha,Crypto,Technology,0.184,0.42,1.21,0.152,0.98,102.5,103.1,104.2,101.9,102.0,100.2,98.4,101.5,99.2,1.2,-0.8
+C02,Crypto Beta,Crypto,Technology,0.190,0.45,1.05,0.183,0.95,55.2,55.4,55.9,54.8,55.0,54.1,52.3,54.8,53.2,1.1,-0.4
+C03,Crypto Gamma,Crypto,Technology,0.180,0.38,1.33,0.241,0.90,12.1,12.25,12.4,12.0,12.05,11.9,11.5,12.0,11.8,2.1,1.5
+E01,Equity Delta,Equity,Energy,0.041,0.18,0.90,-0.050,0.55,88.0,88.5,89.1,87.6,87.9,86.2,84.0,87.0,85.5,1.7,2.3
+E02,Equity Epsilon,Equity,Energy,0.043,0.19,0.95,-0.040,0.52,120.0,120.4,121.0,119.5,119.8,118.0,115.5,119.2,117.8,1.0,2.2
+E03,Equity Zeta,Equity,Energy,0.042,0.17,1.02,-0.060,0.50,45.5,45.7,46.0,45.2,45.4,44.8,43.1,45.1,44.5,1.3,2.7
+B01,Bond Eta,Bond,Healthcare,0.085,0.09,1.10,0.080,0.20,98.2,98.4,98.6,98.0,98.1,97.5,96.8,98.0,97.6,0.4,0.8
+B02,Bond Theta,Bond,Healthcare,0.088,0.10,1.05,0.070,0.12,101.0,101.2,101.5,100.8,100.9,100.2,99.5,100.9,100.3,0.3,0.9
+B03,Bond Iota,Bond,Healthcare,0.086,0.08,1.15,0.065,0.10,76.4,76.5,76.8,76.1,76.2,75.9,75.0,76.2,75.8,0.4,0.9

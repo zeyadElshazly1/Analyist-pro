@@ -10,7 +10,7 @@ from app.services.analysis.ranking import (
     _composite_score,
     rank_insights,
 )
-from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT
+from app.services.dataset_context.schema import FINANCIAL_MARKETS_SNAPSHOT, DatasetContext
 
 
 def _base_composite_legacy(ins: dict) -> float:
@@ -90,7 +90,7 @@ def test_price_caveat_does_not_outrank_main_finance_insights() -> None:
     assert _composite_score(volatility) > _composite_score(caveat)
 
 
-def test_weak_finance_domain_does_not_beat_high_severity_generic() -> None:
+def test_weak_finance_domain_without_ctx_sorts_by_composite() -> None:
     generic = {
         "type": "anomaly",
         "severity": "high",
@@ -111,6 +111,34 @@ def test_weak_finance_domain_does_not_beat_high_severity_generic() -> None:
     assert _composite_score(generic) > _composite_score(weak_finance)
     ranked, _ = rank_insights([weak_finance, generic])
     assert ranked[0]["title"] == "Anomalies in revenue"
+
+
+def test_weak_finance_snapshot_ctx_orders_premium_before_high_generic() -> None:
+    """Confident snapshot runs pin headline finance tiles ahead of stronger generic detectors."""
+    generic = {
+        "type": "anomaly",
+        "severity": "high",
+        "confidence": 96.0,
+        "title": "Anomalies in revenue",
+        "finding": "f",
+        "action": "a",
+    }
+    weak_finance = {
+        "type": "segment",
+        "severity": "medium",
+        "confidence": 40.0,
+        "domain": FINANCIAL_MARKETS_SNAPSHOT,
+        "title": "Top return leaders",
+        "finding": "f",
+        "action": "a",
+    }
+    ctx = DatasetContext(
+        dataset_type=FINANCIAL_MARKETS_SNAPSHOT,
+        confidence=0.9,
+        semantic_roles={},
+    )
+    ranked, _ = rank_insights([generic, weak_finance], ctx)
+    assert ranked[0]["title"] == "Top return leaders"
 
 
 def _dense_snapshot_for_ranking(n: int = 88) -> pd.DataFrame:
@@ -136,3 +164,58 @@ def test_analyze_finance_snapshot_surfaces_multiple_premium_finance_titles() -> 
     titles = [i.get("title") for i in insights]
     premiers_present = sum(1 for t in titles if t in _SNAPSHOT_FINANCE_PREMIUM_TITLES)
     assert premiers_present >= 2
+
+
+def test_snapshot_ctx_orders_finance_before_high_correlations() -> None:
+    ctx = DatasetContext(
+        dataset_type=FINANCIAL_MARKETS_SNAPSHOT,
+        confidence=0.9,
+        semantic_roles={},
+    )
+    corr = {
+        "type": "correlation",
+        "severity": "high",
+        "confidence": 95.0,
+        "title": "Relationship detected: fee_a & fee_b",
+        "col_a": "fee_a",
+        "col_b": "fee_b",
+    }
+    fin = {
+        "type": "segment",
+        "severity": "medium",
+        "confidence": 85.0,
+        "domain": FINANCIAL_MARKETS_SNAPSHOT,
+        "title": "Top return leaders",
+        "finding": "f",
+        "action": "a",
+    }
+    ranked, _ = rank_insights([corr, fin], ctx)
+    assert ranked[0]["title"] == "Top return leaders"
+
+
+def test_snapshot_finance_premium_titles_follow_fixed_order() -> None:
+    ctx = DatasetContext(
+        dataset_type=FINANCIAL_MARKETS_SNAPSHOT,
+        confidence=0.9,
+        semantic_roles={},
+    )
+    # Deliberately shuffle relative to canonical order
+    pool = [
+        {"type": "segment", "severity": "medium", "confidence": 80, "domain": FINANCIAL_MARKETS_SNAPSHOT,
+         "title": "Assets cluster at different 52-week positions", "finding": "f", "action": "a"},
+        {"type": "segment", "severity": "medium", "confidence": 85, "domain": FINANCIAL_MARKETS_SNAPSHOT,
+         "title": "Top return leaders", "finding": "f", "action": "a"},
+        {"type": "segment", "severity": "medium", "confidence": 82, "domain": FINANCIAL_MARKETS_SNAPSHOT,
+         "title": "Best risk-adjusted performers", "finding": "f", "action": "a"},
+        {"type": "segment", "severity": "medium", "confidence": 81, "domain": FINANCIAL_MARKETS_SNAPSHOT,
+         "title": "Largest return laggards", "finding": "f", "action": "a"},
+    ]
+    ranked, _ = rank_insights(pool, ctx)
+    titles = [r["title"] for r in ranked]
+    assert titles.index("Top return leaders") < titles.index("Largest return laggards")
+    assert titles.index("Largest return laggards") < titles.index("Best risk-adjusted performers")
+    assert titles.index("Best risk-adjusted performers") < titles.index(
+        "Assets cluster at different 52-week positions"
+    )
+
+

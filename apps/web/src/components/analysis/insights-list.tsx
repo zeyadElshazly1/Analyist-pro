@@ -87,13 +87,22 @@ function getBucket(i: Insight): "report" | "review" | "info" {
   return "info";
 }
 
-function sortByPriority(arr: Insight[]): Insight[] {
-  const sevRank = (s: string | undefined) => (s === "high" ? 0 : s === "medium" ? 1 : 2);
-  return [...arr].sort((a, b) => {
-    const sd = sevRank(a.severity) - sevRank(b.severity);
-    if (sd !== 0) return sd;
-    return (confPct(b.confidence) ?? 0) - (confPct(a.confidence) ?? 0);
-  });
+/** Partition into report / review / info buckets without re-sorting — preserves API order within each bucket. */
+function bucketInsightsInBackendOrder(insights: Insight[]): {
+  forReport: Insight[];
+  needsReview: Insight[];
+  info: Insight[];
+} {
+  const forReport: Insight[] = [];
+  const needsReview: Insight[] = [];
+  const info: Insight[] = [];
+  for (const i of insights) {
+    const b = getBucket(i);
+    if (b === "report") forReport.push(i);
+    else if (b === "review") needsReview.push(i);
+    else info.push(i);
+  }
+  return { forReport, needsReview, info };
 }
 
 /**
@@ -300,10 +309,7 @@ export function InsightsList({ insights }: Props) {
     return <p className="text-sm text-white/40">No insights found. Run analysis on a richer dataset.</p>;
   }
 
-  const sorted = sortByPriority(insights);
-  const forReport  = sorted.filter((i) => getBucket(i) === "report");
-  const needsReview = sorted.filter((i) => getBucket(i) === "review");
-  const info        = sorted.filter((i) => getBucket(i) === "info");
+  const { forReport, needsReview, info } = bucketInsightsInBackendOrder(insights);
 
   return (
     <div className="space-y-6">

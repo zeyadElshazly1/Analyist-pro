@@ -71,3 +71,13 @@ class RunResults(BaseModel):
     # of the "current" project (project_id_a). None for runs that were never
     # used as the left-hand side of a compare.
     compare_result: Optional[dict[str, Any]] = None
+
+    # Large dataset sampling transparency (Task 77C/77D) — omitted on legacy runs
+    large_dataset_mode: Optional[bool] = None
+    full_rows: Optional[int] = None
+    full_columns: Optional[int] = None
+    analyzed_rows: Optional[int] = None
+    sample_strategy: Optional[str] = None
+    symbol_count: Optional[int] = None
+    date_range_start: Optional[str] = None
+    date_range_end: Optional[str] = None

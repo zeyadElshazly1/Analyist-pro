@@ -2,6 +2,7 @@
 Tests for insight_adapter: insight_id uniqueness guarantees.
 
 Covers:
+  - Dict/list/tuple evidence is JSON-stringified for InsightResult (finance packs).
   - _make_id includes title so same (category, columns) with different titles
     produces distinct IDs.
   - build_insight_results returns a list where all insight_ids are globally
@@ -22,6 +23,29 @@ from app.services.insight_adapter import (
     build_insight_result,
     build_insight_results,
 )
+
+
+class TestStructuredEvidence:
+    """Finance-domain insights can carry dict/list evidence — adapter must stringify for InsightResult."""
+
+    def test_dict_evidence_does_not_crash_and_becomes_json_string(self):
+        raw = {
+            "type": "segment",
+            "title": "Top return leaders",
+            "severity": "medium",
+            "confidence": 85,
+            "finding": "Example finding.",
+            "evidence": {"selected_return_column": "return_1y_pct"},
+            "action": "Review.",
+            "why_it_matters": "Context.",
+        }
+        result = build_insight_result(raw)
+        assert isinstance(result.evidence, str)
+        assert "selected_return_column" in result.evidence
+        assert "return_1y_pct" in result.evidence
+        assert result.title == "Top return leaders"
+        assert result.category == "segment"
+        assert result.confidence == pytest.approx(0.85)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

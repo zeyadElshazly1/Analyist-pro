@@ -6,6 +6,7 @@ from app.services.analysis.domain import (
     DomainInsightPack,
     DOMAIN_PACKS,
     SnapshotFinanceInsightPack,
+    TimeseriesFinanceInsightPack,
     get_domain_pack,
     get_suppression_keys,
     run_domain_pack,
@@ -39,8 +40,17 @@ def test_snapshot_pack_registered():
     assert isinstance(DOMAIN_PACKS[FINANCIAL_MARKETS_SNAPSHOT], SnapshotFinanceInsightPack)
 
 
+def test_timeseries_pack_registered():
+    assert FINANCIAL_MARKETS_TIMESERIES in DOMAIN_PACKS
+    assert isinstance(DOMAIN_PACKS[FINANCIAL_MARKETS_TIMESERIES], TimeseriesFinanceInsightPack)
+
+
 def test_snapshot_pack_dataset_type():
     assert SnapshotFinanceInsightPack.dataset_type == FINANCIAL_MARKETS_SNAPSHOT
+
+
+def test_timeseries_pack_dataset_type():
+    assert TimeseriesFinanceInsightPack.dataset_type == FINANCIAL_MARKETS_TIMESERIES
 
 
 def test_get_domain_pack_snapshot_returns_real_pack():
@@ -48,8 +58,12 @@ def test_get_domain_pack_snapshot_returns_real_pack():
     assert isinstance(pack, SnapshotFinanceInsightPack)
 
 
+def test_get_domain_pack_timeseries_returns_real_pack():
+    pack = get_domain_pack(FINANCIAL_MARKETS_TIMESERIES)
+    assert isinstance(pack, TimeseriesFinanceInsightPack)
+
+
 def test_get_domain_pack_unknowns_return_none():
-    assert get_domain_pack(FINANCIAL_MARKETS_TIMESERIES) is None
     assert get_domain_pack(GENERIC_TABULAR) is None
     assert get_domain_pack("unknown") is None
 

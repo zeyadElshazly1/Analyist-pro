@@ -166,9 +166,23 @@ OHLC_NAMES: frozenset[str] = frozenset({
     "vwap",  # volume-weighted average price — price column
 })
 
+# Trade-date columns for ETF / OHLC history uploads (avoid bare "date" — too ambiguous).
+TRADE_DATE_NAMES: frozenset[str] = frozenset({
+    "pricedate", "funddate", "tradedate", "tradingdate", "tradeday",
+    "observationdate", "reportdate", "asofdate", "valuedate",
+    "quotedate", "settlementdate", "pricedateutc", "tradedateutc",
+    "effectivedate", "businessdate", "sessiondate",
+})
+
+TRADE_VOLUME_NAMES: frozenset[str] = frozenset({
+    "volume", "volumes", "sharevolume", "sharesvolume", "totalvolume",
+    "tradescount", "tradevolume", "vol",
+})
+
 ASSET_ID_NAMES: frozenset[str] = frozenset({
     "ticker", "tickers",
     "symbol", "symbols",
+    "fundsymbol", "fundsymbols",
     "isin", "cusip", "sedol",
     "tickersymbol", "stockticker",
     "bbgticker", "bloombergticker",
@@ -200,8 +214,10 @@ SIZE_METRIC_NAMES: frozenset[str] = frozenset({
 # "type" or "category" is not confused with return or volatility columns.
 
 _ROLE_TABLE: list[tuple[str, frozenset[str]]] = [
+    ("trade_date",      TRADE_DATE_NAMES),
     ("asset_id",        ASSET_ID_NAMES),
     ("asset_label",     ASSET_LABEL_NAMES),
+    ("trade_volume",    TRADE_VOLUME_NAMES),
     ("ohlc_price",      OHLC_NAMES),
     ("return_period",   RETURN_NAMES),
     ("volatility",      VOLATILITY_NAMES),
@@ -223,6 +239,7 @@ def role_for_column(col: str) -> str:
     underscores, and hyphens are irrelevant.
 
     Returns one of:
+        "trade_date", "trade_volume",
         "asset_id", "asset_label", "ohlc_price",
         "return_period", "volatility", "sharpe_ratio",
         "asset_class", "sector", "analyst_upside",

@@ -711,6 +711,53 @@ export interface DraftResponse {
   report_result: ReportResult | null;
 }
 
+// ── Large dataset sampling transparency (Tasks 77C / 77D) ─────────────────────
+
+/** Shown in HTML exports and Report Builder when analysis used row sampling. */
+export const LARGE_DATASET_METHODOLOGY_NOTE =
+  "Large dataset mode was used for expensive pattern detection; full dataset metadata and quality checks were preserved.";
+
+export interface LargeDatasetMeta {
+  large_dataset_mode?: boolean;
+  full_rows?: number;
+  full_columns?: number;
+  analyzed_rows?: number;
+  sample_strategy?: string;
+  symbol_count?: number;
+  date_range_start?: string;
+  date_range_end?: string;
+}
+
+/**
+ * Extract typed metadata from an analysis payload (SSE result or reopened run).
+ * Returns undefined when large_dataset_mode is not active — never throws.
+ */
+export function pickLargeDatasetMeta(
+  source: Record<string, unknown> | null | undefined,
+): LargeDatasetMeta | undefined {
+  if (!source || source.large_dataset_mode !== true) return undefined;
+
+  const num = (key: string): number | undefined => {
+    const v = source[key];
+    return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+  };
+  const str = (key: string): string | undefined => {
+    const v = source[key];
+    return typeof v === "string" && v.trim() ? v.trim() : undefined;
+  };
+
+  return {
+    large_dataset_mode: true,
+    full_rows: num("full_rows"),
+    full_columns: num("full_columns"),
+    analyzed_rows: num("analyzed_rows"),
+    sample_strategy: str("sample_strategy"),
+    symbol_count: num("symbol_count"),
+    date_range_start: str("date_range_start"),
+    date_range_end: str("date_range_end"),
+  };
+}
+
 // Mirrors RunResults schema from GET /analysis/run/{run_id}/results
 export interface RunResultsResponse {
   run_id: number;
@@ -735,6 +782,15 @@ export interface RunResultsResponse {
   // of the "current" project (left-hand side of the compare). null for runs
   // that were never paired against another project.
   compare_result?: CompareResult | null;
+  /** Present when the API sampled rows for expensive detectors while preserving full-shape stats */
+  large_dataset_mode?: boolean | null;
+  full_rows?: number | null;
+  full_columns?: number | null;
+  analyzed_rows?: number | null;
+  sample_strategy?: string | null;
+  symbol_count?: number | null;
+  date_range_start?: string | null;
+  date_range_end?: string | null;
 }
 
 export function getRunResults(runId: number) {

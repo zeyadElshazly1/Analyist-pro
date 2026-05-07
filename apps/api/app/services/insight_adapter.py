@@ -6,6 +6,7 @@ V1 schema contract. All downstream consumers (insights screen, trust UI, report
 builder, run model) should read InsightResult, not the raw pipeline dicts.
 
 Key normalization applied here:
+  - evidence    : optional dict/list from domain packs → JSON string for InsightResult
   - confidence  : 0–100 (pipeline) → 0.0–1.0 (schema)
   - insight_id  : deterministic md5 hash of (category + sorted columns + title);
                   globally unique within a run via _deduplicate_ids post-pass
@@ -18,6 +19,7 @@ Key normalization applied here:
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 
 from app.schemas.insight import InsightResult
@@ -75,6 +77,23 @@ _BH_FDR_CAVEAT = "p-values corrected for multiple comparisons (Benjamini-Hochber
 _UNSAFE_CATEGORIES: frozenset[str] = frozenset({"data_quality"})
 
 
+# ── Evidence normalization ─────────────────────────────────────────────────────
+
+
+def _evidence_to_text(evidence: object) -> str:
+    """Insight pipeline sometimes attaches dict/list evidence (e.g. finance packs); schema expects str."""
+    if evidence is None:
+        return ""
+    if isinstance(evidence, str):
+        return evidence
+    if isinstance(evidence, (dict, list, tuple)):
+        try:
+            return json.dumps(evidence, default=str, ensure_ascii=False)
+        except Exception:
+            return str(evidence)
+    return str(evidence)
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def build_insight_results(raw_insights: list[dict]) -> list[InsightResult]:
@@ -107,8 +126,10 @@ def build_insight_result(ins: dict) -> InsightResult:
     title        = ins.get("title", "")
     columns_used = _extract_columns(ins)
     insight_id   = _make_id(category, columns_used, title)
-    method_used  = _extract_method(category, ins.get("evidence", ""))
-    caveats      = _build_caveats(category, ins.get("evidence", ""))
+    raw_evidence = ins.get("evidence", "")
+    evidence_text = _evidence_to_text(raw_evidence)
+    method_used  = _extract_method(category, evidence_text)
+    caveats      = _build_caveats(category, evidence_text)
     chart        = _CHART_SUGGESTION.get(category, "none")
     report_safe  = _is_report_safe(severity, confidence, category)
 
@@ -120,7 +141,7 @@ def build_insight_result(ins: dict) -> InsightResult:
         severity=severity,                    # type: ignore[arg-type]
         columns_used=columns_used,
         method_used=method_used,
-        evidence=ins.get("evidence", ""),
+        evidence=evidence_text,
         confidence=confidence,
         report_safe=report_safe,
         caveats=caveats,

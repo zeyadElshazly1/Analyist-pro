@@ -172,6 +172,18 @@ def test_52w_position_evidence_structure():
     assert len(ev["near_high_assets"]) == 3
     assert len(ev["low_position_assets"]) == 3
     assert "valid_row_count" in ev
+    assert ev.get("expected_min") == 0.0
+    assert ev.get("expected_max") == 1.0
+
+
+def test_52w_position_invalid_values_excluded_and_flagged():
+    pack = SnapshotFinanceInsightPack()
+    df = _full_df_with_52w_analyst_sector_and_asset_class().copy()
+    df.loc[0, "pct_of_52w_high"] = 1.35
+    insights = pack.run(df, _context(_full_roles_with_52w_analyst_sector_and_asset_class()))
+    w = next(i for i in insights if i["title"] == "Assets cluster at different 52-week positions")
+    assert w["evidence"]["invalid_position_value_count"] >= 1
+    assert "excluded" in w["finding"].lower()
 
 
 def test_no_52w_insight_when_position_role_missing():

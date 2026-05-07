@@ -4,7 +4,8 @@ Dataset context detector.
 detect_dataset_context(df) -> DatasetContext
 
 Classification order (first match wins):
-  1. financial_markets_timeseries — datetime column + ≥2 OHLC-role columns
+  1. financial_markets_timeseries — trade-date axis (datetime64 or coercible trade-date
+     column) + ≥2 OHLC-role columns
   2. financial_markets_snapshot   — snapshot signal score >= CONFIDENCE_THRESHOLD
   3. generic_tabular              — fallback; never raises
 
@@ -70,6 +71,36 @@ _SNAPSHOT_MAX_WEIGHT: float = sum(_SNAPSHOT_SIGNAL_WEIGHTS.values())  # 1.00
 def _has_datetime_column(df: pd.DataFrame) -> bool:
     """Return True if any column has a datetime64 dtype."""
     return any(pd.api.types.is_datetime64_any_dtype(df[c]) for c in df.columns)
+
+
+def _infer_trade_date_column(df: pd.DataFrame) -> str | None:
+    """
+    Pick the best time-axis column: prefer native datetime64 columns, otherwise
+    attempt coercion on columns whose name matches trade-date signal patterns.
+    """
+    for c in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[c]):
+            return c
+    best_col: str | None = None
+    best_rate = 0.0
+    for c in df.columns:
+        if role_for_column(c) != "trade_date":
+            continue
+        try:
+            coerced = pd.to_datetime(df[c], errors="coerce")
+            rate = float(coerced.notna().mean()) if len(df.index) else 0.0
+        except Exception:
+            rate = 0.0
+        if rate > best_rate:
+            best_col, best_rate = c, rate
+    if best_col is not None and best_rate >= 0.5:
+        return best_col
+    return None
+
+
+def _timeseries_axis_ready(df: pd.DataFrame) -> bool:
+    """True when a usable calendar/trade-date axis exists."""
+    return _has_datetime_column(df) or _infer_trade_date_column(df) is not None
 
 
 def _ohlc_columns(df: pd.DataFrame) -> list[str]:
@@ -154,7 +185,7 @@ def detect_dataset_context(df: pd.DataFrame) -> DatasetContext:
     exception produces a generic_tabular fallback with a warning.
 
     Classification order:
-      1. financial_markets_timeseries: datetime column + ≥2 OHLC-role columns
+      1. financial_markets_timeseries: trade-date axis + ≥2 OHLC-role columns
       2. financial_markets_snapshot:   snapshot score >= CONFIDENCE_THRESHOLD
       3. generic_tabular:              fallback
     """
@@ -187,14 +218,19 @@ def _classify(df: pd.DataFrame) -> DatasetContext:
             extra_signals=["DataFrame has no rows or no columns"],
         )
 
-    has_datetime = _has_datetime_column(df)
-    ohlc_cols    = _ohlc_columns(df)
+    ts_axis_col = None
+    if _has_datetime_column(df):
+        ts_axis_col = next(c for c in df.columns if pd.api.types.is_datetime64_any_dtype(df[c]))
+    else:
+        ts_axis_col = _infer_trade_date_column(df)
 
-    # ── 1. Timeseries: datetime + ≥2 OHLC columns ────────────────────────────
-    if has_datetime and len(ohlc_cols) >= 2:
+    ohlc_cols = _ohlc_columns(df)
+
+    # ── 1. Timeseries: trade-date axis + ≥2 OHLC columns ───────────────────────
+    if ts_axis_col is not None and len(ohlc_cols) >= 2:
         roles = resolve_semantic_roles(df, FINANCIAL_MARKETS_TIMESERIES)
         signals = (
-            "Datetime column detected",
+            f"Time axis detected ({ts_axis_col})",
             f"OHLC price columns detected ({', '.join(ohlc_cols[:4])})",
         )
         return DatasetContext(
@@ -203,8 +239,8 @@ def _classify(df: pd.DataFrame) -> DatasetContext:
             matched_signals=signals,
             semantic_roles=roles,
             warnings=(
-                "Time-series financial data detected. "
-                "Domain-specific analysis for this dataset type is available in a future version.",
+                "Financial markets time-series layout detected (OHLC-style prices over dates). "
+                "Analysis prioritises per-symbol return, risk, liquidity, and data coverage.",
             ),
         )
 

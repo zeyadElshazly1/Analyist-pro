@@ -82,6 +82,11 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
     from app.services.insight_adapter import build_insight_results
     from app.services.intake_for_analysis import build_intake_for_project
     from app.services.serializers import to_jsonable
+    from app.services.analysis.large_dataset_mode import (
+        LARGE_DATASET_NARRATIVE_NOTE,
+        attach_large_dataset_meta,
+        prepare_analysis_frame,
+    )
     from app.db import SessionLocal as _SessionLocal
 
     # ── Step 0: resolve file ──────────────────────────────────────────────────
@@ -156,9 +161,10 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
 
     # ── Step 3: profile ───────────────────────────────────────────────────────
     try:
+        df_analysis, ld_meta = prepare_analysis_frame(df_clean)
         profile = profile_dataset(df_clean)
         health_score = calculate_health_score(df_clean)
-        health_result = build_health_result(df_clean, health_score, profile).model_dump()
+        health_result = build_health_result(df_clean, health_score, profile, df_raw=df).model_dump()
     except Exception as e:
         logger.error(f"Column profiling failed for project {project_id}: {e}", exc_info=True)
         _publish(r, run_key, {
@@ -171,7 +177,9 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
 
     # ── Step 4: insights ──────────────────────────────────────────────────────
     try:
-        insights, narrative = analyze_dataset(df_clean)
+        insights, narrative = analyze_dataset(df_analysis)
+        if ld_meta["large_dataset_mode"]:
+            narrative = narrative + LARGE_DATASET_NARRATIVE_NOTE
         insight_results = [ir.model_dump() for ir in build_insight_results(insights)]
         executive_panel = generate_executive_panel(insights)
     except Exception as e:
@@ -204,6 +212,7 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
         "narrative": narrative,
         "executive_panel": to_jsonable(executive_panel),
     }
+    attach_large_dataset_meta(result, ld_meta)
 
     # ── Persist to DB ─────────────────────────────────────────────────────────
     from app.db import SessionLocal

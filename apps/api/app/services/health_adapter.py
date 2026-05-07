@@ -8,6 +8,7 @@ Inputs:
     df      — the post-cleaning DataFrame (needed for missingness cell counts)
     health  — dict returned by calculate_health_score(df)
     profile — list[dict] returned by profile_dataset(df)
+    df_raw  — optional original upload for parallel missingness when cleaning ran
 """
 from __future__ import annotations
 
@@ -50,6 +51,10 @@ def build_health_result(
     df: pd.DataFrame,
     health: dict,
     profile: list[dict],
+    df_raw: pd.DataFrame | None = None,
+    *,
+    full_row_count: int | None = None,
+    full_column_count: int | None = None,
 ) -> HealthResult:
     """
     Convert raw health/profile pipeline output into a canonical HealthResult.
@@ -59,12 +64,17 @@ def build_health_result(
         health:  Dict from calculate_health_score(df).
         profile: List[dict] from profile_dataset(df); each item has a
                  'semantic_type' field used to build semantic_column_types.
+        df_raw:  Optional original upload; when provided (typically before cleaning),
+                 raw missingness fields are populated alongside cleaned stats.
+        full_row_count: Optional override for HealthResult.row_count (same shape as
+                 the full cleaned upload when insights used a subsample).
+        full_column_count: Optional override for HealthResult.column_count.
 
     Returns:
         Fully-populated HealthResult ready for serialisation.
     """
-    row_count    = len(df)
-    column_count = len(df.columns)
+    row_count    = full_row_count if full_row_count is not None else len(df)
+    column_count = full_column_count if full_column_count is not None else len(df.columns)
 
     semantic_types = _build_semantic_types(profile)
     key_cols       = [s.column for s in semantic_types if s.semantic_type in _PROTECTED_TYPES]
@@ -72,7 +82,7 @@ def build_health_result(
     return HealthResult(
         row_count=row_count,
         column_count=column_count,
-        missingness_stats=_build_missingness_stats(df, health),
+        missingness_stats=_build_missingness_stats(df, health, df_raw),
         duplicate_stats=_build_duplicate_stats(health, row_count),
         semantic_column_types=semantic_types,
         key_columns=key_cols,
@@ -100,27 +110,53 @@ def _build_health_score(health: dict) -> HealthScore:
     )
 
 
-def _build_missingness_stats(df: pd.DataFrame, health: dict) -> MissingnessStats:
-    total_cells    = len(df) * len(df.columns)
-    missing_cells  = int(df.isnull().sum().sum())
-    missing_pct    = round(missing_cells / max(total_cells, 1) * 100, 2)
-    bi             = health.get("business_impact", {})
-
-    per_column: list[ColumnMissingness] = []
+def _column_missingness_list(df: pd.DataFrame) -> list[ColumnMissingness]:
+    """Columns with ≥1 missing value on this frame."""
+    rows = len(df)
+    out: list[ColumnMissingness] = []
     for col, count in df.isnull().sum().items():
         if count > 0:
-            per_column.append(ColumnMissingness(
+            out.append(ColumnMissingness(
                 column=str(col),
                 missing_count=int(count),
-                missing_pct=round(int(count) / max(len(df), 1) * 100, 2),
+                missing_pct=round(int(count) / max(rows, 1) * 100, 2),
             ))
+    return out
+
+
+def _build_missingness_stats(
+    df: pd.DataFrame,
+    health: dict,
+    df_raw: pd.DataFrame | None,
+) -> MissingnessStats:
+    total_cells = len(df) * len(df.columns)
+    missing_cells = int(df.isnull().sum().sum())
+    missing_pct = round(missing_cells / max(total_cells, 1) * 100, 2)
+    bi = health.get("business_impact", {})
+
+    raw_cells = raw_pct = raw_rows = raw_rows_pct = None
+    raw_cols_list: list[ColumnMissingness] = []
+
+    if df_raw is not None:
+        raw_total_cells = len(df_raw) * len(df_raw.columns)
+        raw_miss_cells = int(df_raw.isnull().sum().sum())
+        raw_cells = raw_miss_cells
+        raw_pct = round(raw_miss_cells / max(raw_total_cells, 1) * 100, 2)
+        raw_rows = int(df_raw.isnull().any(axis=1).sum())
+        raw_rows_pct = round(raw_rows / max(len(df_raw), 1) * 100, 2)
+        raw_cols_list = _column_missingness_list(df_raw)
 
     return MissingnessStats(
         total_missing_cells=missing_cells,
         missing_cell_pct=missing_pct,
         rows_with_any_missing=int(bi.get("unreliable_rows", 0)),
         rows_with_any_missing_pct=float(bi.get("unreliable_pct", 0.0)),
-        columns_with_missing=per_column,
+        columns_with_missing=_column_missingness_list(df),
+        raw_total_missing_cells=raw_cells,
+        raw_missing_cell_pct=raw_pct,
+        raw_rows_with_any_missing=raw_rows,
+        raw_rows_with_any_missing_pct=raw_rows_pct,
+        raw_columns_with_missing=raw_cols_list,
     )
 
 

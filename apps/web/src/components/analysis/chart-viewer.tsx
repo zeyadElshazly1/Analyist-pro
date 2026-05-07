@@ -636,6 +636,11 @@ function SingleChart({
   const plotBoxStyle = { height: h, minHeight: h };
 
   if (chart.type === "line") {
+    const series =
+      chart.line_series && chart.line_series.length > 0
+        ? chart.line_series
+        : [{ key: chart.y_key, label: chart.y_label ?? chart.y_key }];
+    const palette = ["#6366f1", "#34d399", "#fbbf24", "#f472b6", "#38bdf8", "#a78bfa"];
     const n = chart.data.length;
     const angled = !isPreview && n > 10;
     const maxXTicks = isPreview ? PREVIEW_CATEGORY_TICKS : angled ? 8 : 12;
@@ -659,7 +664,17 @@ function SingleChart({
             />
             <YAxis tick={{ fill: "#9ca3af", fontSize: isPreview ? 9 : 11 }} />
             <Tooltip {...DARK_TOOLTIP} />
-            <Line type="monotone" dataKey={chart.y_key} stroke="#6366f1" strokeWidth={isPreview ? 1.5 : 2} dot={false} />
+            {series.map((s, si) => (
+              <Line
+                key={s.key}
+                type="monotone"
+                dataKey={s.key}
+                name={s.label ?? s.key}
+                stroke={palette[si % palette.length]}
+                strokeWidth={isPreview ? 1.5 : 2}
+                dot={false}
+              />
+            ))}
           </LineChart>
         </ResponsiveContainer>
       </div>
