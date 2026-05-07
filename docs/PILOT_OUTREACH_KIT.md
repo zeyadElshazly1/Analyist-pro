@@ -1,6 +1,6 @@
 # Analyst Pro — Pilot Outreach Kit
 
-> Companion to: [docs/PILOT_DEMO_PACKAGE.md](./PILOT_DEMO_PACKAGE.md)  
+> Companion to: [docs/PILOT_DEMO_PACKAGE.md](./PILOT_DEMO_PACKAGE.md) · [docs/PILOT_FEEDBACK_SYSTEM.md](./PILOT_FEEDBACK_SYSTEM.md)  
 > Status: Pilot-ready (82A checkpoint, 2026-05-07)
 
 ---
