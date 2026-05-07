@@ -1,7 +1,8 @@
 # Analyst Pro — Pilot Demo Package
 
 > Checkpoint: 82A final smoke test — **Pilot-ready** (2026-05-07)  
-> Branch: `claude/backend-chart-export-context-culfe`
+> Branch: `claude/backend-chart-export-context-culfe`  
+> Outreach kit: [docs/PILOT_OUTREACH_KIT.md](./PILOT_OUTREACH_KIT.md)
 
 ---
 
