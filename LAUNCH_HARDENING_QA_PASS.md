@@ -1,6 +1,6 @@
 # Launch Hardening QA Pass
 
-<!-- Last updated: 80C — P2 board reconciled — 2026-05-07 -->
+<!-- Last updated: 81G — all active P2 items closed — 2026-05-07 -->
 
 ## Related Checkpoints
 - **Large Dataset Mode (77E):** [`docs/LARGE_DATASET_MODE_QA_CHECKPOINT.md`](docs/LARGE_DATASET_MODE_QA_CHECKPOINT.md)
@@ -10,8 +10,8 @@
 
 ## Current Active Launch Risks
 
-_Updated after 80C (2026-05-07). **All known P1 launch blockers are closed.**
-Six P2 items remain active for pilot hardening (B3–B8)._
+_Updated after 81G (2026-05-07). **All known P1 and P2 launch items are closed.**
+Remaining work is P3 polish and Needs Runtime only._
 
 ### P1 — Must fix before pilot
 
@@ -27,21 +27,20 @@ Six P2 items remain active for pilot hardening (B3–B8)._
 
 ### P2 — Fix before broad rollout
 
-| ID | Area | File | Notes | Next task |
-|----|------|------|-------|-----------|
-| B3 | Frontend / UX | `apps/web/src/app/(app)/projects/[id]/page.tsx` | `RunStateBanner` doesn't distinguish "in-progress" from "all runs failed" — ambiguous state for projects with only failed runs | 81A |
-| B4 | Frontend / Data | `apps/web/src/app/(app)/projects/[id]/page.tsx` | `adaptStoredResults` passes through malformed `insight_results` items silently — no validation on required fields | 81B |
-| B5 | Backend / Safety | `apps/api/app/services/run_tracker.py:38` | `set_run_status` accepts any string — typos are persisted silently with no validation | 81C |
-| B6 | Backend / Data | `apps/api/app/services/run_resolver.py:25` | `resolve_latest_run` no secondary `id DESC` sort — a very old `report_ready` run can beat a newer in-progress run | 81D |
-| B7 | Backend / Contract | `apps/api/app/middleware/plans.py:69` | `UPGRADE_MESSAGES` not guaranteed to surface in frontend — no documented contract for feature string names | 81E |
-| B8 | Backend / Auth | `apps/api/app/routes/team.py` | Team invite/manage endpoints not verified to enforce Studio plan limit | 81F |
+**None. All P2 items resolved as of 81F.**
 
 #### Resolved P2s
 
 | ID | Area | Resolution | Commit |
 |----|------|------------|--------|
-| B1 | Run Lifecycle | Cache-hit sync and SSE paths now create and finalise a new `report_ready` run record so consultants see every re-open in history. | `3d8459b` (80A) |
-| B2 | Billing / Infra | `STRIPE_PLAN_MAP` and `_PLAN_PRICE_MAP` no longer fall back to `STRIPE_PRO_PRICE_ID` / `STRIPE_TEAM_PRICE_ID`. Only canonical `STRIPE_CONSULTANT_PRICE_ID` and `STRIPE_STUDIO_PRICE_ID` are read. Legacy plan-name aliases (`"pro"` → `"consultant"`, `"team"` → `"studio"`) in API request bodies still work via `normalize_plan`. | `392124c` (80B) |
+| B1 | Run Lifecycle | Cache-hit sync and SSE paths create and finalise a new `report_ready` run record so consultants see every re-open in history. | `3d8459b` (80A) |
+| B2 | Billing / Infra | `STRIPE_PLAN_MAP` and `_PLAN_PRICE_MAP` no longer fall back to legacy env vars. Only canonical `STRIPE_CONSULTANT_PRICE_ID` / `STRIPE_STUDIO_PRICE_ID` are read. | `392124c` (80B) |
+| B3 | Frontend / UX | `RunStateBanner` now has explicit branches: active statuses show spinner + "in progress"; unknown/stale statuses show amber "Analysis not complete" with no spinner. | `a0e4379` (81A) |
+| B4 | Frontend / Data | `adaptStoredResults` now filters `insight_results` through `isInsightLike` + `normalizeStoredInsights` — malformed items dropped instead of passed through. | `c294d33` (81B) |
+| B5 | Backend / Safety | `set_run_status` validates against `VALID_RUN_STATUSES` frozenset and raises `ValueError` immediately for unrecognised strings. | `39390aa` (81C) |
+| B6 | Backend / Data | `resolve_latest_run` already had `id DESC` secondary sort. Confirmed correct, added inline comment, added 11 determinism tests. | `2ba3c66` (81D) |
+| B7 | Backend / Contract | `PLAN_FEATURES` frozenset and HTTP 402 payload contract documented in `plans.py`. All feature keys and response shape covered by tests. | `7a8a50d` (81E) |
+| B8 | Backend / Auth | Studio-only team gates verified by tests. `"team"` added to `PLAN_FEATURES` / `PLAN_LIMITS` / `UPGRADE_MESSAGES`. `accept_invite` seat-limit 402 now includes `current_plan`. | `3b30890` (81F) |
 
 ### P3 — Polish / cleanup
 
@@ -210,20 +209,20 @@ _Code-reviewed against current branch after tasks 75F–77E._
 | 24 | P1 | `selected_insight_ids_json` not initialized `"[]"` on draft creation | **Resolved** | Explicit `json.dumps(selected)` on creation — `reports.py:726` |
 | 25 | P1 | `exportReport()` filename ignored by some browsers | **Resolved (P3)** | Server sets `Content-Disposition`; client `a.download` is a fallback; no repro found |
 | 26 | P1 | Resume analysis on non-`report_ready` run shows blank page | **Resolved** | `DEFAULT_LANDING_TAB = "intake"` lands on Intake Review with graceful empty-state — `run-analysis.tsx:295` |
-| 27 | P2 | Banner doesn't distinguish in-progress from all-failed | **Active (P2)** | → B3 below |
-| 28 | P2 | `adaptStoredResults` passes malformed items silently | **Active (P2)** | → B4 below |
+| 27 | P2 | Banner doesn't distinguish in-progress from all-failed | **Resolved** | `ACTIVE_RUN_STATUSES` set + amber stale-state branch — commit `a0e4379` (81A) |
+| 28 | P2 | `adaptStoredResults` passes malformed items silently | **Resolved** | `isInsightLike` filter + `normalizeStoredInsights` — commit `c294d33` (81B) |
 | 29 | P1 | `create_run_stub` returns `None` not handled | **Resolved** | `if run is None:` fallback path — `analysis.py:138` |
 | 30 | P1 | `finalise_run` swallows DB errors | **Needs Runtime → NR2** | Intentional best-effort; no DB errors in normal operation |
 | 31 | P1 | SSE streaming endpoint does not exist | **Resolved** | `analysis_stream.py:60` — `@router.get("/stream/{project_id}")` |
-| 32 | P2 | `set_run_status` accepts any string | **Active (P2)** | → B5 below |
-| 33 | P2 | `resolve_latest_run` no secondary sort | **Active (P2)** | → B6 below |
+| 32 | P2 | `set_run_status` accepts any string | **Resolved** | `VALID_RUN_STATUSES` + `_validate_status` raises `ValueError` — commit `39390aa` (81C) |
+| 33 | P2 | `resolve_latest_run` no secondary sort | **Resolved** | Already had `id DESC`; documented + 11 determinism tests — commit `2ba3c66` (81D) |
 | 34 | P1 | UpgradeWall `FEATURE_LABELS` says `"Pro"` / `"Team"` | **Resolved** | Now `"Consultant"` / `"Studio"` — `upgrade-wall.tsx:13` |
 | 35 | P1 | Pricing says rows, backend enforces MB | **Resolved** | Pricing page now shows MB consistently: "Up to 10 MB / 100 MB / 500 MB per file" |
 | 36 | P1 | `GET /analysis/diff` — no `require_feature` guard | **Resolved** | `Depends(require_feature("file_compare"))` added — commit `35e9292` (79A) |
 | 37 | P1 | `GET /analysis/download-cleaned` — no `require_feature` guard | **Resolved** | `Depends(require_feature("report_export"))` added — commit `35e9292` (79A) |
-| 38 | P2 | `UPGRADE_MESSAGES` no frontend contract | **Active (P2)** | → B7 below |
+| 38 | P2 | `UPGRADE_MESSAGES` no frontend contract | **Resolved** | `PLAN_FEATURES` frozenset + 402 payload contract documented and tested — commit `7a8a50d` (81E) |
 | 39 | P2 | `/analysis/story` UpgradeWall label says `"Pro"` | **Resolved** | `FEATURE_LABELS["ai_story"]` says `"Consultant"` |
-| 40 | P2 | Team endpoints not verified for Studio plan limit | **Active (P2)** | → B8 below |
+| 40 | P2 | Team endpoints not verified for Studio plan limit | **Resolved** | Studio gates verified by tests; `"team"` added to `PLAN_FEATURES`; seat-limit 402 includes `current_plan` — commit `3b30890` (81F) |
 | P0-1 | P0 | Report export ignores draft | **Resolved** | `_get_stored_analysis` pins to `draft.analysis_result_id`, applies `apply_draft_to_result` — `reports.py:101` |
 | P0-2 | P0 | Plan size limits contradict | **Resolved** | Pricing page aligned to MB; all surfaces consistent |
 | P0-3 | P0 | Intake Review tab shows no intake data | **Resolved** | `SafePanel label="Intake Review"` renders `intake_result` — `run-analysis.tsx:567` |
@@ -248,18 +247,9 @@ _Code-reviewed against current branch after tasks 75F–77E._
 | R6 | P1 | Draft saves array indices | **Resolved** | See P1-3 |
 | R7 | P1 | Upload hint hardcodes 100 MB | **Resolved** | See P1-4 |
 
-#### Active P2s (B3–B8) — pilot hardening queue
+#### P2s (B1–B8) — all resolved
 
-B1 and B2 resolved (see top Resolved P2s table). B3–B8 remain active.
-
-| ID | File | Issue | Next task |
-|----|------|-------|-----------|
-| B3 | `apps/web/src/app/(app)/projects/[id]/page.tsx` | RunStateBanner doesn't distinguish "in-progress" from "all runs failed" — ambiguous state for projects with only failed runs | 81A |
-| B4 | `apps/web/src/app/(app)/projects/[id]/page.tsx` | `adaptStoredResults` passes through malformed `insight_results` items silently — no validation on required fields | 81B |
-| B5 | `apps/api/app/services/run_tracker.py:38` | `set_run_status` accepts any string — typos are persisted silently with no validation | 81C |
-| B6 | `apps/api/app/services/run_resolver.py:25` | `resolve_latest_run` no secondary `id DESC` sort — a very old `report_ready` run can beat a newer in-progress run | 81D |
-| B7 | `apps/api/app/middleware/plans.py:69` | `UPGRADE_MESSAGES` not guaranteed to surface in frontend — no documented contract for feature string names | 81E |
-| B8 | `apps/api/app/routes/team.py` | Team invite/manage endpoints not verified to enforce Studio plan limit | 81F |
+All eight P2 items resolved. See top Resolved P2s table for commit evidence.
 
 ---
 
@@ -279,11 +269,18 @@ See the 78A table above for the full status of each item from that pass.
 upload → analyze → see findings → build report → export works end-to-end,
 including draft persistence and chart selection.
 
-**Fix order before pilot (all P1s done):**
+**Launch hardening P1/P2 queue: fully closed.**
+
+All items completed:
 1. ~~Plan gates on diff + download-cleaned (A1, A2)~~ — **done** (79A, `35e9292`)
 2. ~~Autosave timer cleanup on unmount (A3)~~ — **done** (79B, `22e7d0a`)
 3. ~~Cache-hit run history (B1)~~ — **done** (80A, `3d8459b`)
 4. ~~Legacy Stripe env-var fallback (B2)~~ — **done** (80B, `392124c`)
-5. P2 items B3–B8 — active, assigned to tasks 81A–81F (pilot hardening).
+5. ~~RunStateBanner state clarity (B3)~~ — **done** (81A, `a0e4379`)
+6. ~~Stored insight validation (B4)~~ — **done** (81B, `c294d33`)
+7. ~~run_status validation (B5)~~ — **done** (81C, `39390aa`)
+8. ~~Resolver determinism (B6)~~ — **done** (81D, `2ba3c66`)
+9. ~~Plan feature contract (B7)~~ — **done** (81E, `7a8a50d`)
+10. ~~Studio team gates (B8)~~ — **done** (81F, `3b30890`)
 
-**Can wait until after first customer feedback:** All P3 / B items not listed above.
+**Remaining:** P3 polish (C1 — navigation vocabulary) and Needs Runtime (NR2) only.
