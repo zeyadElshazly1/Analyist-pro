@@ -105,6 +105,9 @@ export type AnalysisResult = {
     numeric_cols?: number;
     categorical_cols?: number;
     missing_pct?: number;
+    large_dataset_mode?: boolean;
+    analyzed_rows?: number;
+    sample_strategy?: string | null;
   } | null;
   health_score?: {
     total?: number;

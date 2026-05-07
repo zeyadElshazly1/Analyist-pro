@@ -28,7 +28,7 @@ from fastapi.responses import StreamingResponse
 
 from app.db import SessionLocal
 from app.models import AnalysisResult
-from app.services.analyzer import analyze_dataset, generate_executive_panel
+from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
 from app.services.audit import log_event
 from app.services.cache import get_cached_analysis, set_cached_analysis
 from app.services.cleaning_adapter import build_cleaning_result
@@ -327,6 +327,7 @@ async def _run_analysis_stream(
             "insight_results": insight_results,                  # canonical V1 (replaces insights)
             "narrative": narrative,
             "executive_panel": to_jsonable(executive_panel),
+            "dataset_summary": get_dataset_summary(df_clean),   # large-dataset transparency metadata
         }
 
         result_json_str = json.dumps(result, default=str)

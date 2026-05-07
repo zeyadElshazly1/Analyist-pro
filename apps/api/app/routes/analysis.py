@@ -22,7 +22,7 @@ from app.services.access_guards import (
     get_run_for_user,
 )
 from app.services.run_resolver import build_run_detail, resolve_latest_run
-from app.services.analyzer import analyze_dataset, generate_executive_panel
+from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
 from app.services.cache import get_cached_analysis, set_cached_analysis
 from app.services.cleaner import clean_dataset
 from app.services.file_loader import load_dataset
@@ -152,6 +152,7 @@ def run_analysis(
             "insight_results": insight_results,                  # canonical V1 (replaces insights)
             "narrative": narrative,
             "executive_panel": to_jsonable(executive_panel),
+            "dataset_summary": get_dataset_summary(df_clean),   # large-dataset transparency metadata
         }
 
         # ── Warm Redis cache before final DB commit ───────────────────────────

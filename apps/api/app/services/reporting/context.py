@@ -132,12 +132,17 @@ def build_context(
 
     # Trust metadata
     cleaning_steps = len(analysis_result.get("cleaning_report", []))
+    ds = analysis_result.get("dataset_summary") or {}
+    large_mode = bool(ds.get("large_dataset_mode", False))
     trust_meta = {
         "rows_analyzed": f"{n_rows:,}",
         "columns_analyzed": n_cols,
         "cleaning_steps": cleaning_steps,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M UTC"),
         "project_name": project_name,
+        "large_dataset_mode": large_mode,
+        "large_dataset_total_rows": f"{ds.get('rows', n_rows):,}" if large_mode else None,
+        "large_dataset_sample_strategy": ds.get("sample_strategy") if large_mode else None,
     }
 
     # Carry compare_result through unchanged so downstream templates / Excel
