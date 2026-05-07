@@ -21,6 +21,22 @@ from app.models import AnalysisResult, ProjectFile
 
 logger = logging.getLogger(__name__)
 
+VALID_RUN_STATUSES: frozenset[str] = frozenset({
+    "created",
+    "cleaning_complete",
+    "profiling_complete",
+    "insights_complete",
+    "report_ready",
+    "failed",
+})
+
+
+def _validate_status(status: str) -> None:
+    if status not in VALID_RUN_STATUSES:
+        raise ValueError(
+            f"Invalid run status '{status}'. Expected one of: {', '.join(sorted(VALID_RUN_STATUSES))}"
+        )
+
 
 def resolve_file_id(db: Session, project_id: int, file_hash: str | None) -> int | None:
     """Return the ProjectFile.id matching (project_id, file_hash), or None."""
@@ -36,9 +52,13 @@ def resolve_file_id(db: Session, project_id: int, file_hash: str | None) -> int 
 
 
 def set_run_status(db: Session, run: AnalysisResult | None, status: str) -> None:
-    """Commit a status transition. Best-effort — never raises."""
+    """Commit a status transition. Best-effort — never raises for DB errors.
+    Raises ValueError immediately for unrecognised status strings so typos
+    fail fast in tests and development rather than being silently persisted.
+    """
     if run is None:
         return
+    _validate_status(status)
     try:
         run.status = status
         db.commit()
