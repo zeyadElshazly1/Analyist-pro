@@ -73,26 +73,26 @@ Methodology note shown automatically when dataset exceeds 250k rows. Users can s
 
 `RunStateBanner` previously showed "in progress" spinner for any non-result, non-failed state including unknown statuses. Now uses explicit `ACTIVE_RUN_STATUSES` set; unknown statuses render amber "Analysis not complete" without spinner.
 
-### 4. P1 Launch Hardening Closure (79A–80B, tasks A1–A3)
+### 4. P1 Launch Hardening Closure (79A–79B, tasks A1–A3)
 
 | Item | Fix |
 |------|-----|
-| A1 | Plan gates on diff + download-cleaned endpoints |
-| A2 | autosave timer cleared on ReportBuilder unmount |
-| A3 | Legacy Stripe env-var fallbacks removed |
+| A1 | `GET /analysis/diff` now requires `feature="file_compare"` — free users receive HTTP 402 — `35e9292` (79A) |
+| A2 | `GET /analysis/download-cleaned/{project_id}` now requires `feature="report_export"` — free users receive HTTP 402 — `35e9292` (79A) |
+| A3 | `saveTimer` cleanup `useEffect` added to `report-builder.tsx` — timer cleared on unmount — `22e7d0a` (79B) |
 
 ### 5. P2 Launch Hardening Closure (80A–81F, tasks B1–B8)
 
 | Item | Fix |
 |------|-----|
-| B1 | RunStateBanner explicit status set |
-| B2 | Stored insight result validation before reopen |
-| B3 | Run status string validation in `set_run_status` |
-| B4 | Resolver ordering: deterministic `id DESC` secondary sort confirmed + tests |
-| B5 | HTTP 402 payload contract documented + tested |
-| B6 | `PLAN_FEATURES` frozenset as canonical gate reference |
-| B7 | Studio-only team gates locked + seat-limit 402 fixed |
-| B8 | Cache-hit analyses persist new run history entries |
+| B1 | Cache-hit sync and SSE paths now create and finalise a new `report_ready` run record — `3d8459b` (80A) |
+| B2 | `STRIPE_PLAN_MAP` / `_PLAN_PRICE_MAP` no longer fall back to legacy env vars; only canonical `STRIPE_CONSULTANT_PRICE_ID` / `STRIPE_STUDIO_PRICE_ID` read — `392124c` (80B) |
+| B3 | `RunStateBanner` explicit branches: active statuses show spinner; unknown/stale statuses show amber "Analysis not complete" with no spinner — `a0e4379` (81A) |
+| B4 | `adaptStoredResults` filters `insight_results` through `isInsightLike` — malformed items dropped before reopen — `c294d33` (81B) |
+| B5 | `set_run_status` validates against `VALID_RUN_STATUSES` frozenset; raises `ValueError` on unrecognised string — `39390aa` (81C) |
+| B6 | `resolve_latest_run` `id DESC` secondary sort confirmed correct; inline comment added; 11 determinism tests added — `2ba3c66` (81D) |
+| B7 | `PLAN_FEATURES` frozenset and HTTP 402 payload contract documented in `plans.py`; all feature keys and response shape covered by tests — `7a8a50d` (81E) |
+| B8 | Studio-only team gates verified by tests; `"team"` added to `PLAN_FEATURES` / `PLAN_LIMITS` / `UPGRADE_MESSAGES`; `accept_invite` seat-limit 402 now includes `current_plan` — `3b30890` (81F) |
 
 ### 6. P3 Launch Hardening Closure (82B, task C1)
 
@@ -154,7 +154,7 @@ Seven documents covering demo, outreach, feedback, tracking, week-1 execution, a
 
 ### py_compile check
 
-Clean on 8 core backend modules: `analysis.py`, `analysis_stream.py`, `billing.py`, `team.py`, `plans.py`, `run_tracker.py`, `project_page.tsx` (TypeScript tsc equivalent passed).
+Clean on core backend modules touched by this branch: `analysis.py`, `analysis_stream.py`, `billing.py`, `team.py`, `plans.py`, `run_tracker.py`.
 
 ### Manual QA (21 rows — all Pass)
 
