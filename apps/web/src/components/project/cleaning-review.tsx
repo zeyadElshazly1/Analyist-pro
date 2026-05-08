@@ -85,6 +85,24 @@ function gradeColor(score: number | undefined) {
   return { banner: "border-red-500/20 bg-red-500/5", text: "text-red-300", badge: "bg-red-500/15 text-red-400 border-red-500/25" };
 }
 
+// Backend sends a pre-formatted string "Grade B — 70/100 · Good" (85E).
+// These helpers keep the UI correct for both the new format and any legacy plain-letter values.
+function formatGradeLabel(grade: string | undefined, score: number | undefined): string {
+  if (!grade) return `Grade — · ${Math.round(score ?? 0)}/100 data quality score`;
+  if (grade.includes("/100")) return grade;
+  return `Grade ${grade} · ${Math.round(score ?? 0)}/100 data quality score`;
+}
+
+function extractGradeLetter(grade: string | undefined): string {
+  if (!grade) return "—";
+  // New format: "Grade B — 70/100 · Good" → extract the letter
+  if (grade.includes("/100")) {
+    const m = grade.match(/Grade\s+([A-F][+-]?)\s/);
+    return m ? m[1] : "—";
+  }
+  return grade;
+}
+
 // ── Pill component ───────────────────────────────────────────────────────────
 function Pill({ label, color = "default" }: { label: string; color?: "green" | "amber" | "red" | "default" }) {
   const cls =
@@ -200,7 +218,7 @@ export function CleaningReview({ cleaningResult, items: legacyItems }: Props) {
             <div className="flex items-center gap-2">
               <CheckCircle2 className={`h-4 w-4 flex-shrink-0 ${text}`} />
               <p className={`text-sm font-semibold ${text}`}>
-                Grade {cs.confidence_grade ?? "—"} · {Math.round(cs.confidence_score ?? 0)}/100 data quality score
+                {formatGradeLabel(cs.confidence_grade, cs.confidence_score)}
               </p>
             </div>
             <p className="mt-0.5 pl-6 text-xs text-white/35">
@@ -212,7 +230,7 @@ export function CleaningReview({ cleaningResult, items: legacyItems }: Props) {
             </p>
           </div>
           <span className={`flex-shrink-0 rounded-full border px-2.5 py-0.5 text-sm font-bold ${badge}`}>
-            {cs.confidence_grade ?? "—"}
+            {extractGradeLetter(cs.confidence_grade)}
           </span>
         </div>
       )}
