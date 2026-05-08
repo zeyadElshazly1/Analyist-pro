@@ -1,0 +1,489 @@
+order_id,order_date,customer_id,customer_name,region,product_category,product_name,quantity,unit_price,discount_pct,revenue,sales_rep
+ORD-10002,2024-11-08,GF0096,Greenfield Solutions,West,Apparel,Safety Vest Hi-Vis,4,25.21,0.05,95.8,Jordan Lee
+ORD-10003,2024-11-21,SA-0251,Summit Analytics,South,Electronics,USB-C Hub,2,34.57,0,69.14,Dario Ferri
+ORD-10006,2024-11-26,GF-0096,Greenfield Solutions,South,Office Supplies,Sticky Notes 12-Pack,7,9.04,0,63.28,Tom Buchan
+ORD-10009,2024-11-18,CG-0026,Crestwood Group,West,Apparel,Branded Polo Shirt,4,33.59,0.2,107.49,Jordan Lee
+ORD-10012,2024-11-14,IW-0759,Ironwood Industries,East,Electronics,USB-C Hub,12,35.51,0.15,362.2,Marcus Webb
+ORD-10014,2024-11-18,AD-0143,Apex Dynamics,East,Furniture,Filing Cabinet,4,176.83,0.15,601.22,Marcus Webb
+ORD-10015,2024-11-08,MP-0115,Meridian Partners,Central,Electronics,Webcam HD 1080p,12,87.4,0,1048.8,Elena Ruiz
+ORD-10019,2024-11-13,SV-0090,Sunrise Ventures,East,Furniture,Filing Cabinet,9,184.44,0,1659.96,Marcus Webb
+ORD-10023,2024-11-27,LT-0914,Lakeside Tech,Central,Sports & Outdoors,Foam Roller,2,23.86,0.2,38.18,Elena Ruiz
+ORD-10024,2024-11-06,SA-0251,Summit Analytics,South,Furniture,Filing Cabinet,8,175.52,0.1,1263.74,Dario Ferri
+ORD-10025,2024-11-20,PS-0760,Pinnacle Solutions,East,Electronics,Bluetooth Speaker,3,57.01,0.05,162.48,Tom Buchan
+ORD-10028,2024-11-29,SA-0251,Summit Analytics,Central,Apparel,Fleece Jacket,3,66.7,0,200.1,Priya Sharma
+ORD-10029,2024-11-19,HV-0605,Harborview Group,West,Furniture,Monitor Arm,4,87.66,0,350.64,Jordan Lee
+ORD-10030,2024-11-05,HV-0605,Harborview Group,South,Apparel,Fleece Jacket,11,67.89,0.05,709.45,Priya Sharma
+ORD-10032,2024-11-11,GF-0096,Greenfield Solutions,Central,Apparel,Fleece Jacket,12,64.33,0,771.96,Dario Ferri
+ORD-10035,2024-11-14,CS-0433,Cascade Systems,South,Furniture,Monitor Arm,1,90.48,0.1,81.43,Yuki Tanaka
+ORD-10037,2024-11-01,MP-0115,Meridian Partners,East,Electronics,USB-C Hub,2,34.07,0.1,61.33,Aisha Nkosi
+ORD-10041,2024-11-08,OE-0282,Oakwood Enterprises,South,Office Supplies,Stapler Heavy Duty,4,22.06,0,88.24,Yuki Tanaka
+ORD-10045,2024-11-13,NG-0559,Northgate Partners,West,Office Supplies,Label Maker,2,39.6,0,79.2,Yuki Tanaka
+ORD-10048,2024-11-22,PS-0760,Pinnacle Solutions,East,Office Supplies,Gel Pens Set,7,12.7,0,88.9,Aisha Nkosi
+ORD-10050,2024-11-26,CG-0026,Crestwood Group,Central,Electronics,Webcam HD 1080p,1,93.83,0,93.83,Yuki Tanaka
+ORD-10052,2024-11-07,HV-0605,Harborview Group,South,Office Supplies,Sticky Notes 12-Pack,3,8.54,0.05,24.34,Yuki Tanaka
+ORD-10056,2024-11-11,SV-0090,Sunrise Ventures,Central,Sports & Outdoors,Foam Roller,3,24.48,0,73.44,Tom Buchan
+ORD-10057,2024-11-18,TA0033,Thornhill Associates,West,Electronics,Webcam HD 1080p,8,93.76,0.1,675.07,Jordan Lee
+ORD-10059,2024-11-04,CS-0433,Cascade Systems,East,Office Supplies,Label Maker,4,38.47,0.05,146.19,Priya Sharma
+ORD-10061,2024-11-18,MP-0115,Meridian Partners,West,Office Supplies,Whiteboard Markers,6,14.55,0,87.3,Priya Sharma
+ORD-10064,2024-11-11,LT-0914,Lakeside Tech,East,Furniture,Monitor Arm,2,89.61,0,179.22,Marcus Webb
+ORD-10065,2024-11-04,BR-0229,Blue Ridge Consulting,Central,Furniture,Ergonomic Chair,4,342.46,0,1369.84,Tom Buchan
+ORD-10069,2024-11-25,VP-0105,Vantage Point Inc,West,Office Supplies,Label Maker,2,39.05,0,78.1,Jordan Lee
+ORD-10070,2024-11-21,OE-0282,Oakwood Enterprises,Central,Electronics,USB-C Hub,4,35.46,0.15,120.56,Tom Buchan
+ORD-10073,2024-11-15,RC-0755,Redstone Corp,West,Office Supplies,A4 Paper Ream,1,9.82,0,9.82,Jordan Lee
+ORD-10075,2024-11-19,RC-0755,Redstone Corp,East,Office Supplies,Stapler Heavy Duty,9,22.1,0,198.9,Marcus Webb
+ORD-10077,2024-11-18,IW-0759,Ironwood Industries,East,Electronics,USB-C Hub,1,33.98,0,33.98,Marcus Webb
+ORD-10079,2024-11-20,IW-0759,Ironwood Industries,Central,Electronics,Laptop Stand,3,51.54,0.2,123.7,Dario Ferri
+ORD-10083,2024-11-01,CA-0693,Clearwater Advisory,Central,Apparel,Company Cap,3,20.39,0.2,48.94,Dario Ferri
+ORD-10087,2024-11-26,HV-0605,Harborview Group,East,Sports & Outdoors,Yoga Mat,5,41.17,0.2,164.68,Aisha Nkosi
+ORD-10089,2024-11-08,BR-0229,Blue Ridge Consulting,South,Apparel,Company Cap,6,20.01,0.15,102.05,Dario Ferri
+ORD-10092,2024-11-28,PS-0760,Pinnacle Solutions,Central,Sports & Outdoors,Yoga Mat,1,40.38,0,40.38,Tom Buchan
+ORD-10095,2024-11-21,CA-0693,Clearwater Advisory,South,Office Supplies,Stapler Heavy Duty,10,22.43,0,224.3,Dario Ferri
+ORD-10099,2024-11-01,TA-0033,Thornhill Associates,East,Electronics,USB-C Hub,10,35.56,0,355.6,Aisha Nkosi
+ORD-10100,2024-11-21,VP-0105,Vantage Point Inc,Central,Furniture,Monitor Arm,9,87.22,0,784.98,Tom Buchan
+ORD-10104,2024-11-20,SA-0251,Summit Analytics,Central,Apparel,Company Cap,5,19.85,0,99.25,Tom Buchan
+ORD-10107,2024-11-14,SV-0090,Sunrise Ventures,East,Apparel,Fleece Jacket,11,63.58,0,699.38,Aisha Nkosi
+ORD-10110,2024-11-05,AD-0143,Apex Dynamics,Central,Electronics,Wireless Headphones,1,83.86,0,83.86,Tom Buchan
+ORD-10111,2024-11-14,RL-0031,Riverview Logistics,East,Furniture,Bookshelf 5-Tier,4,132.02,0,528.08,Aisha Nkosi
+ORD-10112,2024-11-27,PS-0760,Pinnacle Solutions,South,Apparel,Safety Vest Hi-Vis,1,24.36,0.1,21.92,Dario Ferri
+ORD-10113,2024-11-14,SV0090,Sunrise Ventures,East,Office Supplies,Label Maker,9,41.31,0.05,353.2,Elena Ruiz
+ORD-10117,2024-11-27,hv-0605,Harborview Group,South,Furniture,Monitor Arm,9,91.13,0.05,779.16,Yuki Tanaka
+ORD-10120,2024-11-14,VP-0105,Vantage Point Inc,East,Furniture,Filing Cabinet,2,173.71,0,347.42,Aisha Nkosi
+ORD-10124,2024-11-20,BR-0229,Blue Ridge Consulting,West,Furniture,Bookshelf 5-Tier,7,126.18,0,883.26,Priya Sharma
+ORD-10128,2024-11-13,RL-0031,Riverview Logistics,South,Furniture,Ergonomic Chair,6,358.86,0,2153.16,Jordan Lee
+ORD-10132,2024-11-18,TA-0033,Thornhill Associates,East,Furniture,Bookshelf 5-Tier,1,127.86,0.05,121.47,Aisha Nkosi
+ORD-10136,2024-11-21,SV-0090,Sunrise Ventures,South,Electronics,Bluetooth Speaker,10,60.97,0.1,548.73,Marcus Webb
+ORD-10137,2024-11-19,OE-0282,Oakwood Enterprises,South,Furniture,Monitor Arm,4,88.43,0.05,336.03,Yuki Tanaka
+ORD-10141,2024-11-11,NG-0559,Northgate Partners,East,Electronics,Webcam HD 1080p,1,87.51,0,87.51,Tom Buchan
+ORD-10142,2024-11-22,MP-0115,Meridian Partners,East,Apparel,Fleece Jacket,4,64.82,0,259.28,Jordan Lee
+ORD-10143,2024-11-18,BR-0229,Blue Ridge Consulting,South,Apparel,Fleece Jacket,10,68.0,0.1,612.0,Yuki Tanaka
+ORD-10144,2024-11-22,SA-0251,Summit Analytics,Central,Electronics,USB-C Hub,10,36.42,0.15,309.57,Tom Buchan
+ORD-10148,2024-11-13,BR-0229,Blue Ridge Consulting,West,Apparel,Fleece Jacket,2,66.76,0.15,113.49,Priya Sharma
+ORD-10149,2024-11-22,RL-0031,Riverview Logistics,West,Office Supplies,A4 Paper Ream,2,10.14,0.1,18.25,Jordan Lee
+ORD-10150,2024-11-26,HV-0605,Harborview Group,West,Furniture,Bookshelf 5-Tier,12,129.15,0,1549.8,Priya Sharma
+ORD-10153,2024-11-19,TA-0033,Thornhill Associates,South,Apparel,Company Cap,6,19.48,0.2,93.5,Yuki Tanaka
+ORD-10154,2024-11-11,SV-0090,Sunrise Ventures,South,Office Supplies,Stapler Heavy Duty,6,22.98,0,137.88,Aisha Nkosi
+ORD-10157,2024-11-07,BR-0229,Blue Ridge Consulting,East,Furniture,Filing Cabinet,12,180.99,0,2171.88,Elena Ruiz
+ORD-10159,2024-11-05,NG-0559,Northgate Partners,South,Furniture,Bookshelf 5-Tier,11,129.87,0.15,1214.28,Yuki Tanaka
+ORD-10160,2024-11-05,AD-0143,Apex Dynamics,South,Furniture,Filing Cabinet,6,180.95,0.05,1031.41,Dario Ferri
+ORD-10163,2024-11-14,TA-0033,Thornhill Associates,Central,Office Supplies,A4 Paper Ream,5,9.61,0,48.05,Elena Ruiz
+ORD-10165,2024-11-12,TA-0033,Thornhill Associates,East,Apparel,Company Cap,12,20.94,0.1,226.15,Marcus Webb
+ORD-10168,2024-11-29,BR-0229,Blue Ridge Consulting,Central,Electronics,Wireless Headphones,12,77.0,0.1,831.6,Tom Buchan
+ORD-10169,2024-11-29,TA0033,Thornhill Associates,Central,Electronics,Bluetooth Speaker,2,57.06,0.2,91.3,Tom Buchan
+ORD-10172,2024-11-14,SV-0090,Sunrise Ventures,Central,Electronics,Bluetooth Speaker,2,57.38,0.2,91.81,Elena Ruiz
+ORD-10176,2024-11-04,MP-115,Meridian Partners,East,Office Supplies,A4 Paper Ream,2,9.61,0,19.22,Marcus Webb
+ORD-10180,2024-11-19,GF-0096,Greenfield Solutions,Central,Office Supplies,Stapler Heavy Duty,5,23.19,0.2,92.76,Aisha Nkosi
+ORD-10184,2024-11-12,GF-0096,Greenfield Solutions,West,Apparel,Fleece Jacket,11,63.46,0,698.06,Jordan Lee
+ORD-10185,2024-11-07,SA-0251,Summit Analytics,West,Office Supplies,Label Maker,10,39.16,0.05,372.02,Priya Sharma
+ORD-10187,2024-11-11,VP-0105,Vantage Point Inc,South,Furniture,Monitor Arm,11,91.44,0.1,905.26,Yuki Tanaka
+ORD-10189,2024-11-14,TA-0033,Thornhill Associates,East,Sports & Outdoors,Resistance Bands Set,2,28.99,0,57.98,Aisha Nkosi
+ORD-10192,2024-11-19,RL-0031,Riverview Logistics,Central,Office Supplies,A4 Paper Ream,12,10.43,0.05,118.9,Tom Buchan
+ORD-10196,2024-11-14,GF-0096,Greenfield Solutions,South,Furniture,Monitor Arm,1,87.55,0,87.55,Jordan Lee
+ORD-10197,2024-11-29,RC-0755,Redstone Corp,East,Office Supplies,Label Maker,8,38.72,0,309.76,Jordan Lee
+ORD-10201,2024-11-19,HV-0605,Harborview Group,West,Office Supplies,A4 Paper Ream,11,10.35,0,113.85,Priya Sharma
+ORD-10204,2024-11-13,HV-0605,Harborview Group,Central,Office Supplies,Desk Organiser,9,24.88,0,223.92,Tom Buchan
+ORD-10207,2024-11-11,PS-0760,Pinnacle Solutions,West,Office Supplies,Whiteboard Markers,8,14.32,0.05,108.83,Dario Ferri
+ORD-10210,2024-11-19,HV-0605,Harborview Group,West,Furniture,Standing Desk,5,519.03,0.05,2465.39,Yuki Tanaka
+ORD-10214,2024-11-06,GF-0096,Greenfield Solutions,East,Furniture,Ergonomic Chair,9,335.75,0.05,2870.66,Aisha Nkosi
+ORD-10215,2024-11-14,PS-0760,Pinnacle Solutions,East,Apparel,Company Cap,7,19.96,0.2,111.78,Marcus Webb
+ORD-10219,2024-11-11,TA-0033,Thornhill Associates,East,Sports & Outdoors,Resistance Bands Set,2,30.81,0,61.62,Marcus Webb
+ORD-10223,2024-11-12,CS-0433,Cascade Systems,East,Apparel,Safety Vest Hi-Vis,3,25.09,0.05,71.51,Tom Buchan
+ORD-10226,2024-11-12,TA-0033,Thornhill Associates,South,Furniture,Standing Desk,12,503.58,0,6042.96,Dario Ferri
+ORD-10228,2024-11-26,NG-0559,Northgate Partners,West,Office Supplies,Desk Organiser,7,26.21,0.05,174.3,Jordan Lee
+ORD-10230,2024-11-15,MP-0115,Meridian Partners,East,Office Supplies,Desk Organiser,2,25.85,0.2,41.36,Marcus Webb
+ORD-10231,2024-11-15,SV-0090,Sunrise Ventures,West,Office Supplies,Label Maker,3,39.87,0,119.61,Jordan Lee
+ORD-10234,2024-11-12,LT0914,Lakeside Tech,South,Apparel,Safety Vest Hi-Vis,6,25.54,0.15,130.25,Priya Sharma
+ORD-10238,2024-11-26,MP-0115,Meridian Partners,West,Office Supplies,A4 Paper Ream,4,9.58,0.15,32.57,Priya Sharma
+ORD-10239,2024-11-21,ps-0760,Pinnacle Solutions,South,Furniture,Ergonomic Chair,1,360.35,0,360.35,Yuki Tanaka
+ORD-10242,2024-11-13,NG-0559,Northgate Partners,East,Office Supplies,Label Maker,3,38.69,0,116.07,Marcus Webb
+ORD-10246,2024-11-19,AD-0143,Apex Dynamics,West,Furniture,Monitor Arm,8,91.49,0,731.92,Yuki Tanaka
+ORD-10250,2024-11-27,TA-0033,Thornhill Associates,East,Sports & Outdoors,Yoga Mat,11,40.75,0.05,425.84,Marcus Webb
+ORD-10254,2024-11-26,BR-0229,Blue Ridge Consulting,West,Furniture,Filing Cabinet,6,176.32,0.1,952.13,Dario Ferri
+ORD-10257,2024-11-01,LT-0914,Lakeside Tech,,Apparel,Branded Polo Shirt,10,34.98,0.15,297.33,Tom Buchan
+ORD-10260,2024-11-22,AD-0143,Apex Dynamics,Central,Electronics,USB-C Hub,11,35.76,0.2,314.69,Elena Ruiz
+ORD-10262,2024-11-19,MP-0115,Meridian Partners,West,Office Supplies,Label Maker,3,41.63,0,124.89,Tom Buchan
+ORD-10265,2024-11-21,SA-0251,Summit Analytics,East,Office Supplies,A4 Paper Ream,9,10.4,0.1,84.24,Aisha Nkosi
+ORD-10267,2024-11-11,HV-0605,Harborview Group,Central,Furniture,Ergonomic Chair,8,337.42,0,2699.36,Tom Buchan
+ORD-10269,2024-11-26,LT-0914,Lakeside Tech,Central,Furniture,Monitor Arm,9,89.58,0,806.22,Elena Ruiz
+ORD-10272,2024-11-18,IW-0759,Ironwood Industries,West,Office Supplies,Whiteboard Markers,9,15.61,0,140.49,Priya Sharma
+ORD-10274,2024-11-20,SV-0090,Sunrise Ventures,Central,Electronics,Wireless Headphones,1,83.96,0,83.96,Tom Buchan
+ORD-10275,2024-11-05,TA-0033,Thornhill Associates,East,Furniture,Filing Cabinet,7,184.35,0.1,1161.4,Marcus Webb
+ORD-10277,2024-11-27,PS-0760,Pinnacle Solutions,South,Sports & Outdoors,Yoga Mat,1,39.47,0.15,33.55,Yuki Tanaka
+ORD-10281,2024-11-14,AD-0143,Apex Dynamics,Central,Office Supplies,Whiteboard Markers,11,14.33,0,157.63,Elena Ruiz
+ORD-10284,2024-11-07,PS-0760,Pinnacle Solutions,South,Electronics,Webcam HD 1080p,1,92.57,0,92.57,Yuki Tanaka
+ORD-10286,2024-11-29,RL-0031,Riverview Logistics,East,Apparel,Fleece Jacket,10,67.02,0,670.2,Aisha Nkosi
+ORD-10288,2024-11-12,OE-0282,Oakwood Enterprises,West,Sports & Outdoors,Resistance Bands Set,9,30.89,0,278.01,Jordan Lee
+ORD-10289,2024-11-20,BH-0655,Bright Horizons LLC,,Apparel,Fleece Jacket,10,61.84,0,618.4,Marcus Webb
+ORD-10292,2024-11-04,NG-0559,Northgate Partners,West,Office Supplies,Desk Organiser,6,25.22,0.1,136.19,Priya Sharma
+ORD-10296,2024-11-15,GF0096,Greenfield Solutions,West,Sports & Outdoors,Yoga Mat,8,41.85,0.15,284.58,Jordan Lee
+ORD-10297,2024-11-29,LT-0914,Lakeside Tech,South,Office Supplies,Stapler Heavy Duty,2,22.58,0,45.16,Dario Ferri
+ORD-10299,2024-11-04,RC-0755,Redstone Corp,Central,Office Supplies,A4 Paper Ream,8,10.1,0.1,72.72,Elena Ruiz
+ORD-10300,2024-11-22,PS-0760,Pinnacle Solutions,East,Sports & Outdoors,Foam Roller,6,24.87,0.2,119.38,Aisha Nkosi
+ORD-10304,2024-11-21,CA-0693,Clearwater Advisory,South,Furniture,Standing Desk,11,478.35,0.05,4998.76,Dario Ferri
+ORD-10305,2024-11-05,PS-0760,Pinnacle Solutions,South,Electronics,Webcam HD 1080p,9,91.52,0,823.68,Elena Ruiz
+ORD-10309,2024-11-13,NG-0559,Northgate Partners,South,Furniture,Ergonomic Chair,10,339.94,0.1,3059.46,Jordan Lee
+ORD-10313,2024-11-08,PS-0760,Pinnacle Solutions,East,Electronics,USB-C Hub,10,36.06,0,360.6,Elena Ruiz
+ORD-10314,2024-11-19,RC-0755,Redstone Corp,West,Apparel,Company Cap,6,19.0,0,114.0,Jordan Lee
+ORD-10316,2024-11-18,LT-0914,Lakeside Tech,West,Office Supplies,Sticky Notes 12-Pack,2,9.02,0.15,15.33,Priya Sharma
+ORD-10320,2024-11-14,CA-0693,Clearwater Advisory,East,Apparel,Branded Polo Shirt,1,33.79,0,33.79,Marcus Webb
+ORD-10321,2024-11-20,RC-0755,Redstone Corp,South,Office Supplies,Stapler Heavy Duty,7,22.34,0,156.38,Yuki Tanaka
+ORD-10322,2024-11-12,PS-0760,Pinnacle Solutions,Central,Office Supplies,Whiteboard Markers,11,14.31,0,157.41,Tom Buchan
+ORD-10326,2024-11-29,MP-0115,Meridian Partners,West,Sports & Outdoors,Resistance Bands Set,5,29.47,0,147.35,Jordan Lee
+ORD-10327,2024-11-15,NG-0559,Northgate Partners,East,Office Supplies,Gel Pens Set,9,13.42,0.1,108.7,Marcus Webb
+ORD-10330,2024-11-04,MP-0115,Meridian Partners,,Sports & Outdoors,Yoga Mat,10,40.28,0.05,382.66,Dario Ferri
+ORD-10334,2024-11-11,LT-0914,Lakeside Tech,East,Apparel,Safety Vest Hi-Vis,12,23.96,0,287.52,Jordan Lee
+ORD-10335,2024-11-11,RL-0031,Riverview Logistics,South,Furniture,Monitor Arm,12,87.48,0,1049.76,Dario Ferri
+ORD-10337,2024-11-04,PS-0760,Pinnacle Solutions,Central,Furniture,Standing Desk,4,482.31,0,1929.24,Aisha Nkosi
+ORD-10339,2024-11-07,OE-0282,Oakwood Enterprises,West,Apparel,Safety Vest Hi-Vis,8,25.15,0.2,160.96,Priya Sharma
+ORD-10343,2024-11-20,RL-0031,Riverview Logistics,South,Furniture,Bookshelf 5-Tier,2,129.24,0.05,245.56,Elena Ruiz
+ORD-10346,2024-11-22,RL-0031,Riverview Logistics,West,Electronics,Bluetooth Speaker,8,57.33,0,458.64,Jordan Lee
+ORD-10349,2024-11-04,CG-0026,Crestwood Group,South,Office Supplies,Desk Organiser,12,24.86,0,298.32,Dario Ferri
+ORD-10351,2024-11-12,HV0605,Harborview Group,Central,Electronics,USB-C Hub,12,35.01,0,420.12,Marcus Webb
+ORD-10353,2024-11-01,SV-0090,Sunrise Ventures,South,Office Supplies,A4 Paper Ream,6,9.88,0,59.28,Yuki Tanaka
+ORD-10356,2024-11-20,MP-0115,Meridian Partners,Central,Electronics,Bluetooth Speaker,5,61.33,0,306.65,Elena Ruiz
+ORD-10358,2024-11-12,rl-0031,Riverview Logistics,Central,Sports & Outdoors,Foam Roller,3,25.51,0.1,68.88,Marcus Webb
+ORD-10359,2024-11-12,LT-914,Lakeside Tech,South,Apparel,Branded Polo Shirt,11,34.72,0.15,324.63,Elena Ruiz
+ORD-10362,2024-11-01,VP-0105,Vantage Point Inc,Central,Sports & Outdoors,Foam Roller,4,26.24,0,104.96,Marcus Webb
+ORD-10364,2024-11-04,PS-0760,Pinnacle Solutions,West,Apparel,Fleece Jacket,10,62.74,0.05,596.03,Jordan Lee
+ORD-10366,2024-11-25,GF-0096,Greenfield Solutions,East,Electronics,USB-C Hub,11,34.07,0.15,318.55,Marcus Webb
+ORD-10370,2024-11-19,SV-0090,Sunrise Ventures,East,Furniture,Bookshelf 5-Tier,4,132.31,0,529.24,Aisha Nkosi
+ORD-10374,2024-11-14,VP-0105,Vantage Point Inc,South,Office Supplies,Gel Pens Set,4,13.13,0.2,42.02,Dario Ferri
+ORD-10377,2024-11-04,HV-0605,Harborview Group,Central,Electronics,Webcam HD 1080p,2,86.25,0,172.5,Elena Ruiz
+ORD-10379,2024-11-11,CS-0433,Cascade Systems,West,Sports & Outdoors,Resistance Bands Set,8,31.28,0,250.24,Marcus Webb
+ORD-10383,2024-11-04,CS-0433,Cascade Systems,Central,Sports & Outdoors,Yoga Mat,4,39.26,0,157.04,Elena Ruiz
+ORD-10384,2024-11-25,CA-0693,Clearwater Advisory,East,Furniture,Bookshelf 5-Tier,12,125.29,0.2,1202.78,Marcus Webb
+ORD-10388,2024-11-14,BH-0655,Bright Horizons LLC,,Electronics,Laptop Stand,9,50.53,0.15,386.55,Priya Sharma
+ORD-10392,2024-11-05,VP-0105,Vantage Point Inc,East,Electronics,Bluetooth Speaker,11,60.73,0.2,534.42,Aisha Nkosi
+ORD-10393,2024-11-05,HV-0605,Harborview Group,West,Office Supplies,Label Maker,3,39.71,0,119.13,Jordan Lee
+ORD-10396,2024-11-11,NG-0559,Northgate Partners,East,Electronics,USB-C Hub,2,35.14,0.1,63.25,Marcus Webb
+ORD-10397,2024-11-13,HV-0605,Harborview Group,West,Sports & Outdoors,Yoga Mat,12,39.42,0,473.04,Jordan Lee
+ORD-10398,2024-11-12,PS-0760,Pinnacle Solutions,Central,Furniture,Monitor Arm,11,92.96,0,1022.56,Elena Ruiz
+ORD-10402,2024-11-29,HV-0605,Harborview Group,West,Apparel,Safety Vest Hi-Vis,1,24.24,0,24.24,Marcus Webb
+ORD-10404,2024-11-27,CA-0693,Clearwater Advisory,Central,Sports & Outdoors,Foam Roller,5,25.62,0,128.1,Tom Buchan
+ORD-10406,2024-11-11,MP-0115,Meridian Partners,Central,Apparel,Safety Vest Hi-Vis,7,24.84,0.15,147.8,Elena Ruiz
+ORD-10410,2024-11-12,SA0251,Summit Analytics,South,Furniture,Filing Cabinet,5,172.48,0.2,689.92,Yuki Tanaka
+ORD-10414,2024-11-05,GF-0096,Greenfield Solutions,East,Furniture,Ergonomic Chair,6,342.84,0.15,1748.48,Marcus Webb
+ORD-10418,2024-11-19,NG-0559,Northgate Partners,East,Furniture,Ergonomic Chair,12,364.4,0.2,3498.24,Marcus Webb
+ORD-10422,2024-11-11,MP-0115,Meridian Partners,West,Office Supplies,Whiteboard Markers,12,14.48,0.15,147.7,Priya Sharma
+ORD-10423,2024-11-06,GF-0096,Greenfield Solutions,,Electronics,USB-C Hub,6,36.56,0.05,208.39,Yuki Tanaka
+ORD-10424,2024-11-19,SV-0090,Sunrise Ventures,Central,Apparel,Fleece Jacket,9,64.33,0,578.97,Elena Ruiz
+ORD-10427,2024-11-11,PS-0760,Pinnacle Solutions,West,Office Supplies,Stapler Heavy Duty,9,22.44,0,201.96,Jordan Lee
+ORD-10430,2024-11-20,BR-0229,Blue Ridge Consulting,Central,Sports & Outdoors,Resistance Bands Set,2,31.05,0,62.1,Tom Buchan
+ORD-10434,2024-11-07,SV-0090,Sunrise Ventures,Central,Office Supplies,Label Maker,2,40.16,0.1,72.29,Priya Sharma
+ORD-10437,2024-11-26,SA-0251,Summit Analytics,Central,Electronics,Laptop Stand,3,51.44,0,154.32,Elena Ruiz
+ORD-10438,2024-11-13,RL-0031,Riverview Logistics,Central,Sports & Outdoors,Resistance Bands Set,10,28.69,0,286.9,Elena Ruiz
+ORD-10442,2024-11-29,HV-0605,Harborview Group,Central,Electronics,USB-C Hub,11,34.81,0,382.91,Dario Ferri
+ORD-10445,2024-11-06,TA-0033,Thornhill Associates,West,Office Supplies,Desk Organiser,1,24.05,0.2,19.24,Marcus Webb
+ORD-10447,2024-11-12,SA-0251,Summit Analytics,West,Furniture,Filing Cabinet,5,172.41,0.2,689.64,Elena Ruiz
+ORD-10449,2024-11-19,TA-0033,Thornhill Associates,Central,Furniture,Filing Cabinet,2,182.53,0.1,328.55,Tom Buchan
+ORD-10451,2024-11-07,GF-0096,Greenfield Solutions,South,Electronics,Wireless Headphones,2,83.58,0,167.16,Elena Ruiz
+ORD-10454,2024-11-20,RL-0031,Riverview Logistics,South,Electronics,Webcam HD 1080p,5,94.1,0.15,399.93,Dario Ferri
+ORD-10458,2024-11-11,LT-0914,Lakeside Tech,Central,Office Supplies,Gel Pens Set,8,12.97,0.05,98.57,Tom Buchan
+ORD-10460,2024-11-12,OE-0282,Oakwood Enterprises,East,Apparel,Company Cap,7,20.51,0,143.57,Elena Ruiz
+ORD-10461,2024-11-12,SV-0090,Sunrise Ventures,West,Furniture,Ergonomic Chair,1,365.58,0,365.58,Priya Sharma
+ORD-10465,2024-11-11,SA-0251,Summit Analytics,South,Furniture,Standing Desk,8,498.33,0.1,3587.98,Elena Ruiz
+ORD-10468,2024-11-15,CG-0026,Crestwood Group,South,Sports & Outdoors,Resistance Bands Set,10,28.64,0,286.4,Dario Ferri
+ORD-10471,2024-11-15,HV-0605,Harborview Group,Central,Apparel,Safety Vest Hi-Vis,3,25.56,0,76.68,Tom Buchan
+ORD-10475,2024-11-13,LT0914,Lakeside Tech,West,Electronics,Webcam HD 1080p,5,88.97,0,444.85,Jordan Lee
+ORD-10479,2024-11-21,RC-0755,Redstone Corp,West,Electronics,USB-C Hub,6,36.53,0.1,197.26,Priya Sharma
+ORD-10481,2024-11-08,CS-0433,Cascade Systems,South,Electronics,Laptop Stand,12,51.51,0,618.12,Dario Ferri
+ORD-10485,2024-11-06,CS-0433,Cascade Systems,East,Office Supplies,Gel Pens Set,7,13.3,0.1,83.79,Marcus Webb
+ORD-10488,2024-11-19,cs-0433,Cascade Systems,South,Furniture,Ergonomic Chair,6,356.07,0,2136.42,Yuki Tanaka
+ORD-10492,2024-11-18,BH-0655,Bright Horizons LLC,South,Office Supplies,Desk Organiser,10,24.31,0.1,218.79,Yuki Tanaka
+ORD-10493,2024-11-18,SA-0251,Summit Analytics,South,Office Supplies,Sticky Notes 12-Pack,10,8.64,0.15,73.44,Dario Ferri
+ORD-10494,2024-11-14,NG-0559,Northgate Partners,East,Electronics,Webcam HD 1080p,10,93.34,0.05,886.73,Marcus Webb
+ORD-10495,2024-11-20,CS-0433,Cascade Systems,East,Sports & Outdoors,Foam Roller,9,24.52,0.05,209.65,Aisha Nkosi
+ORD-10497,2024-11-14,TA-0033,Thornhill Associates,Central,Office Supplies,Desk Organiser,12,25.35,0.15,258.57,Elena Ruiz
+ORD-10500,2024-11-19,BR-0229,Blue Ridge Consulting,East,Furniture,Monitor Arm,5,87.36,0.15,371.28,Aisha Nkosi
+ORD-10504,2024-11-12,IW-0759,Ironwood Industries,Central,Office Supplies,Whiteboard Markers,7,15.47,0.05,102.88,Tom Buchan
+ORD-10506,2024-11-11,VP-0105,Vantage Point Inc,West,Office Supplies,A4 Paper Ream,12,9.7,0.05,110.58,Priya Sharma
+ORD-10509,2024-11-28,RC-0755,Redstone Corp,East,Apparel,Fleece Jacket,4,66.09,0,264.36,Marcus Webb
+ORD-10511,2024-11-19,MP-0115,Meridian Partners,West,Apparel,Branded Polo Shirt,11,33.72,0.2,296.74,Priya Sharma
+ORD-10513,2024-11-13,HV-0605,Harborview Group,South,Apparel,Company Cap,6,20.28,0,121.68,Yuki Tanaka
+ORD-10514,2024-11-20,AD-0143,Apex Dynamics,East,Office Supplies,Desk Organiser,3,26.23,0,78.69,Jordan Lee
+ORD-10518,2024-11-22,SA-0251,Summit Analytics,West,Furniture,Filing Cabinet,2,176.11,0,352.22,Tom Buchan
+ORD-10522,2024-11-27,OE-0282,Oakwood Enterprises,South,Apparel,Company Cap,3,19.91,0.15,50.77,Yuki Tanaka
+ORD-10525,2024-11-21,BH-0655,Bright Horizons LLC,South,Office Supplies,Gel Pens Set,3,13.45,0.1,36.31,Elena Ruiz
+ORD-10529,2024-11-25,CS-0433,Cascade Systems,Central,Office Supplies,Gel Pens Set,3,12.76,0.05,36.37,Elena Ruiz
+ORD-10531,2024-11-01,LT-0914,Lakeside Tech,East,Furniture,Monitor Arm,5,92.0,0.1,414.0,Aisha Nkosi
+ORD-10532,2024-11-11,IW-0759,Ironwood Industries,East,Electronics,USB-C Hub,3,35.64,0.05,101.57,Aisha Nkosi
+ORD-10535,2024-11-20,VP0105,Vantage Point Inc,Central,Electronics,Laptop Stand,8,49.76,0,398.08,Elena Ruiz
+ORD-10538,2024-11-14,TA-0033,Thornhill Associates,Central,Apparel,Fleece Jacket,11,65.61,0.2,577.37,Yuki Tanaka
+ORD-10539,2024-11-15,CS-0433,Cascade Systems,Central,Office Supplies,Sticky Notes 12-Pack,9,8.72,0.1,70.63,Elena Ruiz
+ORD-10541,2024-11-07,CS-0433,Cascade Systems,South,Electronics,Webcam HD 1080p,8,93.58,0,748.64,Yuki Tanaka
+ORD-10545,2024-11-25,SV-0090,Sunrise Ventures,East,Office Supplies,Sticky Notes 12-Pack,9,9.15,0.05,78.23,Marcus Webb
+ORD-10548,2024-11-21,LT-0914,Lakeside Tech,South,Electronics,Wireless Headphones,1,78.75,0.05,74.81,Tom Buchan
+ORD-10549,2024-11-18,MP-115,Meridian Partners,Central,Electronics,Bluetooth Speaker,3,57.8,0.2,138.72,Priya Sharma
+ORD-10553,2024-11-13,LT-0914,Lakeside Tech,East,Furniture,Filing Cabinet,3,186.47,0.15,475.5,Yuki Tanaka
+ORD-10554,2024-11-07,TA-0033,Thornhill Associates,South,Apparel,Fleece Jacket,1,61.89,0.2,49.51,Dario Ferri
+ORD-10557,2024-11-14,TA-0033,Thornhill Associates,South,Apparel,Fleece Jacket,8,62.75,0,502.0,Dario Ferri
+ORD-10559,2024-11-28,PS-0760,Pinnacle Solutions,Central,Office Supplies,Sticky Notes 12-Pack,4,8.6,0,34.4,Jordan Lee
+ORD-10560,2024-11-14,MP-0115,Meridian Partners,East,Office Supplies,Gel Pens Set,9,13.32,0,119.88,Aisha Nkosi
+ORD-10561,2024-11-06,VP-0105,Vantage Point Inc,South,Office Supplies,Whiteboard Markers,10,15.25,0.2,122.0,Aisha Nkosi
+ORD-10564,2024-11-11,OE-0282,Oakwood Enterprises,East,Furniture,Filing Cabinet,10,187.4,0.15,1592.9,Aisha Nkosi
+ORD-10568,2024-11-18,MP-0115,Meridian Partners,South,Furniture,Filing Cabinet,6,178.48,0.15,910.25,Elena Ruiz
+ORD-10570,2024-11-12,SA-0251,Summit Analytics,South,Furniture,Standing Desk,8,503.11,0,4024.88,Yuki Tanaka
+ORD-10574,2024-11-18,OE-0282,Oakwood Enterprises,South,Electronics,Wireless Headphones,8,78.96,0.2,505.34,Dario Ferri
+ORD-10576,2024-11-04,LT-0914,Lakeside Tech,East,Apparel,Fleece Jacket,8,67.39,0,539.12,Jordan Lee
+ORD-10579,2024-11-12,BH-0655,Bright Horizons LLC,South,Electronics,Bluetooth Speaker,4,60.62,0.15,206.11,Aisha Nkosi
+ORD-10581,2024-11-13,AD-0143,Apex Dynamics,East,Office Supplies,Label Maker,6,39.04,0,234.24,Elena Ruiz
+ORD-10585,2024-11-14,HV-0605,Harborview Group,East,Furniture,Ergonomic Chair,10,340.23,0.2,2721.84,Elena Ruiz
+ORD-10587,2024-11-01,TA-0033,Thornhill Associates,South,Electronics,Laptop Stand,7,51.66,0.1,325.46,Dario Ferri
+ORD-10591,2024-11-18,CA-0693,Clearwater Advisory,East,Sports & Outdoors,Foam Roller,8,25.57,0,204.56,Tom Buchan
+ORD-10594,2024-11-07,TA0033,Thornhill Associates,South,Sports & Outdoors,Water Bottle 1L,9,20.67,0,186.03,Yuki Tanaka
+ORD-10595,2024-11-28,MP-0115,Meridian Partners,West,Apparel,Fleece Jacket,2,62.72,0.15,106.62,Jordan Lee
+ORD-10597,2024-11-15,IW-0759,Ironwood Industries,West,Office Supplies,Whiteboard Markers,8,14.97,0.15,101.8,Jordan Lee
+ORD-10598,2024-11-18,NG-0559,Northgate Partners,,Apparel,Company Cap,1,20.62,0.1,18.56,Jordan Lee
+ORD-10602,2024-11-25,SA-0251,Summit Analytics,South,Electronics,Laptop Stand,10,48.75,0.1,438.75,Priya Sharma
+ORD-10238,2024-11-26,MP-0115,Meridian Partners,West,Office Supplies,A4 Paper Ream,4,9.58,0.15,32.57,Priya Sharma
+ORD-10605,2024-11-11,lt-0914,Lakeside Tech,West,Office Supplies,Whiteboard Markers,4,14.58,0.15,49.57,Priya Sharma
+ORD-10606,2024-11-20,MP-0115,Meridian Partners,West,Furniture,Bookshelf 5-Tier,1,123.61,0.15,105.07,Priya Sharma
+ORD-10608,2024-11-05,NG-0559,Northgate Partners,Central,Apparel,Branded Polo Shirt,9,34.04,0,306.36,Elena Ruiz
+ORD-10612,2024-11-11,CG-0026,Crestwood Group,South,Office Supplies,Gel Pens Set,6,13.59,0,81.54,Tom Buchan
+ORD-10614,2024-11-21,LT-0914,Lakeside Tech,West,Office Supplies,Whiteboard Markers,7,15.58,0.15,92.7,Priya Sharma
+ORD-10617,2024-11-13,OE-0282,Oakwood Enterprises,West,Sports & Outdoors,Water Bottle 1L,2,19.45,0.05,36.95,Priya Sharma
+ORD-10618,2024-11-12,GF-0096,Greenfield Solutions,East,Electronics,USB-C Hub,8,34.04,0.05,258.7,Dario Ferri
+ORD-10622,2024-11-14,RL-0031,Riverview Logistics,South,Office Supplies,Desk Organiser,4,23.92,0.15,81.33,Dario Ferri
+ORD-10625,2024-11-06,OE-0282,Oakwood Enterprises,South,Electronics,Wireless Headphones,5,78.87,0.05,374.63,Dario Ferri
+ORD-10628,2024-11-05,CG-0026,Crestwood Group,East,Office Supplies,Whiteboard Markers,7,14.28,0,99.96,Marcus Webb
+ORD-10631,2024-11-18,GF-0096,Greenfield Solutions,West,Furniture,Bookshelf 5-Tier,2,135.2,0.15,229.84,Elena Ruiz
+ORD-10633,2024-11-18,SA-0251,Summit Analytics,South,Furniture,Monitor Arm,8,86.06,0,688.48,Dario Ferri
+ORD-10637,2024-11-11,VP-0105,Vantage Point Inc,East,Furniture,Standing Desk,12,499.78,0.15,5097.76,Yuki Tanaka
+ORD-10639,2024-11-14,OE-0282,Oakwood Enterprises,,Furniture,Filing Cabinet,7,186.51,0.2,1044.46,Tom Buchan
+ORD-10643,2024-11-12,GF-0096,Greenfield Solutions,East,Office Supplies,Label Maker,4,39.25,0.05,149.15,Marcus Webb
+ORD-10647,2024-11-29,VP-0105,Vantage Point Inc,West,Furniture,Monitor Arm,7,86.52,0,605.64,Yuki Tanaka
+ORD-10649,2024-11-19,TA-0033,Thornhill Associates,East,Office Supplies,Label Maker,8,38.83,0.15,264.04,Marcus Webb
+ORD-10652,2024-11-25,CG-0026,Crestwood Group,South,Electronics,USB-C Hub,4,35.55,0,142.2,Dario Ferri
+ORD-10656,2024-11-22,CG0026,Crestwood Group,East,Office Supplies,Whiteboard Markers,9,15.28,0.2,110.02,Yuki Tanaka
+ORD-10657,2024-11-22,IW-0759,Ironwood Industries,West,Furniture,Monitor Arm,3,91.0,0.15,232.05,Priya Sharma
+ORD-10661,2024-11-29,CA-0693,Clearwater Advisory,South,Electronics,Laptop Stand,9,50.08,0.15,383.11,Dario Ferri
+ORD-10663,2024-11-14,LT-0914,Lakeside Tech,Central,Office Supplies,Gel Pens Set,6,12.97,0,77.82,Yuki Tanaka
+ORD-10666,2024-11-14,CG-0026,Crestwood Group,South,Electronics,USB-C Hub,6,35.98,0.05,205.09,Priya Sharma
+ORD-10670,2024-11-12,PS-0760,Pinnacle Solutions,South,Office Supplies,Sticky Notes 12-Pack,5,9.27,0,46.35,Yuki Tanaka
+ORD-10671,2024-11-01,CA-0693,Clearwater Advisory,West,Electronics,Laptop Stand,9,50.25,0,452.25,Priya Sharma
+ORD-10674,2024-11-18,SV-0090,Sunrise Ventures,South,Electronics,Bluetooth Speaker,7,61.41,0,429.87,Aisha Nkosi
+ORD-10676,2024-11-14,NG-0559,Northgate Partners,,Electronics,USB-C Hub,12,36.03,0.2,345.89,Dario Ferri
+ORD-10677,2024-11-22,TA-0033,Thornhill Associates,East,Electronics,Wireless Headphones,5,82.89,0.15,352.28,Marcus Webb
+ORD-10680,2024-11-19,GF-0096,Greenfield Solutions,South,Furniture,Bookshelf 5-Tier,10,134.07,0,1340.7,Dario Ferri
+ORD-10683,2024-11-27,RL-0031,Riverview Logistics,West,Furniture,Standing Desk,5,484.14,0,2420.7,Priya Sharma
+ORD-10685,2024-11-15,NG-0559,Northgate Partners,East,Office Supplies,Stapler Heavy Duty,11,23.43,0.1,231.96,Marcus Webb
+ORD-10687,2024-11-18,HV-0605,Harborview Group,Central,Furniture,Bookshelf 5-Tier,10,134.74,0,1347.4,Tom Buchan
+ORD-10688,2024-11-15,BR-0229,Blue Ridge Consulting,Central,Office Supplies,Stapler Heavy Duty,11,22.8,0.05,238.26,Dario Ferri
+ORD-10692,2024-11-15,CG-0026,Crestwood Group,East,Furniture,Monitor Arm,4,88.09,0.1,317.12,Jordan Lee
+ORD-10144,2024-11-22,SA-0251,Summit Analytics,Central,Electronics,USB-C Hub,10,36.42,0.15,309.57,Tom Buchan
+ORD-10696,2024-11-18,HV-0605,Harborview Group,West,Furniture,Filing Cabinet,6,185.8,0.1,1003.32,Priya Sharma
+ORD-10697,2024-11-21,SV-0090,Sunrise Ventures,West,Apparel,Fleece Jacket,5,68.24,0.2,272.96,Aisha Nkosi
+ORD-10701,2024-11-11,CG-0026,Crestwood Group,West,Apparel,Fleece Jacket,4,66.53,0.2,212.9,Yuki Tanaka
+ORD-10704,2024-11-26,GF-0096,Greenfield Solutions,South,Electronics,Laptop Stand,4,47.79,0.2,152.93,Dario Ferri
+ORD-10707,2024-11-18,GF-0096,Greenfield Solutions,East,Apparel,Company Cap,10,20.89,0,208.9,Marcus Webb
+ORD-10708,2024-11-06,NG-0559,Northgate Partners,South,Electronics,Laptop Stand,4,51.05,0,204.2,Jordan Lee
+ORD-10710,2024-11-21,LT-0914,Lakeside Tech,South,Office Supplies,Label Maker,7,39.8,0.05,264.67,Yuki Tanaka
+ORD-10711,2024-11-13,RC0755,Redstone Corp,Central,Office Supplies,Whiteboard Markers,1,15.4,0.2,12.32,Elena Ruiz
+ORD-10712,2024-11-21,SV-0090,Sunrise Ventures,South,Furniture,Bookshelf 5-Tier,4,126.98,0.05,482.52,Elena Ruiz
+ORD-10715,2024-11-12,RL-0031,Riverview Logistics,East,Office Supplies,A4 Paper Ream,11,9.54,0.2,83.95,Marcus Webb
+ORD-10716,2024-11-19,SV-0090,Sunrise Ventures,West,Apparel,Safety Vest Hi-Vis,8,26.22,0,209.76,Jordan Lee
+ORD-10720,2024-11-08,OE-0282,Oakwood Enterprises,Central,Sports & Outdoors,Yoga Mat,2,39.43,0.15,67.03,Tom Buchan
+ORD-10721,2024-11-13,SA-0251,Summit Analytics,West,Furniture,Standing Desk,7,479.55,0.15,2853.32,Jordan Lee
+ORD-10722,2024-11-01,hv-0605,Harborview Group,West,Furniture,Bookshelf 5-Tier,1,132.53,0,132.53,Priya Sharma
+ORD-10723,2024-11-29,NG-0559,Northgate Partners,East,Furniture,Ergonomic Chair,12,336.08,0.2,3226.37,Marcus Webb
+ORD-10726,2024-11-13,VP-105,Vantage Point Inc,East,Apparel,Fleece Jacket,11,62.67,0.15,585.96,Marcus Webb
+ORD-10727,2024-11-19,SA-0251,Summit Analytics,South,Electronics,Laptop Stand,7,50.92,0.1,320.8,Yuki Tanaka
+ORD-10729,2024-11-05,PS-0760,Pinnacle Solutions,South,Apparel,Company Cap,7,20.57,0,143.99,Marcus Webb
+ORD-10731,2024-11-11,CG-0026,Crestwood Group,East,Office Supplies,Whiteboard Markers,5,15.65,0.2,62.6,Aisha Nkosi
+ORD-10732,2024-11-26,VP-0105,Vantage Point Inc,East,Office Supplies,Label Maker,7,40.57,0,283.99,Aisha Nkosi
+ORD-10734,2024-11-15,PS-0760,Pinnacle Solutions,East,Office Supplies,Whiteboard Markers,1,15.64,0,15.64,Aisha Nkosi
+ORD-10736,2024-11-13,RL-0031,Riverview Logistics,South,Office Supplies,Desk Organiser,8,23.92,0.2,153.09,Dario Ferri
+ORD-10737,2024-11-01,BR-0229,Blue Ridge Consulting,Central,Office Supplies,Label Maker,12,41.06,0.1,443.45,Jordan Lee
+ORD-10741,2024-11-20,CG-0026,Crestwood Group,East,Furniture,Filing Cabinet,4,173.79,0.2,556.13,Marcus Webb
+ORD-10744,2024-11-13,CG-0026,Crestwood Group,Central,Apparel,Fleece Jacket,1,62.3,0,62.3,Tom Buchan
+ORD-10748,2024-11-05,GF-0096,Greenfield Solutions,West,Apparel,Fleece Jacket,2,66.34,0,132.68,Jordan Lee
+ORD-10749,2024-11-07,IW-0759,Ironwood Industries,Central,Electronics,USB-C Hub,12,35.94,0,431.28,Tom Buchan
+ORD-10750,2024-11-12,NG-0559,Northgate Partners,Central,Furniture,Filing Cabinet,11,179.92,0,1979.12,Tom Buchan
+ORD-10753,2024-11-04,RL-0031,Riverview Logistics,East,Furniture,Ergonomic Chair,10,357.79,0.15,3041.22,Marcus Webb
+ORD-10755,2024-11-21,BH-0655,Bright Horizons LLC,East,Furniture,Bookshelf 5-Tier,6,135.45,0.05,772.06,Jordan Lee
+ORD-10757,2024-11-28,MP0115,Meridian Partners,South,Furniture,Monitor Arm,5,86.19,0.2,344.76,Dario Ferri
+ORD-10760,2024-11-06,MP-0115,Meridian Partners,East,Office Supplies,Sticky Notes 12-Pack,7,9.33,0,65.31,Marcus Webb
+ORD-10763,2024-11-22,VP-0105,Vantage Point Inc,Central,Office Supplies,A4 Paper Ream,4,10.05,0,40.2,Elena Ruiz
+ORD-10766,2024-11-21,AD-0143,Apex Dynamics,South,Sports & Outdoors,Resistance Bands Set,12,30.77,0.1,332.32,Yuki Tanaka
+ORD-10768,2024-11-06,NG-0559,Northgate Partners,West,Furniture,Ergonomic Chair,6,359.05,0,2154.3,Jordan Lee
+ORD-10772,2024-11-26,VP-0105,Vantage Point Inc,West,Sports & Outdoors,Foam Roller,8,26.17,0,209.36,Priya Sharma
+ORD-10774,2024-11-21,CG-0026,Crestwood Group,South,Office Supplies,A4 Paper Ream,8,9.58,0.15,65.14,Jordan Lee
+ORD-10775,2024-11-15,LT-0914,Lakeside Tech,West,Electronics,Laptop Stand,4,48.8,0,195.2,Priya Sharma
+ORD-10778,2024-11-28,LT-0914,Lakeside Tech,Central,Furniture,Ergonomic Chair,4,359.79,0,1439.16,Elena Ruiz
+ORD-10779,2024-11-06,SA-0251,Summit Analytics,South,Office Supplies,Whiteboard Markers,6,14.55,0.2,69.84,Yuki Tanaka
+ORD-10782,2024-11-14,PS-0760,Pinnacle Solutions,West,Office Supplies,Desk Organiser,12,25.25,0.15,257.55,Priya Sharma
+ORD-10784,2024-11-25,CA-0693,Clearwater Advisory,East,Furniture,Monitor Arm,7,85.93,0.1,541.36,Marcus Webb
+ORD-10787,2024-11-11,SA-0251,Summit Analytics,Central,Office Supplies,Whiteboard Markers,4,14.93,0,59.72,Jordan Lee
+ORD-10148,2024-11-13,BR-0229,Blue Ridge Consulting,West,Apparel,Fleece Jacket,2,66.76,0.15,113.49,Priya Sharma
+ORD-10789,2024-11-06,MP-0115,Meridian Partners,East,Apparel,Company Cap,11,20.86,0.15,195.04,Aisha Nkosi
+ORD-10790,2024-11-18,RC-0755,Redstone Corp,,Electronics,Bluetooth Speaker,3,62.42,0,187.26,Priya Sharma
+ORD-10793,2024-11-06,SV-0090,Sunrise Ventures,West,Office Supplies,Desk Organiser,12,24.98,0.05,284.77,Jordan Lee
+ORD-10797,2024-11-20,SA-0251,Summit Analytics,Central,Electronics,USB-C Hub,8,33.36,0,266.88,Elena Ruiz
+ORD-10799,2024-11-20,HV-0605,Harborview Group,East,Electronics,USB-C Hub,7,34.71,0,242.97,Dario Ferri
+ORD-10801,2024-11-19,TA-0033,Thornhill Associates,South,Furniture,Filing Cabinet,8,187.42,0,1499.36,Jordan Lee
+ORD-10804,2024-11-13,SA-0251,Summit Analytics,West,Electronics,USB-C Hub,1,36.71,0.2,29.37,Jordan Lee
+ORD-10807,2024-11-22,AD-0143,Apex Dynamics,East,Office Supplies,A4 Paper Ream,9,10.28,0.2,74.02,Marcus Webb
+ORD-10808,2024-11-21,AD-0143,Apex Dynamics,South,Apparel,Fleece Jacket,3,65.59,0,196.77,Dario Ferri
+ORD-10811,2024-11-27,BH-0655,Bright Horizons LLC,South,Electronics,Laptop Stand,8,49.04,0.1,353.09,Elena Ruiz
+ORD-10815,2024-11-01,MP0115,Meridian Partners,East,Electronics,Bluetooth Speaker,1,62.5,0,62.5,Aisha Nkosi
+ORD-10817,2024-11-25,CA-0693,Clearwater Advisory,Central,Electronics,Laptop Stand,10,52.08,0.15,442.68,Marcus Webb
+ORD-10818,2024-11-26,IW-0759,Ironwood Industries,West,Sports & Outdoors,Foam Roller,10,24.58,0,245.8,Priya Sharma
+ORD-10821,2024-11-06,SA-0251,Summit Analytics,East,Office Supplies,Gel Pens Set,12,13.24,0.1,142.99,Dario Ferri
+ORD-10824,2024-11-08,RL-0031,Riverview Logistics,East,Apparel,Company Cap,3,20.45,0,61.35,Marcus Webb
+ORD-10828,2024-11-26,RL-0031,Riverview Logistics,West,Furniture,Filing Cabinet,4,181.17,0.15,615.98,Jordan Lee
+ORD-10832,2024-11-06,CG-0026,Crestwood Group,East,Furniture,Ergonomic Chair,12,354.86,0.15,3619.57,Aisha Nkosi
+ORD-10835,2024-11-14,rc-0755,Redstone Corp,East,Electronics,USB-C Hub,2,33.24,0.15,56.51,Aisha Nkosi
+ORD-10839,2024-11-14,NG-0559,Northgate Partners,Central,Sports & Outdoors,Yoga Mat,9,38.4,0.05,328.32,Marcus Webb
+ORD-10843,2024-11-22,RL-0031,Riverview Logistics,East,Electronics,Wireless Headphones,5,78.54,0,392.7,Aisha Nkosi
+ORD-10844,2024-11-04,SA-0251,Summit Analytics,South,Electronics,Wireless Headphones,6,83.87,0.1,452.9,Dario Ferri
+ORD-10848,2024-11-20,NG-0559,Northgate Partners,East,Office Supplies,Sticky Notes 12-Pack,2,8.73,0,17.46,Marcus Webb
+ORD-10850,2024-11-13,TA-0033,Thornhill Associates,Central,Furniture,Ergonomic Chair,1,352.5,0.05,334.88,Tom Buchan
+ORD-10854,2024-11-06,IW-0759,Ironwood Industries,West,Furniture,Filing Cabinet,8,172.74,0,1381.92,Jordan Lee
+ORD-10856,2024-11-07,VP-0105,Vantage Point Inc,West,Electronics,Bluetooth Speaker,8,62.36,0.05,473.94,Priya Sharma
+ORD-10859,2024-11-05,TA-0033,Thornhill Associates,South,Sports & Outdoors,Yoga Mat,3,38.17,0.05,108.78,Dario Ferri
+ORD-10358,2024-11-12,rl-0031,Riverview Logistics,Central,Sports & Outdoors,Foam Roller,3,25.51,0.1,68.88,Marcus Webb
+ORD-10863,2024-11-14,AD-0143,Apex Dynamics,Central,Electronics,Wireless Headphones,2,78.74,0.15,133.86,Tom Buchan
+ORD-10867,2024-11-29,RL-0031,Riverview Logistics,East,Apparel,Safety Vest Hi-Vis,9,25.91,0.15,198.21,Aisha Nkosi
+ORD-10871,2024-11-18,AD-0143,Apex Dynamics,South,Furniture,Ergonomic Chair,9,364.01,0.1,2948.48,Yuki Tanaka
+ORD-10873,2024-11-06,SV-0090,Sunrise Ventures,West,Sports & Outdoors,Resistance Bands Set,3,29.76,0,89.28,Marcus Webb
+ORD-10877,2024-11-08,OE-0282,Oakwood Enterprises,Central,Apparel,Branded Polo Shirt,2,35.19,0.05,66.86,Tom Buchan
+ORD-10880,2024-11-26,CS-0433,Cascade Systems,West,Apparel,Safety Vest Hi-Vis,2,24.11,0.05,45.81,Yuki Tanaka
+ORD-10881,2024-11-28,RL-0031,Riverview Logistics,South,Sports & Outdoors,Foam Roller,5,25.38,0.05,120.55,Priya Sharma
+ORD-10885,2024-11-01,RC0755,Redstone Corp,South,Office Supplies,Label Maker,7,39.57,0,276.99,Dario Ferri
+ORD-10888,2024-11-20,MP-0115,Meridian Partners,East,Electronics,USB-C Hub,5,36.19,0,180.95,Yuki Tanaka
+ORD-10889,2024-11-29,AD-0143,Apex Dynamics,East,Apparel,Company Cap,5,19.82,0.15,84.23,Marcus Webb
+ORD-10890,2024-11-07,BR-0229,Blue Ridge Consulting,South,Apparel,Company Cap,1,20.57,0.1,18.51,Dario Ferri
+ORD-10891,2024-11-12,CS-0433,Cascade Systems,South,Apparel,Branded Polo Shirt,3,36.3,0,108.9,Dario Ferri
+ORD-10893,2024-11-25,AD-0143,Apex Dynamics,West,Sports & Outdoors,Resistance Bands Set,5,30.96,0,154.8,Jordan Lee
+ORD-10897,2024-11-19,PS-0760,Pinnacle Solutions,West,Office Supplies,Stapler Heavy Duty,3,22.93,0.2,55.03,Jordan Lee
+ORD-10900,2024-11-12,RC-0755,Redstone Corp,West,Furniture,Standing Desk,10,523.24,0.2,4185.92,Priya Sharma
+ORD-10902,2024-11-20,BR-0229,Blue Ridge Consulting,Central,Office Supplies,Desk Organiser,11,24.93,0,274.23,Tom Buchan
+ORD-10904,2024-11-20,GF-0096,Greenfield Solutions,West,Office Supplies,A4 Paper Ream,12,10.13,0.15,103.33,Jordan Lee
+ORD-10908,2024-11-27,IW-759,Ironwood Industries,South,Office Supplies,Label Maker,9,40.48,0.2,291.46,Yuki Tanaka
+ORD-10909,2024-11-01,IW-0759,Ironwood Industries,Central,Electronics,Wireless Headphones,6,81.11,0,486.66,Tom Buchan
+ORD-10912,2024-11-11,VP-0105,Vantage Point Inc,East,Apparel,Branded Polo Shirt,10,35.55,0.05,337.72,Aisha Nkosi
+ORD-10914,2024-11-21,HV-0605,Harborview Group,Central,Office Supplies,Stapler Heavy Duty,12,23.18,0,278.16,Tom Buchan
+ORD-10916,2024-11-12,AD-0143,Apex Dynamics,Central,Furniture,Monitor Arm,3,91.41,0.2,219.38,Yuki Tanaka
+ORD-10918,2024-11-11,HV-0605,Harborview Group,East,Apparel,Fleece Jacket,11,65.99,0,725.89,Marcus Webb
+ORD-10920,2024-11-13,VP-0105,Vantage Point Inc,East,Furniture,Filing Cabinet,5,186.31,0.05,884.97,Dario Ferri
+ORD-10924,2024-11-04,RL-0031,Riverview Logistics,West,Electronics,Wireless Headphones,11,80.23,0.05,838.4,Priya Sharma
+ORD-10928,2024-11-04,OE-0282,Oakwood Enterprises,Central,Office Supplies,Whiteboard Markers,8,14.71,0,117.68,Marcus Webb
+ORD-10930,2024-11-22,HV-0605,Harborview Group,Central,Electronics,Wireless Headphones,1,78.18,0.05,74.27,Elena Ruiz
+ORD-10932,2024-11-18,SA-0251,Summit Analytics,West,Electronics,Bluetooth Speaker,11,59.41,0.05,620.83,Yuki Tanaka
+ORD-10936,2024-11-13,MP-0115,Meridian Partners,East,Sports & Outdoors,Yoga Mat,9,38.06,0,342.54,Aisha Nkosi
+ORD-10937,2024-11-19,AD-0143,Apex Dynamics,East,Furniture,Standing Desk,2,500.16,0.05,950.3,Aisha Nkosi
+ORD-10940,2024-11-07,MP0115,Meridian Partners,East,Apparel,Company Cap,7,20.98,0.15,124.83,Tom Buchan
+ORD-10943,2024-11-29,HV-0605,Harborview Group,West,Sports & Outdoors,Foam Roller,1,24.3,0,24.3,Elena Ruiz
+ORD-10945,2024-11-08,BH-0655,Bright Horizons LLC,East,Apparel,Branded Polo Shirt,7,34.14,0.15,203.13,Marcus Webb
+ORD-10946,2024-11-19,MP-0115,Meridian Partners,West,Electronics,Wireless Headphones,7,79.03,0.05,525.55,Priya Sharma
+ORD-10949,2024-11-15,OE-0282,Oakwood Enterprises,East,Office Supplies,A4 Paper Ream,7,9.59,0.15,57.06,Aisha Nkosi
+ORD-10952,2024-11-19,OE-0282,Oakwood Enterprises,West,Office Supplies,Whiteboard Markers,2,14.41,0,28.82,Dario Ferri
+ORD-10953,2024-11-15,GF-0096,Greenfield Solutions,South,Sports & Outdoors,Yoga Mat,12,39.17,0.05,446.54,Aisha Nkosi
+ORD-10337,2024-11-04,PS-0760,Pinnacle Solutions,Central,Furniture,Standing Desk,4,482.31,0,1929.24,Aisha Nkosi
+ORD-10954,2024-11-18,BR-0229,Blue Ridge Consulting,South,Electronics,Wireless Headphones,2,80.58,0.2,128.93,Yuki Tanaka
+ORD-10958,2024-11-06,cg-0026,Crestwood Group,West,Electronics,USB-C Hub,11,34.84,0,383.24,Priya Sharma
+ORD-10961,2024-11-11,MP-0115,Meridian Partners,East,Apparel,Company Cap,11,19.84,0,218.24,Priya Sharma
+ORD-10962,2024-11-05,MP-0115,Meridian Partners,South,Office Supplies,A4 Paper Ream,6,10.44,0.05,59.51,Jordan Lee
+ORD-10965,2024-11-26,CG-0026,Crestwood Group,West,Electronics,Bluetooth Speaker,8,62.0,0,496.0,Elena Ruiz
+ORD-10969,2024-11-19,NG-0559,Northgate Partners,East,Office Supplies,Sticky Notes 12-Pack,40,8.63,0.15,293.42,Marcus Webb
+ORD-10973,2024-11-19,RL-0031,Riverview Logistics,South,Furniture,Monitor Arm,29,93.25,0.1,2433.83,Yuki Tanaka
+ORD-10975,2024-11-19,HV-0605,Harborview Group,South,Office Supplies,Sticky Notes 12-Pack,12,9.13,0.2,87.65,Yuki Tanaka
+ORD-10976,2024-11-19,CS-0433,Cascade Systems,South,Apparel,Branded Polo Shirt,23,34.93,0.15,682.88,Aisha Nkosi
+ORD-10980,2024-11-19,OE-0282,Oakwood Enterprises,,Sports & Outdoors,Foam Roller,37,25.91,0.25,719.0,Jordan Lee
+ORD-10981,2024-11-19,HV-0605,Harborview Group,Central,Sports & Outdoors,Water Bottle 1L,26,20.09,0.15,443.99,Elena Ruiz
+ORD-10985,2024-11-19,LT-0914,Lakeside Tech,East,Office Supplies,Whiteboard Markers,24,15.52,0.1,335.23,Aisha Nkosi
+ORD-10989,2024-11-19,CA-0693,Clearwater Advisory,South,Office Supplies,Sticky Notes 12-Pack,22,8.57,0.25,141.41,Priya Sharma
+ORD-10990,2024-11-19,CG-0026,Crestwood Group,South,Electronics,Bluetooth Speaker,40,59.17,0.2,1893.44,Tom Buchan
+ORD-10991,2024-11-19,AD-0143,Apex Dynamics,South,Apparel,Safety Vest Hi-Vis,32,25.53,0.2,653.57,Yuki Tanaka
+ORD-10992,2024-11-19,PS-0760,Pinnacle Solutions,,Furniture,Monitor Arm,27,91.81,0.2,1983.1,Aisha Nkosi
+ORD-10993,2024-11-19,SA0251,Summit Analytics,South,Apparel,Safety Vest Hi-Vis,13,25.27,0.2,262.81,Yuki Tanaka
+ORD-10995,2024-11-19,PS-0760,Pinnacle Solutions,South,Apparel,Fleece Jacket,32,62.44,0.2,1598.46,Dario Ferri
+ORD-10999,2024-11-19,MP-0115,Meridian Partners,Central,Office Supplies,Whiteboard Markers,40,15.69,0.15,533.46,Priya Sharma
+ORD-11000,2024-11-19,CS-0433,Cascade Systems,West,Office Supplies,Whiteboard Markers,25,15.28,0.15,324.7,Jordan Lee
+ORD-11002,2024-11-19,OE-0282,Oakwood Enterprises,West,Office Supplies,A4 Paper Ream,26,9.91,0.25,193.25,Priya Sharma
+ORD-11004,2024-11-19,RC-0755,Redstone Corp,East,Office Supplies,Gel Pens Set,14,13.12,0.25,137.76,Dario Ferri
+ORD-11007,2024-11-19,TA-0033,Thornhill Associates,Central,Sports & Outdoors,Resistance Bands Set,16,30.36,0.15,412.9,Elena Ruiz
+ORD-11010,2024-11-19,IW-0759,Ironwood Industries,South,Sports & Outdoors,Resistance Bands Set,26,30.62,0.2,636.9,Marcus Webb
+ORD-11013,2024-11-19,TA-0033,Thornhill Associates,South,Sports & Outdoors,Foam Roller,31,25.93,0.2,643.06,Yuki Tanaka
+ORD-11017,2024-11-19,BH-0655,Bright Horizons LLC,,Electronics,Wireless Headphones,16,81.99,0.2,1049.47,Priya Sharma
+ORD-11019,2024-11-19,VP-0105,Vantage Point Inc,Central,Electronics,USB-C Hub,16,34.5,0.1,496.8,Tom Buchan
+ORD-11023,2024-11-19,PS-0760,Pinnacle Solutions,East,Office Supplies,Gel Pens Set,26,13.24,0.2,275.39,Aisha Nkosi
+ORD-11024,2024-11-19,LT-0914,Lakeside Tech,South,Apparel,Company Cap,40,19.02,0.1,684.72,Dario Ferri
+ORD-11027,2024-11-19,BR-0229,Blue Ridge Consulting,Central,Apparel,Company Cap,34,20.54,0.15,593.61,Yuki Tanaka
+ORD-11029,2024-11-19,VP-0105,Vantage Point Inc,South,Office Supplies,Gel Pens Set,40,13.3,0.15,452.2,Yuki Tanaka
+ORD-11030,2024-11-19,LT-0914,Lakeside Tech,West,Office Supplies,Gel Pens Set,15,12.35,0.2,148.2,Jordan Lee
+ORD-11034,2024-11-19,OE-0282,Oakwood Enterprises,West,Furniture,Ergonomic Chair,34,349.66,0.2,9510.75,Jordan Lee
+ORD-11037,2024-11-19,CG-0026,Crestwood Group,Central,Sports & Outdoors,Water Bottle 1L,35,19.82,0.15,589.64,Elena Ruiz
+ORD-11041,2024-11-19,CG-0026,Crestwood Group,Central,Electronics,USB-C Hub,20,34.27,0.2,548.32,Elena Ruiz
+ORD-11045,2024-11-19,TA-0033,Thornhill Associates,West,Furniture,Standing Desk,38,522.93,0.15,16890.64,Jordan Lee
+ORD-11048,2024-11-19,LT-0914,Lakeside Tech,West,Office Supplies,A4 Paper Ream,10,10.0,0.2,80.0,Priya Sharma
+ORD-11052,2024-11-19,HV-0605,Harborview Group,West,Office Supplies,A4 Paper Ream,26,10.44,0.1,244.3,Jordan Lee
+ORD-11054,2024-11-19,TA-0033,Thornhill Associates,West,Electronics,Laptop Stand,37,51.67,0.25,1433.84,Jordan Lee
+ORD-11056,2024-11-19,TA0033,Thornhill Associates,South,Sports & Outdoors,Resistance Bands Set,10,30.64,0.25,229.8,Dario Ferri
+ORD-11057,2024-11-19,CG-0026,Crestwood Group,West,Apparel,Branded Polo Shirt,28,36.43,0.15,867.03,Priya Sharma
+ORD-11061,2024-11-19,LT-0914,Lakeside Tech,South,Office Supplies,Sticky Notes 12-Pack,22,9.02,0.1,178.6,Yuki Tanaka
+ORD-11062,2024-11-19,RL-0031,Riverview Logistics,West,Electronics,Webcam HD 1080p,13,92.57,0.2,962.73,Jordan Lee
+ORD-11065,2024-11-19,GF-0096,Greenfield Solutions,West,Sports & Outdoors,Foam Roller,22,24.92,0.1,493.42,Priya Sharma
+ORD-11067,2024-11-19,OE-0282,Oakwood Enterprises,Central,Furniture,Standing Desk,19,522.86,0.2,7947.47,Dario Ferri
+ORD-11068,2024-11-18,TA-0033,Thornhill Associates,East,Electronics,Webcam HD 1080p,7,90.42,0.1,569.65,Marcus Webb
+ORD-11069,2024-11-12,IW-0759,Ironwood Industries,East,Office Supplies,Whiteboard Markers,3,14.52,0,43.56,Aisha Nkosi
+ORD-11072,2024-11-07,SA-0251,Summit Analytics,South,Office Supplies,Whiteboard Markers,2,15.25,0,30.5,Jordan Lee
+ORD-11075,2024-11-05,rl-0031,Riverview Logistics,East,Electronics,Laptop Stand,2,50.59,0,101.18,Yuki Tanaka
+ORD-11077,2024-11-12,SV-0090,Sunrise Ventures,Central,Furniture,Filing Cabinet,3,181.19,0.1,489.21,Elena Ruiz
+ORD-11080,2024-11-28,SA-0251,Summit Analytics,West,Apparel,Safety Vest Hi-Vis,5,24.64,0.2,98.56,Jordan Lee
+ORD-11083,2024-11-26,SV-090,Sunrise Ventures,South,Furniture,Filing Cabinet,2,182.61,0,365.22,Yuki Tanaka
+ORD-11084,2024-11-25,OE-0282,Oakwood Enterprises,East,Sports & Outdoors,Water Bottle 1L,12,20.77,0,249.24,Aisha Nkosi
+ORD-11085,2024-11-25,RL-0031,Riverview Logistics,West,Sports & Outdoors,Yoga Mat,9,39.88,0.1,323.03,Dario Ferri
+ORD-11087,2024-11-13,AD-0143,Apex Dynamics,Central,Office Supplies,Sticky Notes 12-Pack,7,8.99,0,62.93,Tom Buchan
+ORD-11089,2024-11-26,GF-0096,Greenfield Solutions,West,Office Supplies,Gel Pens Set,10,13.2,0.1,118.8,Marcus Webb
+ORD-11091,2024-11-21,HV-0605,Harborview Group,,Apparel,Fleece Jacket,2,64.14,0,128.28,Elena Ruiz
+ORD-11092,2024-11-20,CS-0433,Cascade Systems,Central,Sports & Outdoors,Water Bottle 1L,1,19.64,0.15,16.69,Elena Ruiz
+ORD-11095,2024-11-25,RC-0755,Redstone Corp,East,Furniture,Filing Cabinet,11,172.39,0.2,1517.03,Marcus Webb
+ORD-11098,2024-11-13,AD-0143,Apex Dynamics,South,Apparel,Safety Vest Hi-Vis,8,23.76,0.1,171.07,Dario Ferri
+ORD-10438,2024-11-13,RL-0031,Riverview Logistics,Central,Sports & Outdoors,Resistance Bands Set,10,28.69,0,286.9,Elena Ruiz
+ORD-11100,2024-11-14,AD-0143,Apex Dynamics,West,Furniture,Standing Desk,3,493.1,0,1479.3,Priya Sharma
+ORD-11101,2024-11-20,NG-0559,Northgate Partners,Central,Office Supplies,Stapler Heavy Duty,8,23.2,0,185.6,Elena Ruiz
+ORD-10434,2024-11-07,SV-0090,Sunrise Ventures,Central,Office Supplies,Label Maker,2,40.16,0.1,72.29,Priya Sharma
+ORD-11105,2024-11-01,MP0115,Meridian Partners,East,Electronics,Webcam HD 1080p,1,86.81,0.1,78.13,Marcus Webb
+ORD-11107,2024-11-11,SA-0251,Summit Analytics,South,Office Supplies,Sticky Notes 12-Pack,12,9.14,0.15,93.23,Dario Ferri
+ORD-11110,2024-11-28,BR-0229,Blue Ridge Consulting,South,Office Supplies,Stapler Heavy Duty,3,23.75,0,71.25,Yuki Tanaka
+ORD-11112,2024-11-22,SA-0251,Summit Analytics,Central,Office Supplies,Stapler Heavy Duty,10,22.0,0.1,198.0,Tom Buchan
+ORD-11116,2024-11-13,PS-0760,Pinnacle Solutions,West,Apparel,Safety Vest Hi-Vis,3,23.98,0.1,64.75,Jordan Lee
+ORD-10488,2024-11-19,cs-0433,Cascade Systems,South,Furniture,Ergonomic Chair,6,356.07,0,2136.42,Yuki Tanaka
+ORD-11120,2024-11-27,GF-0096,Greenfield Solutions,South,Office Supplies,Sticky Notes 12-Pack,2,9.13,0.05,17.35,Jordan Lee
+ORD-11121,2024-11-27,NG-0559,Northgate Partners,South,Electronics,Webcam HD 1080p,7,93.94,0,657.58,Dario Ferri
+ORD-11125,2024-11-22,LT-0914,Lakeside Tech,Central,Apparel,Branded Polo Shirt,7,34.13,0,238.91,Elena Ruiz
+ORD-11127,2024-11-27,CG-0026,Crestwood Group,Central,Office Supplies,A4 Paper Ream,4,10.2,0,40.8,Tom Buchan
+ORD-11128,2024-11-18,PS-0760,Pinnacle Solutions,West,Electronics,USB-C Hub,7,33.61,0,235.27,Jordan Lee
+ORD-11132,2024-11-20,RC-0755,Redstone Corp,East,Office Supplies,Whiteboard Markers,5,14.84,0.15,63.07,Tom Buchan
+ORD-11134,2024-11-14,TA-0033,Thornhill Associates,South,Office Supplies,Stapler Heavy Duty,5,23.17,0,115.85,Yuki Tanaka
+ORD-11138,2024-11-21,PS-0760,Pinnacle Solutions,East,Office Supplies,Gel Pens Set,2,13.0,0,26.0,Aisha Nkosi
+ORD-11141,2024-11-22,GF-0096,Greenfield Solutions,West,Sports & Outdoors,Water Bottle 1L,2,19.28,0.2,30.85,Jordan Lee
+ORD-11145,2024-11-05,RC-0755,Redstone Corp,East,Office Supplies,Label Maker,7,40.45,0.05,268.99,Aisha Nkosi
+ORD-11148,2024-11-21,GF-0096,Greenfield Solutions,East,Office Supplies,Stapler Heavy Duty,1,23.8,0,23.8,Jordan Lee
+ORD-11151,2024-11-07,GF-0096,Greenfield Solutions,East,Office Supplies,A4 Paper Ream,4,9.49,0.15,32.27,Aisha Nkosi
+ORD-11153,2024-11-05,RC-0755,Redstone Corp,South,Furniture,Filing Cabinet,4,171.27,0.1,616.57,Dario Ferri
+ORD-11154,2024-11-27,TA-0033,Thornhill Associates,Central,Office Supplies,Whiteboard Markers,6,15.68,0,94.08,Tom Buchan
+ORD-11157,2024-11-08,BR-0229,Blue Ridge Consulting,Central,Electronics,Laptop Stand,7,48.02,0.1,302.53,Yuki Tanaka
+ORD-11158,2024-11-15,CA-0693,Clearwater Advisory,Central,Apparel,Company Cap,12,20.92,0.05,238.49,Priya Sharma
+ORD-11162,2024-11-22,CA-0693,Clearwater Advisory,South,Sports & Outdoors,Water Bottle 1L,8,19.51,0,156.08,Yuki Tanaka
+ORD-11166,2024-11-19,AD-0143,Apex Dynamics,Central,Sports & Outdoors,Water Bottle 1L,12,19.52,0.2,187.39,Aisha Nkosi
+ORD-11169,2024-11-05,CA0693,Clearwater Advisory,West,Electronics,USB-C Hub,6,36.37,0,218.22,Priya Sharma
+ORD-11172,2024-11-07,BR-0229,Blue Ridge Consulting,South,Furniture,Standing Desk,5,486.45,0,2432.25,Yuki Tanaka
+ORD-11174,2024-11-25,IW-0759,Ironwood Industries,West,Sports & Outdoors,Foam Roller,10,25.65,0,256.5,Marcus Webb
+ORD-11175,2024-11-26,IW-0759,Ironwood Industries,Central,Sports & Outdoors,Yoga Mat,8,41.93,0,335.44,Elena Ruiz
+ORD-11178,2024-11-13,RL-0031,Riverview Logistics,East,Apparel,Safety Vest Hi-Vis,9,25.0,0,225.0,Marcus Webb
+ORD-11182,2024-11-26,SA-0251,Summit Analytics,Central,Office Supplies,A4 Paper Ream,12,9.5,0,114.0,Yuki Tanaka
+ORD-11184,2024-11-13,PS-0760,Pinnacle Solutions,Central,Apparel,Fleece Jacket,9,63.28,0,569.52,Elena Ruiz
+ORD-11188,2024-11-28,CA-0693,Clearwater Advisory,Central,Office Supplies,Stapler Heavy Duty,12,22.7,0.2,217.92,Elena Ruiz
+ORD-11192,2024-11-11,SA-0251,Summit Analytics,South,Furniture,Ergonomic Chair,12,360.63,0,4327.56,Marcus Webb
+ORD-11196,2024-11-26,BR-0229,Blue Ridge Consulting,South,Electronics,Wireless Headphones,3,79.99,0.05,227.97,Marcus Webb
+ORD-11199,2024-11-22,vp-0105,Vantage Point Inc,Central,Office Supplies,Stapler Heavy Duty,2,22.22,0.15,37.77,Tom Buchan
+ORD-11201,2024-11-25,HV-0605,Harborview Group,West,Furniture,Monitor Arm,6,90.51,0.1,488.75,Priya Sharma
+ORD-11204,2024-11-12,NG-0559,Northgate Partners,West,Office Supplies,Whiteboard Markers,4,15.1,0.1,54.36,Priya Sharma
+ORD-11206,2024-11-29,VP-0105,Vantage Point Inc,Central,Office Supplies,Desk Organiser,12,25.96,0.05,295.94,Elena Ruiz
+ORD-11210,2024-11-19,SV-0090,Sunrise Ventures,South,Apparel,Company Cap,7,20.21,0.15,120.25,Marcus Webb
+ORD-11214,2024-11-26,CG-0026,Crestwood Group,West,Furniture,Monitor Arm,11,91.88,0,1010.68,Priya Sharma
+ORD-11218,2024-11-11,SV-0090,Sunrise Ventures,Central,Office Supplies,Stapler Heavy Duty,7,22.26,0,155.82,Elena Ruiz
+ORD-11219,2024-11-06,AD-0143,Apex Dynamics,South,Apparel,Fleece Jacket,3,62.41,0.05,177.87,Tom Buchan
+ORD-11220,2024-11-28,HV-0605,Harborview Group,,Furniture,Ergonomic Chair,2,354.12,0,708.24,Jordan Lee
+ORD-11221,2024-11-20,LT-0914,Lakeside Tech,Central,Apparel,Safety Vest Hi-Vis,11,24.07,0,264.77,Tom Buchan
