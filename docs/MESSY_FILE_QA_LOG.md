@@ -21,7 +21,7 @@
 
 | # | File | Dataset type | Rows | Cols | File type | What worked | What looked bad | UI issue? | Cleaning issue? | Insight issue? | Chart issue? | Severity | Suggested task | Build now or defer? |
 |---|------|-------------|------|------|-----------|-------------|-----------------|-----------|-----------------|----------------|--------------|----------|----------------|---------------------|
-| 1 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | Upload, intake, health score, findings list, export all completed without error | Cleaning Review grade shown as raw Python object: `Grade {'score': 70, 'grade': 'B', 'label': 'Good'}` instead of formatted label | Yes | No | No | No | P2 | **85E — Fix Cleaning Review grade formatting** — in `cleaning_adapter.py:98` replace `str(summary.get("confidence_grade", "F"))` with `summary.get("confidence_grade", {}).get("grade", "F")` | **Build now** — confirmed universal: `score_to_grade()` always returns a `dict`; `str()` on it always produces raw object text on every file; not file-specific (85D code audit 2026-05-08) |
+| 1 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | Upload, intake, health score, findings list, export all completed without error | Cleaning Review grade shown as raw Python object: `Grade {'score': 70, 'grade': 'B', 'label': 'Good'}` instead of formatted label. After 85E backend fix, UI rendered `Grade Grade B — 70/100 · Good — 70/100 data quality score` (double "Grade", duplicate score). | Yes | No | No | No | P2 | **RESOLVED — 85E + 85F** — backend adapter now emits `"Grade B — 70/100 · Good"`; frontend helpers `formatGradeLabel()` / `extractGradeLetter()` render it cleanly without duplication | **Done** — backend fixed 85E, UI duplication fixed 85F (2026-05-08) |
 | 2 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | — | Date-derived findings dominate ranking: `effective_date_month`, `effective_date_quarter`, `effective_date_year`, weekend flag findings ranked above business-relevant correlations | No | No | Yes | No | P2 | Suppress or down-rank low-value date-part feature correlations (month/quarter/year/weekday extracted from a single date column) in finding ranker | Defer — log; schedule as generic engine improvement when a second file confirms the same over-ranking pattern |
 | 3 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | — | Spreadsheet artifact columns not removed: `avg S`, `avg P`, `Unnamed: X`, `severity per payment` — these are helper/formula columns, not data columns | No | Yes | No | No | P2 | Improve mostly-empty and helper-column detection in cleaning pipeline; flag columns that are >80% empty or appear to be row-level formula residues | Defer — schedule as generic cleaning improvement when a second file produces similar artifact columns |
 | 4 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | Charts render and export without error | Chart selection is technically valid but does not surface the strongest business story; distributions are generic rather than focused on high-signal numeric fields (e.g. claim amount vs premium vs risk tier) | No | No | No | Yes | P2/P3 | Improve generic chart ranking to prioritise numeric fields that correlate with a likely target variable; deprioritise uniform or near-constant distributions | Defer — P3 polish; revisit after findings-ranker improvement is in place |
@@ -42,7 +42,7 @@
 
 **Fix:** Replace `str(summary.get("confidence_grade", "F"))` with `summary.get("confidence_grade", {}).get("grade", "F")`
 
-**Next task:** 85E — Fix Cleaning Review grade formatting.
+**Next task:** ~~85E — Fix Cleaning Review grade formatting.~~ → Done. 85F fixed UI duplication (double "Grade", duplicate "/100"). Issue #1 fully resolved.
 
 ---
 
@@ -76,7 +76,7 @@
 
 | Priority | Issue # | Task description | Trigger to schedule |
 |----------|---------|-----------------|---------------------|
-| 1 | #1 | **85E** — Fix `cleaning_adapter.py:98` — extract `.grade` from dict instead of `str(dict)` | **Confirmed — build now** (85D code audit) |
+| 1 | #1 | ~~85E/85F — backend adapter + UI helpers~~ | **Resolved** (2026-05-08) |
 | 2 | #3 | Improve helper/mostly-empty column detection in cleaning | Second file with artifact columns |
 | 3 | #2 | Suppress date-part feature correlations in finding ranker | Second file with same over-ranking |
 | 4 | #4 | Improve generic chart ranking toward high-signal fields | After findings ranker improvement lands |
