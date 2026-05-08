@@ -46,6 +46,10 @@ npm run dev
 | `ALLOWED_ORIGINS` | Comma-separated list of allowed CORS origins (default: `http://localhost:3000`) |
 | `ANTHROPIC_API_KEY` | Anthropic API key for AI features |
 
+## Docs
+
+[Pilot Launch Index](./docs/PILOT_LAUNCH_INDEX.md) — start here for demo, outreach, feedback, and launch hardening docs.
+
 ## Features
 
 - Smart file ingestion (CSV, Excel, multi-sheet, preamble detection)
