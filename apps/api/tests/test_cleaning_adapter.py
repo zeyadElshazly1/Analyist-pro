@@ -1,16 +1,21 @@
 """
 Regression tests for app.services.cleaning_adapter.build_cleaning_result().
 
-Covers the cols_removed clamping fix: when the pipeline expands columns
-(e.g. messy/sectioned files), cols_removed must be 0, not negative.
+Covers:
+- cols_removed clamping: when the pipeline expands columns cols_removed must be 0
+- grade formatting: confidence_grade must be a human-readable string, never a raw dict
 """
 import pytest
 
-from app.services.cleaning_adapter import build_cleaning_result
+from app.services.cleaning_adapter import build_cleaning_result, _format_grade
 
 
 def _make_summary(**overrides) -> dict:
-    """Minimal valid summary dict with sensible defaults."""
+    """Minimal valid summary dict with sensible defaults.
+
+    confidence_grade mirrors real pipeline output: score_to_grade() returns a
+    dict, not a string. The adapter is responsible for formatting it.
+    """
     base = {
         "original_rows": 100,
         "original_cols": 8,
@@ -20,7 +25,7 @@ def _make_summary(**overrides) -> dict:
         "cols_removed": -6,   # pipeline may emit this for expanding files
         "steps": 3,
         "confidence_score": 85.0,
-        "confidence_grade": "B",
+        "confidence_grade": {"score": 85, "grade": "A", "label": "High Quality"},
         "time_saved_estimate": "~2 minutes",
         "mode": "aggressive",
     }
@@ -74,3 +79,49 @@ class TestColsRemovedClamping:
         )
         result = build_cleaning_result(original_cols, clean_cols, [], summary)
         assert result.cleaning_summary.rows_removed == 0
+
+
+class TestGradeFormatting:
+    """confidence_grade must be a human-readable string — never a raw Python dict."""
+
+    def _build(self, score: float) -> str:
+        summary = _make_summary(confidence_score=score)
+        result = build_cleaning_result(["a"], ["a"], [], summary)
+        return result.cleaning_summary.confidence_grade
+
+    def test_grade_is_string(self):
+        assert isinstance(self._build(85.0), str)
+
+    def test_grade_contains_no_raw_dict(self):
+        grade = self._build(70.0)
+        assert "{'score':" not in grade
+        assert "{" not in grade
+
+    def test_grade_contains_grade_prefix(self):
+        assert self._build(85.0).startswith("Grade ")
+
+    def test_grade_contains_score_out_of_100(self):
+        assert "/100" in self._build(85.0)
+
+    def test_grade_letter_A_for_high_score(self):
+        assert "Grade A" in self._build(90.0)
+
+    def test_grade_letter_B_for_mid_score(self):
+        assert "Grade B" in self._build(70.0)
+
+    def test_grade_letter_C_for_low_score(self):
+        assert "Grade C" in self._build(55.0)
+
+    def test_grade_unavailable_when_score_missing(self):
+        summary = _make_summary(confidence_score=None)
+        # remove confidence_score key entirely to simulate missing value
+        summary.pop("confidence_score", None)
+        result = build_cleaning_result(["a"], ["a"], [], summary)
+        assert result.cleaning_summary.confidence_grade == "Grade unavailable"
+
+    def test_format_grade_helper_directly(self):
+        out = _format_grade(70)
+        assert out == "Grade B — 70/100 · Good"
+
+    def test_format_grade_helper_none(self):
+        assert _format_grade(None) == "Grade unavailable"

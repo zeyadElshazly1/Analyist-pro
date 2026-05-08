@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 
+from app.services.cleaning.quality_score import score_to_grade
 from app.schemas.cleaning import (
     CleaningResult,
     CleaningSummary,
@@ -58,6 +59,20 @@ _MISSING_COUNT_RE = re.compile(r"(?:fill|filled|impute[sd]?)\s+(\d+)\s+missing v
 _MISSING_PCT_RE   = re.compile(r"\((\d+(?:\.\d+)?)%\)")
 
 
+# ── Formatting helpers ────────────────────────────────────────────────────────
+
+def _format_grade(score: int | float | None) -> str:
+    """Return a human-readable grade string from a numeric confidence score.
+
+    score_to_grade() returns a dict; this extracts the display fields so the
+    adapter never leaks a raw dict into user-facing text.
+    """
+    if score is None:
+        return "Grade unavailable"
+    grade_info = score_to_grade(int(score))
+    return f"Grade {grade_info['grade']} — {grade_info['score']}/100 · {grade_info['label']}"
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def build_cleaning_result(
@@ -95,7 +110,7 @@ def build_cleaning_result(
             cols_removed=max(0, len(original_cols) - len(clean_cols)),
             steps_applied=summary.get("steps", 0),
             confidence_score=float(summary.get("confidence_score", 0.0)),
-            confidence_grade=str(summary.get("confidence_grade", "F")),
+            confidence_grade=_format_grade(summary.get("confidence_score")),
             time_saved_estimate=str(summary.get("time_saved_estimate", "~1 minutes")),
             mode=summary.get("mode", "aggressive"),   # type: ignore[arg-type]
         ),
