@@ -70,14 +70,15 @@ def _seed_run(project_id: int, *, insight_titles: list[str] | None = None) -> in
         }
         run = AnalysisResult(
             project_id=project_id,
-            file_hash="seed-hash",
+            file_hash=f"seed-hash-{project_id}",
             result_json=json.dumps(result),
             status="report_ready",
         )
         db.add(run)
+        db.flush()
+        run_id = run.id
         db.commit()
-        db.refresh(run)
-        return run.id
+        return run_id
     finally:
         db.close()
 
