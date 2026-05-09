@@ -354,3 +354,5 @@ The AI planner runs only when deterministic signals produce confidence < 0.6, or
 ---
 
 *Design document created: 2026-05-08*
+
+*Implementation complete: see [`docs/DATASET_INTELLIGENCE_CHECKPOINT_86.md`](DATASET_INTELLIGENCE_CHECKPOINT_86.md) for 86A–86L summary.*
