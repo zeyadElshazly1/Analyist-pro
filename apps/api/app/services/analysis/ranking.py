@@ -354,6 +354,31 @@ def _composite_score(ins: dict, ctx: DatasetContext | None = None) -> float:
     return score
 
 
+def rerank_after_plan_hygiene(insights: list[dict]) -> list[dict]:
+    """Re-sort insights so suppressed findings fall below clean findings.
+
+    Called after apply_analysis_plan_hygiene() has penalised confidence and
+    set suppressed_by_plan=True on noisy entries.  The original rank_insights()
+    ran before hygiene, so post-penalty ordering may still reflect pre-penalty
+    positions.  This helper fixes that without deduplicating or capping again.
+
+    Sort key: (suppressed, -composite_score, original_index)
+    The original_index tiebreaker gives stable ordering for equal-score pairs.
+    """
+    indexed = list(enumerate(insights))
+
+    def _key(pair: tuple[int, dict]) -> tuple:
+        idx, ins = pair
+        suppressed = ins.get("suppressed_by_plan") is True
+        return (
+            1 if suppressed else 0,
+            -_composite_score(ins, None),
+            idx,
+        )
+
+    return [ins for _, ins in sorted(indexed, key=_key)]
+
+
 def rank_insights(
     insights: list[dict],
     ctx: DatasetContext | None = None,
