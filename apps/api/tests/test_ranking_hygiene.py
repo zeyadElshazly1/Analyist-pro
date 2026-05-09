@@ -362,3 +362,93 @@ def test_deduplicate_col_a_col_b_order_agnostic():
     ]
     result = deduplicate_insights(insights)
     assert len(result) == 1
+
+
+# ── 88I — Hardened confidence parsing ────────────────────────────────────────
+
+from app.services.analysis.ranking import _composite_score
+
+
+def test_composite_score_missing_confidence_defaults_to_50():
+    ins = {
+        "type": "trend",
+        "severity": "medium",
+        "title": "Trend without confidence",
+    }
+
+    score = _composite_score(ins)
+
+    assert isinstance(score, float)
+
+
+def test_composite_score_invalid_confidence_does_not_crash():
+    ins = {
+        "type": "trend",
+        "severity": "medium",
+        "confidence": "unknown",
+        "title": "Bad confidence",
+    }
+
+    score = _composite_score(ins)
+
+    assert isinstance(score, float)
+
+
+def test_composite_score_none_confidence_does_not_crash():
+    ins = {
+        "type": "trend",
+        "severity": "medium",
+        "confidence": None,
+        "title": "None confidence",
+    }
+
+    score = _composite_score(ins)
+
+    assert isinstance(score, float)
+
+
+def test_composite_score_negative_confidence_clamps_to_zero():
+    negative = {
+        "type": "trend",
+        "severity": "medium",
+        "confidence": -50,
+        "title": "Negative confidence",
+    }
+    zero = {
+        "type": "trend",
+        "severity": "medium",
+        "confidence": 0,
+        "title": "Zero confidence",
+    }
+
+    assert _composite_score(negative) == _composite_score(zero)
+
+
+def test_composite_score_confidence_above_100_clamps_to_100():
+    huge = {
+        "type": "trend",
+        "severity": "medium",
+        "confidence": 999,
+        "title": "Huge confidence",
+    }
+    maxed = {
+        "type": "trend",
+        "severity": "medium",
+        "confidence": 100,
+        "title": "Max confidence",
+    }
+
+    assert _composite_score(huge) == _composite_score(maxed)
+
+
+def test_rank_insights_survives_malformed_confidence_values():
+    insights = [
+        {"type": "trend", "severity": "medium", "confidence": "bad", "title": "Bad"},
+        {"type": "anomaly", "severity": "high", "confidence": None, "title": "None"},
+        {"type": "segment", "severity": "low", "confidence": 80, "title": "Good"},
+    ]
+
+    ranked, total = rank_insights(insights)
+
+    assert len(ranked) == 3
+    assert total == 3
