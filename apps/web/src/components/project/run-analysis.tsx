@@ -20,7 +20,7 @@ import { AnalysisPlanCard } from "@/components/analysis/analysis-plan-card";
 import { CleaningSummaryCards } from "@/components/analysis/cleaning-summary-cards";
 import { InsightHighlights } from "@/components/analysis/insight-highlights";
 import { LargeDatasetTransparencyBanner } from "@/components/analysis/large-dataset-transparency";
-import { RecommendedAction } from "@/components/analysis/recommended-action";
+import { BusinessDashboard } from "@/components/analysis/business-dashboard";
 import { ChartViewer } from "@/components/analysis/chart-viewer";
 import { ProfileView } from "@/components/analysis/profile-view";
 import { TimeseriesView } from "@/components/analysis/timeseries-view";
@@ -648,6 +648,17 @@ export function RunAnalysis({
           {tab === "overview" && (
             <SafePanel label="Overview">
               <div className="space-y-6 min-w-0">
+                <BusinessDashboard
+                  projectId={projectId}
+                  dataset_summary={result.dataset_summary}
+                  analysis_plan={result.analysis_plan}
+                  health_score={result.health_score}
+                  health_result={result.health_result}
+                  narrative={result.narrative ?? null}
+                  insights={result.insights ?? []}
+                  largeDataset={largeDatasetMeta}
+                  onNavigateToTab={handleTabChange}
+                />
                 <StatsCards
                   healthResult={result.health_result}
                   profileResult={result.profile_result ?? result.profile}
@@ -676,7 +687,6 @@ export function RunAnalysis({
                   <h2 className="mb-4 font-semibold text-white">Top Highlights</h2>
                   <InsightHighlights insights={result.insights} />
                 </TabPanel>
-                <RecommendedAction insights={result.insights} />
               </div>
             </SafePanel>
           )}
