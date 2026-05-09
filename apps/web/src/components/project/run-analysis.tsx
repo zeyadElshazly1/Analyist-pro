@@ -16,6 +16,7 @@ import { ProjectTabs, getStepForTab, DEFAULT_LANDING_TAB } from "./project-tabs"
 import type { StepStatus } from "./project-tabs";
 import { CleaningReview } from "./cleaning-review";
 import { IntakeReview, type IntakeResult } from "./intake-review";
+import { AnalysisPlanCard } from "@/components/analysis/analysis-plan-card";
 import { CleaningSummaryCards } from "@/components/analysis/cleaning-summary-cards";
 import { InsightHighlights } from "@/components/analysis/insight-highlights";
 import { LargeDatasetTransparencyBanner } from "@/components/analysis/large-dataset-transparency";
@@ -125,6 +126,7 @@ export type AnalysisResult = {
     };
     deductions?: string[];
   } | null;
+  analysis_plan?: import("@/lib/api").AnalysisPlan | null;  // Dataset Intelligence Layer (86C)
   intake_result?: Record<string, unknown> | null;    // canonical IntakeResult block
   cleaning_summary?: Record<string, unknown> | null;
   cleaning_result?: Record<string, unknown> | null;  // canonical CleaningResult block
@@ -569,6 +571,14 @@ export function RunAnalysis({
             <SafePanel label="Intake Review">
               <TabPanel>
                 <h2 className="mb-4 font-semibold text-white">Intake Review</h2>
+
+                {/* ── Analysis Plan card (Dataset Intelligence Layer) ─── */}
+                {result.analysis_plan && (
+                  <div className="mb-6">
+                    <AnalysisPlanCard plan={result.analysis_plan} />
+                  </div>
+                )}
+
                 {result.intake_result &&
                 Object.keys(result.intake_result).length > 0 ? (
                   <IntakeReview
