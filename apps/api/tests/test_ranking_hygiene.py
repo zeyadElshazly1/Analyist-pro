@@ -181,3 +181,97 @@ def test_suppressed_false_treated_as_not_suppressed():
 
     # explicitly_not_suppressed has higher composite; should be first
     assert result[0] == explicitly_not_suppressed
+
+
+# ── 88G — rank_insights limit parameter ──────────────────────────────────────
+
+from app.config import MAX_INSIGHTS
+from app.services.analysis.ranking import rank_insights
+
+
+def test_rank_insights_default_limit_uses_max_insights():
+    insights = [
+        {
+            "type": "trend",
+            "severity": "medium",
+            "confidence": 50 + i,
+            "title": f"Trend {i}",
+        }
+        for i in range(MAX_INSIGHTS + 5)
+    ]
+
+    ranked, total = rank_insights(insights)
+
+    assert len(ranked) == MAX_INSIGHTS
+    assert total == MAX_INSIGHTS + 5
+
+
+def test_rank_insights_custom_limit_returns_candidate_pool():
+    insights = [
+        {
+            "type": "trend",
+            "severity": "medium",
+            "confidence": 50 + i,
+            "title": f"Trend {i}",
+        }
+        for i in range(MAX_INSIGHTS + 5)
+    ]
+
+    ranked, total = rank_insights(insights, limit=MAX_INSIGHTS + 3)
+
+    assert len(ranked) == MAX_INSIGHTS + 3
+    assert total == MAX_INSIGHTS + 5
+
+
+def test_rank_insights_custom_limit_does_not_change_input_count():
+    insights = [
+        {
+            "type": "trend",
+            "severity": "medium",
+            "confidence": 70,
+            "title": f"Trend {i}",
+        }
+        for i in range(MAX_INSIGHTS + 5)
+    ]
+
+    before_len = len(insights)
+    rank_insights(insights, limit=MAX_INSIGHTS + 2)
+
+    assert len(insights) == before_len
+
+
+def test_rank_insights_limit_none_equals_default():
+    insights = [
+        {
+            "type": "anomaly",
+            "severity": "high",
+            "confidence": 80,
+            "title": f"Anomaly {i}",
+        }
+        for i in range(MAX_INSIGHTS + 10)
+    ]
+
+    ranked_default, _ = rank_insights(list(insights))
+    ranked_explicit, _ = rank_insights(list(insights), limit=None)
+
+    assert len(ranked_default) == len(ranked_explicit) == MAX_INSIGHTS
+
+
+def test_rank_insights_limit_smaller_than_input():
+    insights = [
+        {"type": "trend", "severity": "low", "confidence": 60, "title": f"T{i}"}
+        for i in range(5)
+    ]
+    ranked, total = rank_insights(insights, limit=3)
+    assert len(ranked) == 3
+    assert total == 5
+
+
+def test_rank_insights_limit_larger_than_available():
+    insights = [
+        {"type": "trend", "severity": "medium", "confidence": 70, "title": f"T{i}"}
+        for i in range(3)
+    ]
+    ranked, total = rank_insights(insights, limit=MAX_INSIGHTS + 10)
+    assert len(ranked) == 3
+    assert total == 3
