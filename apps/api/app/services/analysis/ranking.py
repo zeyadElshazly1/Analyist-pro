@@ -382,6 +382,7 @@ def rerank_after_plan_hygiene(insights: list[dict]) -> list[dict]:
 def rank_insights(
     insights: list[dict],
     ctx: DatasetContext | None = None,
+    limit: int | None = None,
 ) -> tuple[list[dict], int]:
     """
     Sort insights for display: confident ``financial_markets_snapshot`` and
@@ -390,21 +391,26 @@ def rank_insights(
 
     Other contexts: tier tuple sort (includes composite), dedupe, cap.
 
+    ``limit`` overrides ``MAX_INSIGHTS`` for the returned list size.  When
+    omitted the cap defaults to ``MAX_INSIGHTS`` (backward-compatible).
+
     Returns (ranked_deduped_list, total_before_cap).
     """
+    cap = MAX_INSIGHTS if limit is None else limit
+
     if _snapshot_rank_active(ctx):
         deduped = deduplicate_insights(list(insights))
         ordered = _finance_snapshot_ordered_list(deduped, ctx)
         total_found = len(deduped)
-        return ordered[:MAX_INSIGHTS], total_found
+        return ordered[:cap], total_found
 
     if _timeseries_rank_active(ctx):
         deduped = deduplicate_insights(list(insights))
         ordered = _finance_timeseries_ordered_list(deduped, ctx)
         total_found = len(deduped)
-        return ordered[:MAX_INSIGHTS], total_found
+        return ordered[:cap], total_found
 
     insights.sort(key=lambda x: _snapshot_rank_sort_tuple(x, ctx))
     deduped = deduplicate_insights(insights)
     total_found = len(deduped)
-    return deduped[:MAX_INSIGHTS], total_found
+    return deduped[:cap], total_found

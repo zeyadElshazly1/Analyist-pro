@@ -50,6 +50,12 @@ from .advanced import (
 from .trends import detect_trends
 from .narrative import _detect_domain, _enrich_insight, generate_narrative
 from .ranking import rank_insights
+from app.config import MAX_INSIGHTS
+
+# How many ranked candidates to pass back to the route so that plan hygiene
+# can recover clean insights that would otherwise have been discarded by the
+# pre-hygiene cap.  The route applies the final MAX_INSIGHTS cap after hygiene.
+POST_HYGIENE_CANDIDATE_MULTIPLIER = 3
 
 
 logger = logging.getLogger(__name__)
@@ -152,8 +158,9 @@ def analyze_dataset(df: pd.DataFrame) -> tuple[list[dict], str]:
 
     insights = suppress_for_dataset_context(insights, ctx)
 
-    # ── Rank, deduplicate, cap ────────────────────────────────────────────────
-    top_insights, total_found = rank_insights(insights, ctx)
+    # ── Rank, deduplicate — wider candidate pool for post-hygiene recovery ────
+    candidate_limit = MAX_INSIGHTS * POST_HYGIENE_CANDIDATE_MULTIPLIER
+    top_insights, total_found = rank_insights(insights, ctx, limit=candidate_limit)
 
     # ── Enrich + narrative ────────────────────────────────────────────────────
     top_insights = [_enrich_insight(ins) for ins in top_insights]
