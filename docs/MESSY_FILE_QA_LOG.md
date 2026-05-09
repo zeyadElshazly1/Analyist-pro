@@ -24,7 +24,7 @@
 | 1 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | Upload, intake, health score, findings list, export all completed without error | Cleaning Review grade shown as raw Python object: `Grade {'score': 70, 'grade': 'B', 'label': 'Good'}` instead of formatted label. After 85E backend fix, UI rendered `Grade Grade B — 70/100 · Good — 70/100 data quality score` (double "Grade", duplicate score). | Yes | No | No | No | P2 | **RESOLVED — 85E + 85F** — backend adapter now emits `"Grade B — 70/100 · Good"`; frontend helpers `formatGradeLabel()` / `extractGradeLetter()` render it cleanly without duplication | **Done** — backend fixed 85E, UI duplication fixed 85F (2026-05-08) |
 | 2 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | — | Date-derived findings dominate ranking: `effective_date_month`, `effective_date_quarter`, `effective_date_year`, weekend flag findings ranked above business-relevant correlations | No | No | Yes | No | P2 | **IMPROVED by 86E** — `apply_analysis_plan_hygiene()` penalised 3/13 findings (×0.35 confidence) — date-part noise dropped from positions #2, #4, #7 to bottom of ranking; top findings now business-relevant (`frequency × severity`, genuine trends) | **Partially resolved** — 86E reduces date-part over-ranking for insurance. Full fix deferred: second file confirmation before broadening |
 | 3 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | — | Spreadsheet artifact columns not removed: `avg S`, `avg P`, `Unnamed: X`, `severity per payment` — these are helper/formula columns, not data columns | No | Yes | No | No | P2 | **PARTIALLY IMPROVED by 86E** — artifact columns (`avg_S`, `Unnamed: 14`, etc.) now listed in `columns_to_ignore`; findings where ALL columns are artifacts are penalised ×0.40. Cleaning-stage removal still open. | Defer — cleaning-stage removal still needed; schedule when second file shows artifact columns |
-| 4 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | Charts render and export without error | **IMPROVED by 86I** — chart ordering now plan-aware: target_metric × dimension charts boosted +1.5, target trend charts +1.2, target-only charts +0.8, ignored-column charts ×0.40 penalty. Business-relevant charts (claim_amount × coverage_type, premium × region) surface above generic distributions. | No | No | No | Yes | P2/P3 | Chart ranking improved generically — not chart selection but score-based promotion of plan-relevant pairs. Full chart selection overhaul is deferred. | Partially resolved — 86I improves ordering; deep chart selection revisit deferred post-pilot |
+| 4 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | Charts render and export without error | **RESOLVED by 86I + 86K** — chart generation column order now plan-aware; target metrics surface before generic numeric columns. Before: 0 target metric charts. After: 7 target metric charts (trend, scatter, histogram, boxplot). Top-2 charts: `effective_date × annual_premium_usd` and `effective_date × severity` time-series trends. | No | No | No | Yes | P2/P3 | **Done** — 86I score hygiene (2026-05-09) + 86K column-order prioritisation (2026-05-09). Finance snapshot charts verified as unchanged. | **Resolved** (2026-05-09) |
 | 5 | yahoo_finance_global_markets_2026.csv | Finance / market data | ~451 | ~131 | CSV | Upload, analysis pipeline completed without error | **RESOLVED by 86G** — `dayLow`, `dayHigh`, `fiftyDayAverage`, `twoHundredDayAverage`, `averageVolume10days`, `fiftyTwoWeekLow`, `fiftyTwoWeekHigh`, `priceToSalesTrailing12Months`, `earningsQuarterlyGrowth` are all correctly excluded from `time_columns` after tightening `_DATE_PATTERN`. Real date columns (`price_date`, `build_timestamp`, `exDividendDate`) still detected. `ticker`/`symbol` now in `columns_to_ignore`. | No | No | No | No | P2 | **Done** — backend planner fix 86G (2026-05-09) |
 
 ---
@@ -160,7 +160,7 @@
 | 2 | #2 | ~~86E — date-part hygiene penalty~~ | **Partially resolved** (2026-05-09) — insurance file improved; full resolution after second file confirmation |
 | 3 | #5 | ~~86G — tighten _DATE_PATTERN; add ticker/symbol to _ID_PATTERN~~ | **Resolved** (2026-05-09) — verified on real global markets CSV (86H) |
 | 4 | #3 | Improve helper/mostly-empty column detection in cleaning pipeline | Second file with artifact columns |
-| 5 | #4 | ~~86I — plan-aware chart score hygiene~~ | **Partially resolved** (2026-05-09) — plan-relevant charts promoted; deep chart selection deferred |
+| 5 | #4 | ~~86I + 86K — plan-aware chart score hygiene + column-order prioritisation~~ | **Resolved** (2026-05-09) — 0 → 7 target metric charts on insurance file; finance snapshot unchanged |
 
 ---
 
@@ -243,4 +243,50 @@ Charts boosted: 1 (`sector` is a dimension → +0.30). Charts penalised: 0.
 
 ---
 
-*Log started: 2026-05-08 · Last updated: 2026-05-09 (86J — Issue #4 re-tested after 86I)*
+## Issue #4 — 86K Column-Order Fix Verification (86L, 2026-05-09)
+
+**Method:** Programmatic re-test — both files run through full pipeline with `build_chart_data(analysis_plan=plan)` + `apply_analysis_plan_chart_hygiene()`.
+
+### Insurance file (`auto_insurance_data.xlsx`) — before vs after
+
+| Metric | Before 86K | After 86K |
+|--------|-----------|-----------|
+| Target metric charts generated | 0 | **7** |
+| Charts boosted by plan | 3 | **6** |
+| Charts penalised | 0 | 0 |
+| Top-1 chart | `age` histogram | `effective_date × annual_premium_usd` trend |
+
+**After 86K — full top-10:**
+```
+ 1. line      effective_date / annual_premium_usd  score=11.20  [target_metric_trend]
+ 2. line      effective_date / severity             score=11.20  [target_metric_trend]
+ 3. scatter   frequency / severity                  score=9.80   [target_metric]
+ 4. bar       annual_premium_usd / Count            score=8.80   [target_metric]
+ 5. bar       severity / Count                      score=8.80   [target_metric]
+ 6. boxplot   gender / annual_premium_usd           score=8.50   [target_metric_x_dimension]
+ 7. bar       frequency / Count                     score=8.00
+ 8. bar       age / Count                           score=8.00
+ 9. heatmap   Column / Column                       score=8.00
+10. bar       effective_date_is_weekend / Count     score=6.00
+```
+
+**Root cause resolved:** Target metrics (`annual_premium_usd`, `frequency`, `severity`) were at numeric column positions 5-7 — beyond the `MAX_HIST_COLS=4` budget. `prioritize_columns_for_charts()` reorders them to positions 1-3 before the budget slices, so all three now generate histogram and time-series charts.
+
+### Finance file (`yahoo_finance_global_markets_2026.csv`) — regression check
+
+Finance uses the domain-specific snapshot chart builder (`build_financial_snapshot_charts`) which branches before the generic reordering code. Output is identical to 86J:
+- 8 charts total, all domain-specific (return leaderboards, risk-return scatter, sector averages)
+- `sector × return` still boosted +0.30 by 86I hygiene
+- No regression ✓
+
+### Issue #4 final verdict
+
+**Resolved.** The chart ranking gap is closed across both dimensions:
+- **86I** (score hygiene): promotes plan-relevant charts that already exist in the output
+- **86K** (column-order prioritisation): ensures target metrics are generated within budget constraints in the first place
+
+Both mechanisms are required and complementary. Generic fallback (no plan or confidence < 0.6) is unchanged.
+
+---
+
+*Log started: 2026-05-08 · Last updated: 2026-05-09 (86L — Issue #4 resolved)*
