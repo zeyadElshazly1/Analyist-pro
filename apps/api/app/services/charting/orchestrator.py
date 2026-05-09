@@ -51,6 +51,7 @@ from .ranker import rank_and_cap
 
 if TYPE_CHECKING:
     from app.services.dataset_context.schema import DatasetContext
+    from app.schemas.analysis_plan import AnalysisPlan
 
 # Semantic types that identify a column as an identifier/key field.
 # Columns with these types are excluded from all chart generation.
@@ -121,7 +122,11 @@ def _is_id_col(
     return unique_count / n_rows >= 0.9 and unique_count > 20
 
 
-def build_chart_data(df: pd.DataFrame, dataset_context: "DatasetContext | None" = None) -> list[dict]:
+def build_chart_data(
+    df: pd.DataFrame,
+    dataset_context: "DatasetContext | None" = None,
+    analysis_plan: "AnalysisPlan | None" = None,
+) -> list[dict]:
     """
     Return a list of chart payload dicts (up to MAX_CHARTS) sorted by score.
 
@@ -198,6 +203,15 @@ def build_chart_data(df: pd.DataFrame, dataset_context: "DatasetContext | None" 
         col for col in all_cat_str
         if not _is_id_col(col, df, semantic_map)
     ]
+
+    # ── Plan-aware column reordering (if analysis_plan provided) ──────────────
+    # Promotes target_metrics and important_dimensions to the front of each
+    # column list so they are included within the histogram / bar budget even
+    # when the DataFrame column order would have placed them beyond the cap.
+    if analysis_plan is not None:
+        from app.services.analysis.chart_plan_hygiene import prioritize_columns_for_charts
+        numeric_cols     = prioritize_columns_for_charts(numeric_cols,     analysis_plan)
+        categorical_cols = prioritize_columns_for_charts(categorical_cols, analysis_plan)
 
     # ── 1. Time-series line charts ────────────────────────────────────────────
     for date_col in datetime_cols[:MAX_TIMESERIES_DATES]:
