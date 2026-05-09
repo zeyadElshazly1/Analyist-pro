@@ -162,9 +162,34 @@ def analyze_dataset(df: pd.DataFrame) -> tuple[list[dict], str]:
     return top_insights, narrative
 
 
+def _raw_confidence(ins: dict) -> float:
+    try:
+        return float(ins.get("confidence", 50.0))
+    except (TypeError, ValueError):
+        return 50.0
+
+
+def _is_executive_panel_eligible(ins: dict) -> bool:
+    """Whether an insight may appear in opportunities, risks, or action_plan.
+
+    Plan-suppressed and low-confidence findings remain in the main insight list
+    but are omitted from the executive summary (88C).
+    """
+    if ins.get("suppressed_by_plan") is True:
+        return False
+    if _raw_confidence(ins) < 50.0:
+        return False
+    return True
+
+
 def generate_executive_panel(insights: list[dict]) -> dict:
     """
     Derive Opportunities, Risks, and an Action Plan from the top insights.
+
+    Findings suppressed by analysis_plan_hygiene (``suppressed_by_plan``) or with
+    raw confidence below 50 (0–100 scale) are excluded from all three sections;
+    they remain available in the main insight list (88C).
+
     Returns a dict with three lists suitable for rendering on the frontend.
     """
     OPPORTUNITY_TYPES = {
@@ -179,6 +204,9 @@ def generate_executive_panel(insights: list[dict]) -> dict:
     action_plan: list[dict] = []
 
     for ins in insights:
+        if not _is_executive_panel_eligible(ins):
+            continue
+
         itype = ins.get("type", "")
         sev = ins.get("severity", "low")
         title = ins.get("title", "")
