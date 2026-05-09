@@ -42,18 +42,111 @@ _REAL_DATE_FRAGMENTS = re.compile(
     re.IGNORECASE,
 )
 
+# Suffixes appended to plan time_columns to form known noisy date-part features.
+_DATE_PART_VARIANT_SUFFIXES: tuple[str, ...] = (
+    "month",
+    "quarter",
+    "year",
+    "week",
+    "weekday",
+    "day",
+    "dayofweek",
+    "weekend",
+    "is_weekend",
+    "wday",
+)
+
+# Free-text insight fields scanned for verbatim known column identifiers.
+_INSIGHT_TEXT_COLUMN_FIELDS: tuple[str, ...] = (
+    "title",
+    "finding",
+    "explanation",
+    "description",
+    "evidence",
+    "recommendation",
+    "action",
+)
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _cols_from_insight(ins: dict) -> list[str]:
-    """Collect all column names referenced by an insight dict."""
+def _norm_col_name(value: str) -> str:
+    """Normalize a column-ish token: spaces/hyphens → underscores; lowercased."""
+    return re.sub(r"[\s\-]+", "_", value.strip().lower())
+
+
+def _norm_text_blob_for_column_scan(blob: str) -> str:
+    """Normalize prose so (^|_)known_column(_|$) matches token boundaries."""
+    s = _norm_col_name(blob)
+    s = re.sub(r"[^a-z0-9_]+", "_", s)
+    return re.sub(r"_+", "_", s).strip("_")
+
+
+def _known_columns_from_plan(analysis_plan: AnalysisPlan) -> set[str]:
+    """All normalized plan columns plus derived date-part variants for time columns."""
+    out: set[str] = set()
+    for key in (
+        "target_metrics",
+        "important_dimensions",
+        "time_columns",
+        "columns_to_ignore",
+    ):
+        for x in getattr(analysis_plan, key, None) or []:
+            if x:
+                out.add(_norm_col_name(str(x)))
+    bases = {_norm_col_name(str(tc)) for tc in (analysis_plan.time_columns or []) if tc}
+    bases.discard("")
+    for base in bases:
+        for suf in _DATE_PART_VARIANT_SUFFIXES:
+            out.add(f"{base}_{suf}")
+    return out
+
+
+def _cols_from_insight(
+    ins: dict,
+    known_columns: set[str] | None = None,
+) -> list[str]:
+    """Collect column names referenced by an insight dict (normalized, deduped, stable).
+
+    Structured fields are processed first (col_a, col_b, column, columns).
+    When ``known_columns`` is provided, prose fields are scanned for exact
+    normalized identifiers present in that set—no fuzzy or invented columns.
+    """
     cols: list[str] = []
+    seen_norm: set[str] = set()
+
+    def add_name(raw: str) -> None:
+        n = _norm_col_name(raw)
+        if not n or n in seen_norm:
+            return
+        seen_norm.add(n)
+        cols.append(n)
+
     for field in ("col_a", "col_b", "column", "columns"):
         val = ins.get(field)
         if isinstance(val, str) and val:
-            cols.append(val)
+            add_name(val)
         elif isinstance(val, (list, tuple)):
-            cols.extend(str(c) for c in val if c)
+            for c in val:
+                if c:
+                    add_name(str(c))
+
+    if known_columns:
+        chunks: list[str] = []
+        for f in _INSIGHT_TEXT_COLUMN_FIELDS:
+            v = ins.get(f)
+            if v:
+                chunks.append(str(v))
+        norm_text = _norm_text_blob_for_column_scan(" ".join(chunks))
+        if norm_text:
+            for known in sorted(known_columns):
+                if known in seen_norm:
+                    continue
+                pattern = rf"(?:^|_){re.escape(known)}(?:_|$)"
+                if re.search(pattern, norm_text):
+                    seen_norm.add(known)
+                    cols.append(known)
+
     return cols
 
 
@@ -72,7 +165,7 @@ def _is_date_part_derived(col: str, time_column_bases: set[str]) -> bool:
         return False
     # Extract base: everything before the matched suffix
     base = col[: m.start()].rstrip("_").lower()
-    return any(base in tc.lower() or tc.lower() in base for tc in time_column_bases)
+    return base in time_column_bases
 
 
 def _penalise(ins: dict, factor: float, reason: str) -> dict:
@@ -100,12 +193,13 @@ def apply_analysis_plan_hygiene(
     if not analysis_plan:
         return insights
 
-    ignore_set: set[str] = set(analysis_plan.columns_to_ignore)
-    time_bases: set[str] = set(analysis_plan.time_columns)
+    known_columns = _known_columns_from_plan(analysis_plan)
+    ignore_set = {_norm_col_name(c) for c in analysis_plan.columns_to_ignore}
+    time_bases = {_norm_col_name(c) for c in analysis_plan.time_columns}
 
     out: list[dict] = []
     for ins in insights:
-        cols = _cols_from_insight(ins)
+        cols = _cols_from_insight(ins, known_columns)
 
         # ── Ignored-column penalty ────────────────────────────────────────────
         # Only penalise if ALL columns involved are ignored cols.
