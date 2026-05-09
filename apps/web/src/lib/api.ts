@@ -758,6 +758,30 @@ export function pickLargeDatasetMeta(
   };
 }
 
+// Dataset Intelligence Layer — 86B/86C
+export interface ChartHint {
+  chart_type: string;
+  x_column: string;
+  y_column: string | null;
+  rationale: string;
+  priority: number;
+}
+
+export interface AnalysisPlan {
+  dataset_kind: string;
+  confidence: number;
+  business_context: string;
+  primary_entity: string | null;
+  target_metrics: string[];
+  important_dimensions: string[];
+  time_columns: string[];
+  columns_to_ignore: string[];
+  recommended_charts: ChartHint[];
+  insight_priorities: string[];
+  analysis_warnings: string[];
+  report_template_hint: string;
+}
+
 // Mirrors RunResults schema from GET /analysis/run/{run_id}/results
 export interface RunResultsResponse {
   run_id: number;
@@ -782,6 +806,8 @@ export interface RunResultsResponse {
   // of the "current" project (left-hand side of the compare). null for runs
   // that were never paired against another project.
   compare_result?: CompareResult | null;
+  /** Dataset Intelligence Layer — 86C */
+  analysis_plan?: AnalysisPlan | null;
   /** Present when the API sampled rows for expensive detectors while preserving full-shape stats */
   large_dataset_mode?: boolean | null;
   full_rows?: number | null;
