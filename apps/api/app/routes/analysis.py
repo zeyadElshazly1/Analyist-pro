@@ -26,6 +26,7 @@ from app.services.analyzer import analyze_dataset, generate_executive_panel, get
 from app.services.analysis.analysis_planner import build_analysis_plan
 from app.services.analysis.analysis_plan_hygiene import apply_analysis_plan_hygiene
 from app.services.analysis.ranking import rerank_after_plan_hygiene
+from app.services.analysis.narrative import generate_narrative
 from app.services.analysis.large_dataset_mode import (
     LARGE_DATASET_NARRATIVE_NOTE,
     attach_large_dataset_meta,
@@ -157,15 +158,16 @@ def run_analysis(
 
         set_run_status(db, run, "profiling_complete")
 
-        insights, narrative = analyze_dataset(df_analysis)
-        if ld_meta["large_dataset_mode"]:
-            narrative = narrative + LARGE_DATASET_NARRATIVE_NOTE
+        insights, _pre_hygiene_narrative = analyze_dataset(df_analysis)
 
         # ── Dataset Intelligence Layer — hygiene before ranking/adapter ───────
         _dtypes = {c: str(t) for c, t in df_clean.dtypes.items()}
         _plan = build_analysis_plan(columns=df_clean.columns.tolist(), dtypes=_dtypes)
         insights = apply_analysis_plan_hygiene(insights, _plan)
         insights = rerank_after_plan_hygiene(insights)
+        narrative = generate_narrative(insights, df_analysis, total_found=len(insights))
+        if ld_meta["large_dataset_mode"]:
+            narrative = narrative + LARGE_DATASET_NARRATIVE_NOTE
 
         insight_results = [r.model_dump() for r in build_insight_results(insights, analysis_plan=_plan)]
         executive_panel = generate_executive_panel(insights)
