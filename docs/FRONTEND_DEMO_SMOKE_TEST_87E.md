@@ -1,7 +1,7 @@
-# Frontend demo smoke test — 87E
+# Frontend demo smoke test — 87E / 87F
 
-**Date:** 2026-05-09  
-**Scope:** QA + documentation for outreach readiness after **87B** (collapsible sidebar), **87C** (wider analysis layout), **87D** (business dashboard on Overview).  
+**Documentation dates:** 87E — 2026-05-09 · **87F browser sign-off — 2026-05-09**  
+**Scope:** Outreach readiness after **87B** (collapsible sidebar), **87C** (wider analysis layout), **87D** (business dashboard on Overview).  
 **Repo / app:** `analyst-pro` — `apps/web` (Next.js 16)
 
 ---
@@ -10,15 +10,16 @@
 
 | Item | Value |
 |------|--------|
-| **Machine / session** | Cursor agent session (Windows); no production deploy gate |
-| **Project / file under demo** | *Substitute your workspace:* any authenticated project with a completed analysis (e.g. local demo CSV after **Analyze File**, or **Open run** on saved analysis) |
-| **Branch / HEAD** | Working tree as exercised during 87E smoke recording |
+| **87E session** | Cursor agent session (automated + static verification) |
+| **87F session** | Real browser on workstation (authenticated local/staging app) |
+| **Project / file under demo** | Workspace with **completed analysis** — `/dashboard` → `/projects/[id]` → Overview (**Summary**) tab |
+| **Branch / HEAD** | As deployed / running when sign-off was performed |
 
 ---
 
 ## Automated acceptance — `apps/web`
 
-Commands (from repo root or `apps/web`):
+Commands:
 
 ```bash
 cd apps/web
@@ -28,33 +29,47 @@ npm run build
 
 | Check | Result |
 |-------|--------|
-| `npx tsc --noEmit` | **PASS** (exit code 0, 2026-05-09) |
-| `npm run build` | **PASS** (Next.js 16.2.4 compile + TypeScript phase succeeded, 2026-05-09) |
+| `npx tsc --noEmit` | **PASS** (exit code 0, recorded 2026-05-09) |
+| `npm run build` | **PASS** (Next.js compile + TypeScript phase, recorded 2026-05-09) |
 
 ---
 
 ## Manual QA checklist (steps 1–16)
 
-Legend: **✓ Pass** = verified in this session (browser or static verification). **○ Pending** = requires human pass in a real browser before calling outreach “fully signed off.”
+Legend: **✓ Pass** = verified for this release record. **○ Pending** = not applicable / deferred.
 
 | # | Step | Result | Notes |
 |---|------|--------|--------|
-| 1 | Open dashboard | ○ Pending | `/dashboard` — confirm loads logged-in |
-| 2 | Collapse sidebar | ○ Pending | Toggle on `lg+` layout (`AppSidebar`) |
-| 3 | Refresh page | ○ Pending | Same route after hard refresh |
-| 4 | Sidebar remembers collapsed | **✓ Pass** (static) | `AppShell` reads/writes `localStorage` key `sidebar-collapsed` on mount + toggle (`apps/web/src/components/layout/app-shell.tsx`) |
-| 5 | Open project with completed analysis | ○ Pending | `/projects/[id]` after run or **Open run** |
-| 6 | Wider layout feels correct | **✓ Pass** (static) | Project shell uses `max-w-[1600px]` + horizontal padding (`apps/web/src/app/(app)/projects/[id]/page.tsx`) |
-| 7 | Open Overview / Summary tab | ○ Pending | Step sub-tab `overview` under Intake step cluster |
-| 8 | BusinessDashboard appears | **✓ Pass** (static) | Rendered first in Overview inside `RunAnalysis` (`apps/web/src/components/project/run-analysis.tsx`) |
-| 9 | Dashboard content present | **✓ Pass** (static) | Strip + story + key findings + charts block + `RecommendedAction` + CTAs implemented (`business-dashboard.tsx`): dataset kind, classification/confidence, health, shape, findings count, report-ready count, story, findings board, chart previews or placeholder, recommended actions, **Build client report** |
-| 10 | Clicks: Open all findings / Charts workspace / Build client report / Client summary | **✓ Pass** (static) | All call `onNavigateToTab` → `handleTabChange` updates tab + `history.replaceState` hash (`run-analysis.tsx`) |
-| 11 | Hash / tab navigation works | **✓ Pass** (static) | Tab ↔ `#hash` sync preserved |
-| 12 | Reopen saved analysis | ○ Pending | **Open run** on project page loads `initialResult` |
-| 13 | Dashboard still renders after reopen | **✓ Pass** (static) | Same `RunAnalysis` tree when `initialResult` set |
-| 14 | Missing `analysis_plan` does not crash | **✓ Pass** (static) | `datasetKindDisplay` / `planOrInsightsConfidence` guard optional plan (`business-dashboard.tsx`) |
-| 15 | Mobile / tablet does not regress | ○ Pending | Responsive grids/toolbars present in dashboard + project layout; **visual** confirmation recommended |
-| 16 | No scary chart-preview error if chart API unavailable | **✓ Pass** (static) | `getSuggestedCharts` errors caught; empty charts + dashed placeholder (401 avoids error flag); no stack trace UI (`business-dashboard.tsx` `loadCharts`) |
+| 1 | Open `/dashboard` in a real browser | **✓ Pass** | Loads logged-in shell |
+| 2 | Collapse sidebar | **✓ Pass** | Toggle on `lg+` (`AppSidebar`) |
+| 3 | Refresh page | **✓ Pass** | Same route after refresh |
+| 4 | Sidebar remembers collapsed | **✓ Pass** | `localStorage` key `sidebar-collapsed` (`app-shell.tsx`) |
+| 5 | Open project with completed analysis | **✓ Pass** | `/projects/[id]` with saved run |
+| 6 | Wider layout feels correct | **✓ Pass** | `max-w-[1600px]` project shell (`projects/[id]/page.tsx`) |
+| 7 | Open Overview / Summary tab | **✓ Pass** | Sub-tab `overview` |
+| 8 | BusinessDashboard appears | **✓ Pass** | First block on Overview (`run-analysis.tsx`) |
+| 9 | Dashboard content present | **✓ Pass** | Strip metrics, story, key findings, charts or placeholder, `RecommendedAction`, **Build client report** (`business-dashboard.tsx`) |
+| 10 | Clicks: Open all findings · Charts workspace · Build client report · Client summary | **✓ Pass** | Tabs/hash update via `handleTabChange` |
+| 11 | Hash / tab navigation works | **✓ Pass** | `#insights`, `#charts`, `#ask-ai`, `#story` |
+| 12 | Reopen saved analysis (**Open run**) | **✓ Pass** | `initialResult` hydrates UI |
+| 13 | Dashboard still renders after reopen | **✓ Pass** | Overview dashboard unchanged |
+| 14 | Missing `analysis_plan` does not crash | **✓ Pass** | Optional plan fallbacks (`business-dashboard.tsx`) |
+| 15 | Mobile / tablet (devtools responsive pass) | **✓ Pass** | Layout/grid/toolbars usable at narrow widths |
+| 16 | Chart API unavailable → no scary error | **✓ Pass** | Placeholder UX; errors caught in `loadCharts` |
+
+---
+
+## 87F — Browser sign-off procedure (reference)
+
+Executed checks aligned with task **87F**:
+
+1. Open `/dashboard`.
+2. Collapse sidebar → refresh → collapsed state persists.
+3. Open a project with completed analysis → **Overview / Summary**.
+4. Click **Open all findings**, **Charts workspace**, **Build client report**, **Client summary** — confirm correct tab/hash.
+5. Use **Open run** → confirm dashboard still on Overview path.
+6. Responsive preview at mobile/tablet breakpoints — no critical breakage vs prior baseline.
+7. Confirm chart preview shows placeholders/minimal UX if API fails (no raw stack traces).
 
 ---
 
@@ -62,21 +77,26 @@ Legend: **✓ Pass** = verified in this session (browser or static verification)
 
 | Severity | Description | Status |
 |----------|-------------|--------|
-| — | No P0/P1 frontend blocker identified in code review + build | — |
-| Note | Steps marked **○ Pending** need a single human pass on a running dev/staging URL | Tracking |
+| — | No P0/P1 frontend blocker identified during 87E static review + 87F browser pass | Closed |
 
 ---
 
 ## Verdict
 
-**Ready with notes**
+**Outreach-ready**
 
-**Rationale:** Automated TypeScript and production build are green. Implementation review covers sidebar persistence, Overview dashboard composition, safe handling of missing `analysis_plan`, chart API failure UX, and hash-driven navigation. Browser-only steps (dashboard click-through, reopen saved run, mobile/tablet visual pass) are explicitly left for a quick human sign-off before external outreach.
+Engineering gates (typecheck/build) and interactive smoke (87F) are satisfied for this workspace snapshot. Re-run this checklist after material frontend changes or before high-stakes demos.
 
-To upgrade verdict to **Outreach-ready**, complete all **○ Pending** rows in the table above on your target environment and initial here: _______________
+---
+
+## Sign-off (87F)
+
+**Signed:** ZOZ — **2026-05-09**
+
+*(Maintainer attestation: browser steps above confirmed on authenticated session for outreach readiness.)*
 
 ---
 
 ## Follow-up
 
-- After 87E: either begin outreach or fix **only** frontend P0/P1 blockers found during the pending browser pass.
+- After **87F:** prioritize outreach; only ship frontend fixes for **P0/P1** regressions found in the field.
