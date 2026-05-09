@@ -111,11 +111,11 @@ export function ProjectTabs({ value, onChange, compareAvailable, stepStatuses }:
   const nextStep      = activeStepIdx < STEPS.length - 1 ? STEPS[activeStepIdx + 1] : null;
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3 min-w-0">
 
       {/* ── Step progress bar ────────────────────────────────────────────── */}
-      <div className="overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-        <div className="flex items-center gap-0.5 min-w-max">
+      <div className="overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pb-0.5">
+        <div className="flex items-center gap-1 min-w-max px-0.5">
           {STEPS.map((step, idx) => {
             const status: StepStatus = stepStatuses?.[step.id] ?? "available";
             const isActive    = step.id === activeStepId;
@@ -145,15 +145,16 @@ export function ProjectTabs({ value, onChange, compareAvailable, stepStatuses }:
               : "bg-white/10 text-white/35";
 
             return (
-              <div key={step.id} className="flex items-center gap-0.5">
+              <div key={step.id} className="flex items-center gap-1">
                 <button
+                  type="button"
                   onClick={() => onChange(step.primaryTab)}
-                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${btnClass}`}
+                  className={`flex items-center gap-2 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors whitespace-nowrap ${btnClass}`}
                 >
                   {/* Number / check badge */}
-                  <span className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-[9px] font-bold ${badgeClass}`}>
+                  <span className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${badgeClass}`}>
                     {isComplete
-                      ? <Check className="h-2.5 w-2.5" />
+                      ? <Check className="h-3 w-3" />
                       : step.number}
                   </span>
 
@@ -169,7 +170,7 @@ export function ProjectTabs({ value, onChange, compareAvailable, stepStatuses }:
                   )}
                 </button>
                 {idx < STEPS.length - 1 && (
-                  <div className={`h-px w-3 flex-shrink-0 ${isComplete ? "bg-indigo-500/20" : "bg-white/[0.07]"}`} />
+                  <div className={`h-px w-4 flex-shrink-0 ${isComplete ? "bg-indigo-500/25" : "bg-white/[0.08]"}`} />
                 )}
               </div>
             );
@@ -178,12 +179,13 @@ export function ProjectTabs({ value, onChange, compareAvailable, stepStatuses }:
       </div>
 
       {/* ── Step context: description + next-step nudge ──────────────────── */}
-      <div className="flex items-center justify-between gap-4">
-        <p className="text-[11px] text-white/30 leading-none">{activeStep.description}</p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <p className="text-xs text-white/35 leading-snug sm:max-w-[70%]">{activeStep.description}</p>
         {nextStep && (
           <button
+            type="button"
             onClick={() => onChange(nextStep.primaryTab)}
-            className="flex flex-shrink-0 items-center gap-1 text-[11px] text-white/25 transition-colors hover:text-white/50"
+            className="flex flex-shrink-0 items-center gap-1 text-xs text-white/30 transition-colors hover:text-white/55"
           >
             Next: {nextStep.label}
             <ArrowRight className="h-2.5 w-2.5" />
@@ -193,16 +195,17 @@ export function ProjectTabs({ value, onChange, compareAvailable, stepStatuses }:
 
       {/* ── Sub-tabs for current step ────────────────────────────────────── */}
       {activeStep.tabs.length > 1 && (
-        <div className="overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-          <div className="flex gap-1 border-b border-white/[0.07] pb-2 min-w-max">
+        <div className="overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden -mx-1 px-1">
+          <div className="flex gap-1.5 border-b border-white/[0.08] pb-2.5 min-w-max">
             {activeStep.tabs.map((t) => (
               <button
+                type="button"
                 key={t.id}
                 onClick={() => onChange(t.id)}
-                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${
+                className={`rounded-lg px-3.5 py-2 text-[13px] font-medium transition-colors whitespace-nowrap ${
                   value === t.id
-                    ? "bg-white/10 text-white"
-                    : "text-white/40 hover:text-white/70 hover:bg-white/[0.04]"
+                    ? "bg-white/[0.11] text-white shadow-sm shadow-black/20"
+                    : "text-white/42 hover:text-white/75 hover:bg-white/[0.05]"
                 }`}
               >
                 {t.label}

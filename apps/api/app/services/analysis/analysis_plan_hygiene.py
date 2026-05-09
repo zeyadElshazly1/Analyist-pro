@@ -20,6 +20,11 @@ from __future__ import annotations
 import re
 
 from app.schemas.analysis_plan import AnalysisPlan
+from app.services.analysis.column_matching import (
+    _extract_known_columns_from_text_fields,
+    _known_columns_from_plan,
+    _norm_col_name,
+)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -42,18 +47,45 @@ _REAL_DATE_FRAGMENTS = re.compile(
     re.IGNORECASE,
 )
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _cols_from_insight(ins: dict) -> list[str]:
-    """Collect all column names referenced by an insight dict."""
+
+def _cols_from_insight(
+    ins: dict,
+    known_columns: set[str] | None = None,
+) -> list[str]:
+    """Collect column names referenced by an insight dict (normalized, deduped, stable).
+
+    Structured fields are processed first (col_a, col_b, column, columns).
+    When ``known_columns`` is provided, prose fields are scanned for exact
+    normalized identifiers present in that set—no fuzzy or invented columns.
+    """
     cols: list[str] = []
+    seen_norm: set[str] = set()
+
+    def add_name(raw: str) -> None:
+        n = _norm_col_name(raw)
+        if not n or n in seen_norm:
+            return
+        seen_norm.add(n)
+        cols.append(n)
+
     for field in ("col_a", "col_b", "column", "columns"):
         val = ins.get(field)
         if isinstance(val, str) and val:
-            cols.append(val)
+            add_name(val)
         elif isinstance(val, (list, tuple)):
-            cols.extend(str(c) for c in val if c)
+            for c in val:
+                if c:
+                    add_name(str(c))
+
+    if known_columns:
+        cols.extend(
+            _extract_known_columns_from_text_fields(
+                ins, known_columns, exclude_normalized=seen_norm
+            )
+        )
+
     return cols
 
 
@@ -72,7 +104,7 @@ def _is_date_part_derived(col: str, time_column_bases: set[str]) -> bool:
         return False
     # Extract base: everything before the matched suffix
     base = col[: m.start()].rstrip("_").lower()
-    return any(base in tc.lower() or tc.lower() in base for tc in time_column_bases)
+    return base in time_column_bases
 
 
 def _penalise(ins: dict, factor: float, reason: str) -> dict:
@@ -100,12 +132,13 @@ def apply_analysis_plan_hygiene(
     if not analysis_plan:
         return insights
 
-    ignore_set: set[str] = set(analysis_plan.columns_to_ignore)
-    time_bases: set[str] = set(analysis_plan.time_columns)
+    known_columns = _known_columns_from_plan(analysis_plan)
+    ignore_set = {_norm_col_name(c) for c in analysis_plan.columns_to_ignore}
+    time_bases = {_norm_col_name(c) for c in analysis_plan.time_columns}
 
     out: list[dict] = []
     for ins in insights:
-        cols = _cols_from_insight(ins)
+        cols = _cols_from_insight(ins, known_columns)
 
         # ── Ignored-column penalty ────────────────────────────────────────────
         # Only penalise if ALL columns involved are ignored cols.

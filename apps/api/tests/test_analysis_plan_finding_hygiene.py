@@ -1,12 +1,14 @@
 """
-86E — Analysis plan finding hygiene tests.
+86E / 88A — Analysis plan finding hygiene tests.
 
 Verifies that apply_analysis_plan_hygiene():
 - Penalises findings using ignored (ID/artifact) columns
-- Penalises date-part derived feature findings
+- Penalises date-part derived feature findings (structured and text-only)
 - Preserves genuine time-series trend findings
 - Preserves findings on target_metrics and important_dimensions
+- Ignores unknown column-like tokens in free text (no hallucination)
 - Is safe when analysis_plan is None
+- Does not mutate input insights
 """
 import pytest
 
@@ -80,14 +82,24 @@ class TestNoPlan:
 class TestIgnoredColumnPenalty:
     def test_all_ignored_cols_penalised(self):
         plan = _plan()
-        ins = _insight(col_a="policy_id", col_b="customer_id", title="ID pair")
+        ins = _insight(
+            col_a="policy_id",
+            col_b="customer_id",
+            title="ID pair",
+            finding="",
+        )
         result = apply_analysis_plan_hygiene([ins], plan)
         assert _is_penalised(result[0])
         assert result[0]["confidence"] < ins["confidence"]
 
     def test_penalty_reason_is_ignored_column(self):
         plan = _plan()
-        ins = _insight(col_a="policy_id", col_b="customer_id", title="ID pair")
+        ins = _insight(
+            col_a="policy_id",
+            col_b="customer_id",
+            title="ID pair",
+            finding="",
+        )
         result = apply_analysis_plan_hygiene([ins], plan)
         assert result[0]["plan_penalty_reason"] == "ignored_column"
 
@@ -213,5 +225,129 @@ class TestTargetAndDimensionPreserved:
         original = _insight(col_a="effective_date_month", col_b="premium",
                             title="Mutation test")
         apply_analysis_plan_hygiene([original], plan)
+        assert "suppressed_by_plan" not in original
+        assert original["confidence"] == 70.0
+
+
+# ── 88A: Text-only column references ────────────────────────────────────────
+
+class TestTextOnlyDatePartPenalty:
+    def test_text_only_order_date_month_penalised(self):
+        plan = _plan(time_columns=["order_date"])
+        ins = _insight(
+            type="data_quality",
+            col_a=None,
+            col_b=None,
+            columns=[],
+            title="Order date month has suspicious concentration",
+            finding="order_date_month appears too dominant in the dataset.",
+        )
+
+        result = apply_analysis_plan_hygiene([ins], plan)
+
+        assert _is_penalised(result[0])
+        assert result[0]["plan_penalty_reason"] == "date_part_feature"
+
+    def test_text_only_effective_date_quarter_penalised(self):
+        plan = _plan(time_columns=["effective_date"])
+        ins = _insight(
+            type="data_quality",
+            col_a=None,
+            col_b=None,
+            columns=[],
+            finding="effective_date_quarter appears highly concentrated.",
+        )
+        result = apply_analysis_plan_hygiene([ins], plan)
+        assert _is_penalised(result[0])
+        assert result[0]["plan_penalty_reason"] == "date_part_feature"
+
+    def test_text_only_policy_end_date_year_penalised(self):
+        plan = _plan(time_columns=["policy_end_date"])
+        ins = _insight(
+            type="anomaly",
+            col_a=None,
+            col_b=None,
+            columns=[],
+            finding="policy_end_date_year has a suspicious spike.",
+        )
+        result = apply_analysis_plan_hygiene([ins], plan)
+        assert _is_penalised(result[0])
+        assert result[0]["plan_penalty_reason"] == "date_part_feature"
+
+    def test_text_only_date_is_weekend_penalised(self):
+        plan = _plan(time_columns=["date"])
+        ins = _insight(
+            type="data_quality",
+            col_a=None,
+            col_b=None,
+            columns=[],
+            title="Weekend skew",
+            finding="date_is_weekend drives an implausible split.",
+        )
+        result = apply_analysis_plan_hygiene([ins], plan)
+        assert _is_penalised(result[0])
+        assert result[0]["plan_penalty_reason"] == "date_part_feature"
+
+
+class TestTextOnlyTrendPreserved:
+    def test_text_real_date_trend_preserved(self):
+        plan = _plan(time_columns=["order_date"])
+        ins = _insight(
+            type="trend",
+            col_a=None,
+            col_b=None,
+            columns=[],
+            title="Revenue over order date",
+            finding="Revenue changes over order_date.",
+        )
+
+        result = apply_analysis_plan_hygiene([ins], plan)
+
+        assert not _is_penalised(result[0])
+
+    def test_price_over_price_date_trend_preserved(self):
+        plan = _plan(time_columns=["price_date"], target_metrics=["price"])
+        ins = _insight(
+            type="trend",
+            col_a=None,
+            col_b=None,
+            columns=[],
+            title="Price over price_date",
+            finding="price moves with price_date over time.",
+        )
+        result = apply_analysis_plan_hygiene([ins], plan)
+
+        assert not _is_penalised(result[0])
+
+
+class TestTextOnlyNoHallucination:
+    def test_text_extraction_does_not_invent_unknown_columns(self):
+        plan = _plan(time_columns=["order_date"])
+        ins = _insight(
+            type="data_quality",
+            col_a=None,
+            col_b=None,
+            columns=[],
+            title="Random fake_column_month issue",
+            finding="fake_column_month appears unusual.",
+        )
+
+        result = apply_analysis_plan_hygiene([ins], plan)
+
+        assert not _is_penalised(result[0])
+
+    def test_text_extraction_penalty_does_not_mutate_original(self):
+        plan = _plan(time_columns=["order_date"])
+        original = _insight(
+            type="data_quality",
+            col_a=None,
+            col_b=None,
+            columns=[],
+            title="order_date_month concentration",
+            finding="order_date_month appears concentrated.",
+        )
+
+        apply_analysis_plan_hygiene([original], plan)
+
         assert "suppressed_by_plan" not in original
         assert original["confidence"] == 70.0

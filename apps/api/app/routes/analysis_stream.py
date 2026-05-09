@@ -331,7 +331,7 @@ async def _run_analysis_stream(
             _plan = build_analysis_plan(columns=df_clean.columns.tolist(), dtypes=_dtypes)
             insights = apply_analysis_plan_hygiene(insights, _plan)
             insights = rerank_after_plan_hygiene(insights)
-            insight_results = [r.model_dump() for r in build_insight_results(insights)]
+            insight_results = [r.model_dump() for r in build_insight_results(insights, analysis_plan=_plan)]
             executive_panel = generate_executive_panel(insights)
         except Exception as e:
             logger.error(f"Insight generation failed for project {project_id}: {e}", exc_info=True)

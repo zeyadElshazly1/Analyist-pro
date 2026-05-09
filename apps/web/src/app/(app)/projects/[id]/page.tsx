@@ -133,7 +133,7 @@ function HistoryPanel({ projectId }: { projectId: number }) {
   if (history.length === 0) return null;
 
   return (
-    <section className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
+    <section className="rounded-xl border border-white/[0.05] bg-white/[0.015] p-5 sm:p-6 lg:p-8">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.05]">
@@ -346,7 +346,7 @@ export default function ProjectPage() {
   return (
     <AppShell>
       <div className="min-h-full bg-[#080810]">
-        <div className="mx-auto max-w-4xl space-y-6 p-6 lg:p-10">
+        <div className="mx-auto w-full max-w-[1600px] space-y-6 px-6 py-6 lg:px-8 lg:py-10">
 
           {/* Breadcrumb + header */}
           <div>
@@ -396,7 +396,7 @@ export default function ProjectPage() {
           )}
 
           {/* Dataset upload */}
-          <section className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
+          <section className="rounded-xl border border-white/[0.05] bg-white/[0.015] p-5 sm:p-6 lg:p-8">
             <div className="mb-5 flex items-center gap-2.5">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.05]">
                 <Database className="h-3.5 w-3.5 text-white/60" strokeWidth={1.75} />
@@ -416,7 +416,7 @@ export default function ProjectPage() {
           </section>
 
           {/* Analysis workflow */}
-          <section className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6">
+          <section className="rounded-xl border border-white/[0.05] bg-white/[0.015] p-5 sm:p-6 lg:p-8">
             <div className="mb-5 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
                 <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600/15">

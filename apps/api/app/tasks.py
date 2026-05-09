@@ -188,7 +188,7 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
         _plan = build_analysis_plan(columns=df_clean.columns.tolist(), dtypes=_dtypes)
         insights = apply_analysis_plan_hygiene(insights, _plan)
         insights = rerank_after_plan_hygiene(insights)
-        insight_results = [ir.model_dump() for ir in build_insight_results(insights)]
+        insight_results = [ir.model_dump() for ir in build_insight_results(insights, analysis_plan=_plan)]
         executive_panel = generate_executive_panel(insights)
     except Exception as e:
         logger.error(f"Insight generation failed for project {project_id}: {e}", exc_info=True)
