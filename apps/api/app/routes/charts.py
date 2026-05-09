@@ -44,9 +44,9 @@ def suggest_chart(
         df = load_dataset(info["path"])
         df_clean, _, _ = clean_dataset(df)
         df_plot, _ = prepare_analysis_frame(df_clean)
-        charts = build_chart_data(df_plot)
         _dtypes = {c: str(t) for c, t in df_clean.dtypes.items()}
         _plan = build_analysis_plan(columns=df_clean.columns.tolist(), dtypes=_dtypes)
+        charts = build_chart_data(df_plot, analysis_plan=_plan)
         charts = apply_analysis_plan_chart_hygiene(charts, _plan)
         return {"charts": charts}
     except MemoryError:

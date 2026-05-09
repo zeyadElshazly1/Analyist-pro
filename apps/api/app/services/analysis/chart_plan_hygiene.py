@@ -36,6 +36,39 @@ from __future__ import annotations
 
 from app.schemas.analysis_plan import AnalysisPlan
 
+# ── Column-order prioritisation ───────────────────────────────────────────────
+
+def prioritize_columns_for_charts(
+    columns: list[str],
+    analysis_plan: AnalysisPlan | None,
+) -> list[str]:
+    """Reorder columns so plan-relevant ones appear first within each budget slice.
+
+    Ordering tiers (relative order within each tier is preserved):
+      1. target_metrics
+      2. important_dimensions (not also a target)
+      3. all other non-ignored columns
+      4. columns_to_ignore (last — least likely to be generated within budget)
+
+    If analysis_plan is None or confidence < 0.6, columns are returned unchanged
+    so the existing DataFrame-order behaviour is preserved.
+    """
+    if not analysis_plan or analysis_plan.confidence < 0.6:
+        return columns
+
+    col_set    = set(columns)
+    target_set = set(analysis_plan.target_metrics)    & col_set
+    dim_set    = set(analysis_plan.important_dimensions) & col_set - target_set
+    ignore_set = set(analysis_plan.columns_to_ignore) & col_set
+
+    targets = [c for c in columns if c in target_set]
+    dims    = [c for c in columns if c in dim_set]
+    others  = [c for c in columns if c not in target_set and c not in dim_set and c not in ignore_set]
+    ignored = [c for c in columns if c in ignore_set]
+
+    return targets + dims + others + ignored
+
+
 # ── Score adjustments ─────────────────────────────────────────────────────────
 
 _IGNORE_PENALTY       = 0.40  # ×score — same factor as finding hygiene
