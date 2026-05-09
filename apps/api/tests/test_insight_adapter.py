@@ -383,3 +383,111 @@ class TestLegacyTitlePatternColumnExtraction:
             "finding": "Many distinct values.",
         }
         assert build_insight_result(raw).columns_used == ["customer_id"]
+
+
+# ── 88E — Plan hygiene metadata ───────────────────────────────────────────────
+
+class TestPlanHygieneMetadata:
+    def test_suppressed_by_plan_metadata_maps_to_insight_result(self):
+        raw = {
+            "type": "trend",
+            "severity": "medium",
+            "confidence": 70,
+            "title": "Revenue by order_date_month",
+            "finding": "order_date_month appears noisy.",
+            "suppressed_by_plan": True,
+            "plan_penalty_reason": "date_part_feature",
+        }
+
+        result = build_insight_result(raw)
+
+        assert result.suppressed_by_plan is True
+        assert result.plan_penalty_reason == "date_part_feature"
+
+    def test_suppressed_insight_is_not_report_safe_even_if_otherwise_eligible(self):
+        raw = {
+            "type": "trend",
+            "severity": "high",
+            "confidence": 95,
+            "title": "Strong trend",
+            "finding": "Looks strong but was suppressed.",
+            "suppressed_by_plan": True,
+            "plan_penalty_reason": "date_part_feature",
+        }
+
+        result = build_insight_result(raw)
+
+        assert result.report_safe is False
+
+    def test_suppressed_insight_gets_plan_caveat(self):
+        raw = {
+            "type": "trend",
+            "severity": "medium",
+            "confidence": 70,
+            "title": "Suppressed trend",
+            "finding": "Suppressed finding.",
+            "suppressed_by_plan": True,
+            "plan_penalty_reason": "date_part_feature",
+        }
+
+        result = build_insight_result(raw)
+
+        assert any("down-weighted by the analysis plan" in c for c in result.caveats)
+
+    def test_unsuppressed_insight_defaults_are_backward_compatible(self):
+        raw = {
+            "type": "trend",
+            "severity": "medium",
+            "confidence": 70,
+            "title": "Normal trend",
+            "finding": "Normal finding.",
+        }
+
+        result = build_insight_result(raw)
+
+        assert result.suppressed_by_plan is False
+        assert result.plan_penalty_reason is None
+
+    def test_suppressed_caveat_not_duplicated_on_repeated_calls(self):
+        raw = {
+            "type": "trend",
+            "severity": "medium",
+            "confidence": 70,
+            "title": "Suppressed trend",
+            "finding": "Suppressed finding.",
+            "suppressed_by_plan": True,
+            "plan_penalty_reason": "date_part_feature",
+        }
+
+        result = build_insight_result(raw)
+        plan_caveats = [c for c in result.caveats if "down-weighted by the analysis plan" in c]
+        assert len(plan_caveats) == 1
+
+    def test_suppressed_false_does_not_override_report_safe(self):
+        """suppressed_by_plan=False must not affect report_safe gating."""
+        raw = {
+            "type": "trend",
+            "severity": "high",
+            "confidence": 90,
+            "title": "Strong clean trend",
+            "finding": "Clean finding.",
+            "suppressed_by_plan": False,
+        }
+
+        result = build_insight_result(raw)
+
+        assert result.report_safe is True
+        assert result.suppressed_by_plan is False
+
+    def test_plan_penalty_reason_none_when_not_suppressed(self):
+        raw = {
+            "type": "segment",
+            "severity": "high",
+            "confidence": 80,
+            "title": "Segment gap: region → revenue",
+            "finding": "Region drives revenue.",
+        }
+
+        result = build_insight_result(raw)
+
+        assert result.plan_penalty_reason is None

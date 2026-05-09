@@ -78,6 +78,9 @@ _CAVEATS_BY_CATEGORY: dict[str, list[str]] = {
 }
 
 _BH_FDR_CAVEAT = "p-values corrected for multiple comparisons (Benjamini-Hochberg FDR)."
+_PLAN_SUPPRESSED_CAVEAT = (
+    "This finding was down-weighted by the analysis plan and should be reviewed before use."
+)
 
 # Report-safe: categories excluded regardless of confidence/severity
 _UNSAFE_CATEGORIES: frozenset[str] = frozenset({"data_quality"})
@@ -136,6 +139,10 @@ def build_insight_result(ins: dict, analysis_plan: AnalysisPlan | None = None) -
     raw_conf  = float(ins.get("confidence", 50.0))
     confidence = round(raw_conf / 100.0, 4)
 
+    suppressed_by_plan  = ins.get("suppressed_by_plan") is True
+    raw_penalty_reason  = ins.get("plan_penalty_reason")
+    plan_penalty_reason = str(raw_penalty_reason) if raw_penalty_reason else None
+
     title        = ins.get("title", "")
     columns_used = _extract_columns(ins, analysis_plan)
     insight_id   = _make_id(category, columns_used, title)
@@ -143,8 +150,13 @@ def build_insight_result(ins: dict, analysis_plan: AnalysisPlan | None = None) -
     evidence_text = _evidence_to_text(raw_evidence)
     method_used  = _extract_method(category, evidence_text)
     caveats      = _build_caveats(category, evidence_text)
+    if suppressed_by_plan and _PLAN_SUPPRESSED_CAVEAT not in caveats:
+        caveats.append(_PLAN_SUPPRESSED_CAVEAT)
     chart        = _CHART_SUGGESTION.get(category, "none")
-    report_safe  = _is_report_safe(severity, confidence, category)
+    report_safe  = (
+        _is_report_safe(severity, confidence, category)
+        and not suppressed_by_plan
+    )
 
     return InsightResult(
         insight_id=insight_id,
@@ -161,6 +173,8 @@ def build_insight_result(ins: dict, analysis_plan: AnalysisPlan | None = None) -
         why_it_matters=ins.get("why_it_matters", ""),
         recommendation=ins.get("action", ""),
         chart_suggestion=chart,               # type: ignore[arg-type]
+        suppressed_by_plan=suppressed_by_plan,
+        plan_penalty_reason=plan_penalty_reason,
     )
 
 
