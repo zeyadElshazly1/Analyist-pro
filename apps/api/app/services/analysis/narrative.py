@@ -165,6 +165,24 @@ def _enrich_insight(insight: dict) -> dict:
     return enriched
 
 
+# ── Narrative trust helpers ───────────────────────────────────────────────────
+
+def _raw_confidence(ins: dict) -> float:
+    try:
+        return float(ins.get("confidence", 50.0))
+    except (TypeError, ValueError):
+        return 50.0
+
+
+def _is_narrative_eligible(ins: dict) -> bool:
+    """Return True when an insight is trustworthy enough to mention in the narrative."""
+    if ins.get("suppressed_by_plan") is True:
+        return False
+    if _raw_confidence(ins) < 50.0:
+        return False
+    return True
+
+
 # ── Narrative builder ─────────────────────────────────────────────────────────
 
 def generate_narrative(
@@ -177,23 +195,28 @@ def generate_narrative(
 
     ``total_found`` is the full count before the MAX_INSIGHTS cap so the
     summary can tell users how many findings are available.
+
+    Plan-suppressed and low-confidence insights are excluded from the
+    narrative text. The input list is not mutated.
     """
     n_rows, n_cols = len(df), len(df.columns)
     missing_pct = round(df.isnull().sum().sum() / max(n_rows * n_cols, 1) * 100, 1)
 
-    correlations  = [i for i in insights if i["type"] == "correlation"]
-    anomalies     = [i for i in insights if i["type"] == "anomaly"]
-    segments      = [i for i in insights if i["type"] == "segment"]
-    concentration = [i for i in insights if i["type"] == "concentration"]
-    interactions  = [i for i in insights if i["type"] == "interaction"]
-    leading       = [i for i in insights if i["type"] == "leading_indicator"]
-    trends        = [i for i in insights if i["type"] == "trend"]
-    multicollin   = [i for i in insights if i["type"] == "multicollinearity"]
-    high_sev      = [i for i in insights if i.get("severity") == "high"]
+    eligible_insights = [i for i in insights if _is_narrative_eligible(i)]
+
+    correlations  = [i for i in eligible_insights if i["type"] == "correlation"]
+    anomalies     = [i for i in eligible_insights if i["type"] == "anomaly"]
+    segments      = [i for i in eligible_insights if i["type"] == "segment"]
+    concentration = [i for i in eligible_insights if i["type"] == "concentration"]
+    interactions  = [i for i in eligible_insights if i["type"] == "interaction"]
+    leading       = [i for i in eligible_insights if i["type"] == "leading_indicator"]
+    trends        = [i for i in eligible_insights if i["type"] == "trend"]
+    multicollin   = [i for i in eligible_insights if i["type"] == "multicollinearity"]
+    high_sev      = [i for i in eligible_insights if i.get("severity") == "high"]
 
     shown_str = (
-        f" (showing top {len(insights)} of {total_found})"
-        if total_found > len(insights)
+        f" (showing top {len(eligible_insights)} of {total_found})"
+        if total_found > len(eligible_insights)
         else ""
     )
 
@@ -217,7 +240,7 @@ def generate_narrative(
             f"{len(interactions)} interaction effect{'s' if len(interactions) > 1 else ''}"
         )
     counts_str = ": " + ", ".join(type_counts) if type_counts else ""
-    n_insights = len(insights)
+    n_insights = len(eligible_insights)
     para1 = (
         f"The dataset ({n_rows:,} rows × {n_cols} columns) {quality}. "
         f"Analysis surfaced {n_insights} insight{'s' if n_insights != 1 else ''}"

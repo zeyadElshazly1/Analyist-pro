@@ -90,6 +90,7 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
     from app.services.analysis.analysis_planner import build_analysis_plan
     from app.services.analysis.analysis_plan_hygiene import apply_analysis_plan_hygiene
     from app.services.analysis.ranking import rerank_after_plan_hygiene
+    from app.services.analysis.narrative import generate_narrative
     from app.db import SessionLocal as _SessionLocal
 
     # ── Step 0: resolve file ──────────────────────────────────────────────────
@@ -180,14 +181,15 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
 
     # ── Step 4: insights ──────────────────────────────────────────────────────
     try:
-        insights, narrative = analyze_dataset(df_analysis)
-        if ld_meta["large_dataset_mode"]:
-            narrative = narrative + LARGE_DATASET_NARRATIVE_NOTE
+        insights, _pre_hygiene_narrative = analyze_dataset(df_analysis)
         # Dataset Intelligence Layer — hygiene before adapter/ranking
         _dtypes = {c: str(t) for c, t in df_clean.dtypes.items()}
         _plan = build_analysis_plan(columns=df_clean.columns.tolist(), dtypes=_dtypes)
         insights = apply_analysis_plan_hygiene(insights, _plan)
         insights = rerank_after_plan_hygiene(insights)
+        narrative = generate_narrative(insights, df_analysis, total_found=len(insights))
+        if ld_meta["large_dataset_mode"]:
+            narrative = narrative + LARGE_DATASET_NARRATIVE_NOTE
         insight_results = [ir.model_dump() for ir in build_insight_results(insights, analysis_plan=_plan)]
         executive_panel = generate_executive_panel(insights)
     except Exception as e:
