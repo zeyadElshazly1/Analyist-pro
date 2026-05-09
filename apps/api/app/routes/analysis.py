@@ -23,6 +23,7 @@ from app.services.access_guards import (
 )
 from app.services.run_resolver import build_run_detail, resolve_latest_run
 from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
+from app.services.analysis.analysis_planner import build_analysis_plan
 from app.services.analysis.large_dataset_mode import (
     LARGE_DATASET_NARRATIVE_NOTE,
     attach_large_dataset_meta,
@@ -83,6 +84,15 @@ def run_analysis(
             if intake_snapshot:
                 cached = {**cached, "intake_result": intake_snapshot}
                 set_cached_analysis(project_id, _file_hash, cached)
+        # Backfill analysis_plan on cache hits that predate 86C.
+        if not cached.get("analysis_plan"):
+            try:
+                _cols = list((cached.get("intake_result") or {}).get("columns") or [])
+                if _cols:
+                    cached = {**cached, "analysis_plan": build_analysis_plan(_cols).model_dump()}
+                    set_cached_analysis(project_id, _file_hash, cached)
+            except Exception:
+                pass
         # Record a new run-history entry for this cache-hit invocation so
         # consultants can see that analysis was reopened even when the
         # expensive pipeline was skipped.
@@ -161,6 +171,12 @@ def run_analysis(
             db, project_id, file_path=file_path, file_hash=_file_hash
         )
 
+        _dtypes = {c: str(t) for c, t in df_clean.dtypes.items()}
+        _plan = build_analysis_plan(
+            columns=df_clean.columns.tolist(),
+            dtypes=_dtypes,
+        )
+
         result = {
             "project_id": project_id,
             "run_id": run.id if run else None,
@@ -173,6 +189,7 @@ def run_analysis(
             "narrative": narrative,
             "executive_panel": to_jsonable(executive_panel),
             "dataset_summary": get_dataset_summary(df_clean),   # large-dataset transparency metadata
+            "analysis_plan": _plan.model_dump(),                 # Dataset Intelligence Layer (86C)
         }
         attach_large_dataset_meta(result, ld_meta)
 
