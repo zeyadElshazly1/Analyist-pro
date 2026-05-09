@@ -242,7 +242,7 @@ function deriveStepStatuses(
 
 function TabPanel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-6">
+    <div className="min-w-0 w-full rounded-xl border border-white/[0.06] bg-white/[0.025] p-6 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.03)] sm:p-8 lg:p-10">
       {children}
     </div>
   );
@@ -474,69 +474,101 @@ export function RunAnalysis({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <Button
-          onClick={handleRun}
-          disabled={loading}
-          className="bg-indigo-600 hover:bg-indigo-500 text-white gap-2"
-        >
-          {loading ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Analyzing…
-            </>
-          ) : (
-            <>
-              <Play className="h-4 w-4" />
-              Analyze File
-            </>
-          )}
-        </Button>
+    <div className="min-w-0 w-full space-y-6">
+      {/* Toolbar — compact primary actions + status + secondary actions */}
+      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 sm:px-5">
+        <div className="flex flex-col gap-3 min-[520px]:flex-row min-[520px]:items-center min-[520px]:justify-between min-[520px]:gap-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            <Button
+              onClick={handleRun}
+              disabled={loading}
+              size="sm"
+              className="shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white gap-2 h-9"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Analyzing…
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Analyze File
+                </>
+              )}
+            </Button>
 
-        {result && !loading && (
-          <>
-            {isStoredResult ? (
-              <span className="flex items-center gap-1.5 text-xs text-indigo-300/70">
-                <Clock className="h-3.5 w-3.5" />
-                Viewing saved analysis
-              </span>
-            ) : (
-              <span className="flex items-center gap-1.5 text-xs text-emerald-400">
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Ready to review
+            {result && !loading && (
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium leading-none ${
+                  isStoredResult
+                    ? "border-indigo-500/25 bg-indigo-500/10 text-indigo-200/90"
+                    : "border-emerald-500/25 bg-emerald-500/10 text-emerald-300/95"
+                }`}
+              >
+                {isStoredResult ? (
+                  <>
+                    <Clock className="h-3 w-3 opacity-80" />
+                    Viewing saved analysis
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="h-3 w-3 opacity-90" />
+                    Ready to review
+                  </>
+                )}
               </span>
             )}
+          </div>
 
-            {!shareToken ? (
+          {result && !loading && (
+            <div className="flex flex-wrap items-center gap-2 min-[520px]:justify-end">
+              {!shareToken ? (
+                <Button
+                  onClick={handleShare}
+                  disabled={sharing}
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 gap-2 border border-white/10 text-xs text-white/65 hover:text-white hover:border-white/20 hover:bg-white/[0.04]"
+                >
+                  {sharing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Share2 className="h-3.5 w-3.5" />
+                  )}
+                  Share
+                </Button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="flex h-9 items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs font-medium text-white/70 hover:border-white/18 hover:bg-white/[0.06] hover:text-white transition-colors"
+                >
+                  {copied ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                  {copied ? "Copied!" : "Copy share link"}
+                </button>
+              )}
               <Button
-                onClick={handleShare}
-                disabled={sharing}
+                onClick={handleDownload}
+                disabled={downloading || loading}
                 variant="ghost"
-                className="gap-2 text-xs text-white/50 hover:text-white border border-white/10 hover:border-white/20"
+                size="sm"
+                className="h-9 gap-2 border border-white/10 text-xs text-white/65 hover:text-white hover:border-white/20 hover:bg-white/[0.04]"
               >
-                {sharing ? (
+                {downloading ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <Share2 className="h-3.5 w-3.5" />
+                  <Download className="h-3.5 w-3.5" />
                 )}
-                Share
+                Download CSV
               </Button>
-            ) : (
-              <button
-                onClick={handleCopy}
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-white/60 hover:text-white hover:border-white/20 transition-colors"
-              >
-                {copied ? (
-                  <Check className="h-3.5 w-3.5 text-emerald-400" />
-                ) : (
-                  <Copy className="h-3.5 w-3.5" />
-                )}
-                {copied ? "Copied!" : "Copy share link"}
-              </button>
-            )}
-          </>
-        )}
+            </div>
+          )}
+        </div>
       </div>
 
       {error ? (
@@ -554,7 +586,7 @@ export function RunAnalysis({
       )}
 
       {result ? (
-        <div className="space-y-4">
+        <div className="space-y-5 min-w-0">
           <ProjectTabs
             value={tab}
             onChange={handleTabChange}
@@ -615,14 +647,14 @@ export function RunAnalysis({
           {/* ── Overview ─────────────────────────────────────────────── */}
           {tab === "overview" && (
             <SafePanel label="Overview">
-              <div className="space-y-4">
+              <div className="space-y-6 min-w-0">
                 <StatsCards
                   healthResult={result.health_result}
                   profileResult={result.profile_result ?? result.profile}
                   summary={result.dataset_summary}
                   largeDataset={largeDatasetMeta}
                 />
-                <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 lg:items-start lg:gap-6">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start lg:gap-8">
                   <TabPanel>
                     <h2 className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-white/50">
                       Data quality
