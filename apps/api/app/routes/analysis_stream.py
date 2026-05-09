@@ -30,6 +30,7 @@ from app.db import SessionLocal
 from app.models import AnalysisResult
 from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
 from app.services.analysis.analysis_planner import build_analysis_plan
+from app.services.analysis.analysis_plan_hygiene import apply_analysis_plan_hygiene
 from app.services.analysis.large_dataset_mode import (
     LARGE_DATASET_NARRATIVE_NOTE,
     attach_large_dataset_meta,
@@ -324,6 +325,10 @@ async def _run_analysis_stream(
             insights, narrative = analyze_dataset(df_analysis)
             if ld_meta["large_dataset_mode"]:
                 narrative = narrative + LARGE_DATASET_NARRATIVE_NOTE
+            # Dataset Intelligence Layer — hygiene before adapter/ranking
+            _dtypes = {c: str(t) for c, t in df_clean.dtypes.items()}
+            _plan = build_analysis_plan(columns=df_clean.columns.tolist(), dtypes=_dtypes)
+            insights = apply_analysis_plan_hygiene(insights, _plan)
             insight_results = [r.model_dump() for r in build_insight_results(insights)]
             executive_panel = generate_executive_panel(insights)
         except Exception as e:
@@ -339,12 +344,6 @@ async def _run_analysis_stream(
         # ── Intake snapshot (canonical, best-effort) ──────────────────────────
         intake_result = build_intake_for_project(
             db, project_id, file_path=info.get("path"), file_hash=file_hash
-        )
-
-        _dtypes = {c: str(t) for c, t in df_clean.dtypes.items()}
-        _plan = build_analysis_plan(
-            columns=df_clean.columns.tolist(),
-            dtypes=_dtypes,
         )
 
         result = {
