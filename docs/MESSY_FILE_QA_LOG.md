@@ -22,9 +22,10 @@
 | # | File | Dataset type | Rows | Cols | File type | What worked | What looked bad | UI issue? | Cleaning issue? | Insight issue? | Chart issue? | Severity | Suggested task | Build now or defer? |
 |---|------|-------------|------|------|-----------|-------------|-----------------|-----------|-----------------|----------------|--------------|----------|----------------|---------------------|
 | 1 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | Upload, intake, health score, findings list, export all completed without error | Cleaning Review grade shown as raw Python object: `Grade {'score': 70, 'grade': 'B', 'label': 'Good'}` instead of formatted label. After 85E backend fix, UI rendered `Grade Grade B — 70/100 · Good — 70/100 data quality score` (double "Grade", duplicate score). | Yes | No | No | No | P2 | **RESOLVED — 85E + 85F** — backend adapter now emits `"Grade B — 70/100 · Good"`; frontend helpers `formatGradeLabel()` / `extractGradeLetter()` render it cleanly without duplication | **Done** — backend fixed 85E, UI duplication fixed 85F (2026-05-08) |
-| 2 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | — | Date-derived findings dominate ranking: `effective_date_month`, `effective_date_quarter`, `effective_date_year`, weekend flag findings ranked above business-relevant correlations | No | No | Yes | No | P2 | Suppress or down-rank low-value date-part feature correlations (month/quarter/year/weekday extracted from a single date column) in finding ranker | Defer — log; schedule as generic engine improvement when a second file confirms the same over-ranking pattern |
-| 3 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | — | Spreadsheet artifact columns not removed: `avg S`, `avg P`, `Unnamed: X`, `severity per payment` — these are helper/formula columns, not data columns | No | Yes | No | No | P2 | Improve mostly-empty and helper-column detection in cleaning pipeline; flag columns that are >80% empty or appear to be row-level formula residues | Defer — schedule as generic cleaning improvement when a second file produces similar artifact columns |
-| 4 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | Charts render and export without error | Chart selection is technically valid but does not surface the strongest business story; distributions are generic rather than focused on high-signal numeric fields (e.g. claim amount vs premium vs risk tier) | No | No | No | Yes | P2/P3 | Improve generic chart ranking to prioritise numeric fields that correlate with a likely target variable; deprioritise uniform or near-constant distributions | Defer — P3 polish; revisit after findings-ranker improvement is in place |
+| 2 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | — | Date-derived findings dominate ranking: `effective_date_month`, `effective_date_quarter`, `effective_date_year`, weekend flag findings ranked above business-relevant correlations | No | No | Yes | No | P2 | **IMPROVED by 86E** — `apply_analysis_plan_hygiene()` penalised 3/13 findings (×0.35 confidence) — date-part noise dropped from positions #2, #4, #7 to bottom of ranking; top findings now business-relevant (`frequency × severity`, genuine trends) | **Partially resolved** — 86E reduces date-part over-ranking for insurance. Full fix deferred: second file confirmation before broadening |
+| 3 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | — | Spreadsheet artifact columns not removed: `avg S`, `avg P`, `Unnamed: X`, `severity per payment` — these are helper/formula columns, not data columns | No | Yes | No | No | P2 | **PARTIALLY IMPROVED by 86E** — artifact columns (`avg_S`, `Unnamed: 14`, etc.) now listed in `columns_to_ignore`; findings where ALL columns are artifacts are penalised ×0.40. Cleaning-stage removal still open. | Defer — cleaning-stage removal still needed; schedule when second file shows artifact columns |
+| 4 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | Charts render and export without error | Chart selection is technically valid but does not surface the strongest business story; distributions are generic rather than focused on high-signal numeric fields (e.g. claim amount vs premium vs risk tier) | No | No | No | Yes | P2/P3 | Improve generic chart ranking to prioritise numeric fields that correlate with a likely target variable; deprioritise uniform or near-constant distributions | Defer — P3 polish; 86E did not affect chart selection; revisit after findings-ranker improvement is in place |
+| 5 | yahoo_finance_global_markets_2026.csv | Finance / market data | ~500 | ~40 | CSV | Upload, analysis pipeline completed without error | Planner date regex false positive: financial columns `daylow`, `dayhigh`, `fiftytwoweeklow`, `fiftytwoweekhigh`, `fiftydayaverage`, `twohundreddayaverage` classified as `time_columns` by `_REAL_DATE_FRAGMENTS` regex (matches `day`). Result: 0/15 findings penalised; hygiene did not apply. Also: `ticker`/`symbol` not caught by ID regex — `columns_to_ignore` empty. | No | No | Yes | No | P2 | Fix planner column classification for finance domain: tighten date regex to require word boundaries or `date`/`time` substring (not bare `day`); add `ticker`/`symbol` to ID pattern | Defer — schedule when second finance file confirms same false-positive pattern |
 
 ---
 
@@ -46,6 +47,42 @@
 
 ---
 
+## Issue #2–5 — 86E Re-test (86F, 2026-05-09)
+
+**Method:** Programmatic re-test — both files analysed via Python against the 86E pipeline (`build_analysis_plan` + `apply_analysis_plan_hygiene`) without a running server.
+
+### Insurance file (`auto_insurance_data.xlsx`)
+
+- **Plan:** `insurance`, 94% confidence
+- **`time_columns` identified:** `effective_date`, `policy_end_date` + all derived parts (`effective_date_month`, `effective_date_quarter`, `effective_date_year`, `effective_date_day_of_week`, `effective_date_is_weekend`, `policy_end_date_year`, etc.)
+- **`columns_to_ignore`:** `policy_id`, `customer_id`, `avg_S`, `Unnamed: 14` (artifact/ID columns correctly caught)
+- **Findings penalised:** 3/13 (×0.35 confidence)
+  - `effective_date_month × effective_date_quarter` — was #2, now near-bottom
+  - `effective_date_year × policy_end_date_year` — was #4, now near-bottom
+  - `effective_date_day_of_week × effective_date_is_weekend` — was #7, now near-bottom
+- **Top findings after hygiene:** `frequency × severity` (conf=99.8), genuine trend findings, distribution findings — business-relevant ranking restored
+- **Issue #2 verdict:** Improved. Date-part noise suppressed as intended.
+- **Issue #3 verdict:** Partially improved. Artifact columns in `columns_to_ignore`; all-artifact findings will be penalised. Cleaning-stage removal still open.
+
+### Finance file (`yahoo_finance_global_markets_2026.csv`)
+
+- **Plan:** `finance`, 95% confidence
+- **`time_columns` (false positives):** `daylow`, `dayhigh`, `fiftytwoweeklow`, `fiftytwoweekhigh`, `fiftydayaverage`, `twohundreddayaverage`, `averagevolume10days`, `pricetosalestrailing12months`, `earningsquarterlygrowth`, `lastfiscalyearend`, `mostrecentquarter`, `nextfiscalyearend`, `trading_days`, `price_date`, `build_timestamp`
+  - Root cause: `_REAL_DATE_FRAGMENTS` regex matches bare `day` substring — catches financial columns containing "day" (daylow, dayhigh, fiftydayaverage) even though they are price/volume metrics
+- **`columns_to_ignore`:** empty — `ticker`, `symbol` not matched by current ID regex (requires trailing digits or `_id` / `_uuid` patterns)
+- **Findings penalised:** 0/15 — hygiene did not apply
+- **Before/after 86E:** identical top-10 ranking for finance file
+- **Issue #5 verdict:** New issue logged. Planner date classification needs tightening for finance domain; ID pattern needs `ticker`/`symbol` support.
+
+### Summary
+
+| File | Plan confidence | Findings penalised | Effect |
+|------|-----------------|--------------------|--------|
+| auto_insurance_data.xlsx | 94% | 3/13 | Date-part noise dropped from top positions ✓ |
+| yahoo_finance_global_markets_2026.csv | 95% | 0/15 | False-positive time_columns; hygiene did not apply ✗ |
+
+---
+
 ## Domain Pack Decision Gate
 
 | Domain | Files tested | Pilot requests | Decision |
@@ -54,7 +91,7 @@
 | Telco / churn | — | 0 | Do not build — log only |
 | Sales | 1 (demo dataset) | 0 | Do not build — log only |
 | HR / attrition | — | 0 | Do not build — log only |
-| Finance | — | 0 | Do not build — log only |
+| Finance | 1 | 0 | Do not build — log only |
 
 **Threshold to start a domain pack: 3+ independent pilot requests for the same domain.**
 
@@ -77,10 +114,11 @@
 | Priority | Issue # | Task description | Trigger to schedule |
 |----------|---------|-----------------|---------------------|
 | 1 | #1 | ~~85E/85F — backend adapter + UI helpers~~ | **Resolved** (2026-05-08) |
-| 2 | #3 | Improve helper/mostly-empty column detection in cleaning | Second file with artifact columns |
-| 3 | #2 | Suppress date-part feature correlations in finding ranker | Second file with same over-ranking |
-| 4 | #4 | Improve generic chart ranking toward high-signal fields | After findings ranker improvement lands |
+| 2 | #2 | ~~86E — date-part hygiene penalty~~ | **Partially resolved** (2026-05-09) — insurance file improved; full resolution after second file confirmation |
+| 3 | #5 | Fix planner date regex false positive for finance domain; add ticker/symbol to ID pattern | Second finance file with same misclassification |
+| 4 | #3 | Improve helper/mostly-empty column detection in cleaning pipeline | Second file with artifact columns |
+| 5 | #4 | Improve generic chart ranking toward high-signal fields | After findings ranker improvement lands |
 
 ---
 
-*Log started: 2026-05-08*
+*Log started: 2026-05-08 · Last updated: 2026-05-09 (86F re-test)*
