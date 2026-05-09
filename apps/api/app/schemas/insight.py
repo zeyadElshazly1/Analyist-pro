@@ -135,7 +135,7 @@ class InsightResult(BaseModel):
             "True when this insight is suitable for inclusion in a client-facing "
             "report without manual review. "
             "Rule: severity in ('high', 'medium') AND confidence >= 0.6 "
-            "AND category not in ('data_quality',). "
+            "AND category not in ('data_quality',) AND not suppressed_by_plan. "
             "Currently not emitted by the pipeline — computed in the adapter."
         ),
     )
@@ -147,6 +147,21 @@ class InsightResult(BaseModel):
             "'Based on a 20k-row sample of a larger dataset', "
             "'p-value corrected for multiple comparisons (BH-FDR)'. "
             "Currently not emitted — populated by a caveat lookup table in the adapter."
+        ),
+    )
+    suppressed_by_plan: bool = Field(
+        default=False,
+        description=(
+            "True when analysis_plan_hygiene down-weighted this insight. "
+            "The insight remains visible for analyst review but should not be "
+            "treated as a top business finding."
+        ),
+    )
+    plan_penalty_reason: str | None = Field(
+        default=None,
+        description=(
+            "Machine-readable reason set by analysis_plan_hygiene, e.g. "
+            "'date_part_feature' or 'ignored_column'."
         ),
     )
 
