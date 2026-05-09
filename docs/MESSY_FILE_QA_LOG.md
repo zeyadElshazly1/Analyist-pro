@@ -164,4 +164,83 @@
 
 ---
 
-*Log started: 2026-05-08 · Last updated: 2026-05-09 (86I — Issue #4 partially resolved)*
+## Issue #4 — 86I Chart Hygiene Re-test (86J, 2026-05-09)
+
+**Method:** Programmatic re-test — both files run through full pipeline: `build_chart_data()` → `apply_analysis_plan_chart_hygiene()`.
+
+### Insurance file (`auto_insurance_data.xlsx`)
+
+**Plan:** `insurance`, 94% confidence. Targets: `annual_premium_usd`, `frequency`, `severity`, `original_vehicle_price_usd`. Dims: `gender`, `territory`, `vehicle_type`. Time cols: 15 (including all `effective_date_*` and `policy_end_date_*` derived features).
+
+**Before hygiene — raw top-10:**
+```
+ 1. bar      age / Count                       score=8.00
+ 2. bar      number_of_previous_accidents /    score=8.00
+ 3. bar      vehicle_year / Count              score=8.00
+ 4. bar      policy_length_years / Count       score=8.00
+ 5. heatmap  Column / Column                   score=8.00
+ 6. boxplot  gender / age                      score=7.00
+ 7. bar      effective_date_is_weekend /       score=6.00
+ 8. bar      policy_end_date_is_weekend /      score=6.00
+ 9. bar      gender / Count                    score=6.00
+10. bar      territory / Count                 score=6.00
+```
+
+**After hygiene — top-10:**
+```
+ 1. bar      age / Count                       score=8.00   (unchanged)
+ 2. bar      number_of_previous_accidents /    score=8.00   (unchanged)
+ 3. bar      vehicle_year / Count              score=8.00   (unchanged)
+ 4. bar      policy_length_years / Count       score=8.00   (unchanged)
+ 5. heatmap  Column / Column                   score=8.00   (unchanged)
+ 6. boxplot  gender / age                      score=7.30   [important_dimension +0.30]
+ 7. bar      gender / Count                    score=6.30   [important_dimension +0.30]
+ 8. bar      territory / Count                 score=6.30   [important_dimension +0.30]
+ 9. bar      effective_date_is_weekend /       score=6.00   (unchanged)
+10. bar      policy_end_date_is_weekend /      score=6.00   (unchanged)
+```
+Charts boosted: 3. Charts penalised: 0.
+
+**What improved:** Dimension charts (`gender`, `territory`) promoted above weekend-flag charts. ✓
+
+**Remaining gap — root cause identified:** Target metric columns (`annual_premium_usd`, `frequency`, `severity`) are at numeric column positions 5-7 in DataFrame order. The chart generator's histogram budget is `MAX_HIST_COLS=4` — only the first 4 numeric columns get histogram charts. The hygiene layer can only adjust scores for charts that already exist; it cannot generate missing charts. Target metrics do appear in the scatter budget (positions 5-6) but the score cap keeps them below the top 10. This requires a follow-up task to reorder chart generation to prioritise target_metrics before generic numeric columns.
+
+---
+
+### Finance file (`yahoo_finance_global_markets_2026.csv`)
+
+**Plan:** `finance`, 95% confidence. Targets: 42 columns including return/volatility/price metrics. Dims: `country`, `sector`, `industry`, `market_cap_tier`. Time cols: `price_date`, `build_timestamp`, + derived date parts. Ignore: `ticker`.
+
+**Note:** Finance file uses the domain-specific snapshot chart builder (`build_financial_snapshot_charts`) — not the generic histogram/scatter path. Charts are already semantically relevant (return leaderboards, risk-return scatter, sector averages).
+
+**After hygiene — top-8 (all charts):**
+```
+ 1. bar      shortname / return_1y_pct (%)     score=8.85  (unchanged — snapshot builder)
+ 2. bar      shortname / volatility_1y_ann (%) score=8.78  (unchanged)
+ 3. bar      shortname / return_1y_pct (%)     score=8.75  (unchanged)
+ 4. bar      sector / Mean return_1y_pct (%)   score=8.75  [important_dimension +0.30]
+ 5. bar      asset_class / Mean return_1y_pct  score=8.55  (unchanged)
+ 6. scatter  volatility_1y_ann / return_1y_pct score=8.54  (unchanged)
+ 7. bar      shortname / analyst_upside_pct    score=8.40  (unchanged)
+ 8. bar      shortname / pct_of_52w_high (%)   score=8.35  (unchanged)
+```
+Charts boosted: 1 (`sector` is a dimension → +0.30). Charts penalised: 0.
+
+**What improved:** `sector × return` promoted above `asset_class × return` — sector is the more granular dimension. Finance metric columns (dayLow, dayHigh, etc.) not penalised ✓. `ticker` chart absent ✓ (in columns_to_ignore; correctly excluded from chart generation).
+
+---
+
+### Issue #4 Verdict
+
+| File | Improvement | Remaining gap |
+|------|------------|---------------|
+| Insurance | Dimension charts boosted (+0.30); weekend-flag noise demoted | Target metric histograms not generated — column budget exhausted before reaching `annual_premium_usd` / `frequency` / `severity` |
+| Finance | Sector dimension boosted; domain-specific charts unchanged; no false penalisation | None — finance already uses semantic chart builder |
+
+**Conclusion:** Issue #4 is **partially improved** by 86I. Dimension-level boosting works correctly. The deeper gap for insurance — target metric columns falling outside the 4-column histogram budget — requires a follow-up task to reorder chart column selection by plan priority before generating charts. This is a chart-generation-order change, not a score-adjustment change.
+
+**Follow-up task logged:** Chart generation column order should prefer `target_metrics` > `important_dimensions` > other numeric columns within each budget slice. Until then, `annual_premium_usd`, `frequency`, and `severity` histograms will not appear for the insurance file.
+
+---
+
+*Log started: 2026-05-08 · Last updated: 2026-05-09 (86J — Issue #4 re-tested after 86I)*
