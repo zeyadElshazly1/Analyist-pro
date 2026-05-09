@@ -13,6 +13,8 @@ from app.services.file_loader import load_dataset
 from app.services.cleaner import clean_dataset
 from app.services.chart_builder import build_chart_data
 from app.services.analysis.large_dataset_mode import prepare_analysis_frame
+from app.services.analysis.analysis_planner import build_analysis_plan
+from app.services.analysis.chart_plan_hygiene import apply_analysis_plan_chart_hygiene
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/charts", tags=["charts"])
@@ -43,6 +45,9 @@ def suggest_chart(
         df_clean, _, _ = clean_dataset(df)
         df_plot, _ = prepare_analysis_frame(df_clean)
         charts = build_chart_data(df_plot)
+        _dtypes = {c: str(t) for c, t in df_clean.dtypes.items()}
+        _plan = build_analysis_plan(columns=df_clean.columns.tolist(), dtypes=_dtypes)
+        charts = apply_analysis_plan_chart_hygiene(charts, _plan)
         return {"charts": charts}
     except MemoryError:
         logger.error(f"Out of memory building charts for project {project_id}", exc_info=True)
