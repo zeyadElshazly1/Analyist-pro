@@ -52,10 +52,18 @@ _DOMAIN_RULES: list[tuple[str, set[str], str, str, list[str]]] = [
 # Column classification patterns
 # ---------------------------------------------------------------------------
 
-_ID_PATTERN       = re.compile(r"(^|_)(id|key|num|code|ref|uid|uuid|hash)($|_)", re.I)
+_ID_PATTERN       = re.compile(r"(^|_)(id|key|num|code|ref|uid|uuid|hash|ticker|symbol)($|_)", re.I)
 _UNNAMED_PATTERN  = re.compile(r"^unnamed[:\s_]", re.I)
 _HELPER_PATTERN   = re.compile(r"^(avg |average |sum |total |count |helper |temp )", re.I)
-_DATE_PATTERN     = re.compile(r"(date|time|month|year|quarter|week|day|_at$|_on$|timestamp)", re.I)
+# Require underscore or string boundary around calendar units (day/week/month/year/quarter/time)
+# so that finance metric names like daylow, fiftydayaverage, fiftytwoweeklow are not
+# misclassified as time columns.  "date", "timestamp", "_at", "_on" are matched freely
+# because they are unambiguous date indicators in any domain.
+_DATE_PATTERN     = re.compile(
+    r"(date|timestamp|_at$|_on$)"
+    r"|(^|_)(time|month|year|quarter|week|day)(_|$)",
+    re.IGNORECASE,
+)
 
 _TARGET_TOKENS: dict[str, list[str]] = {
     "sales":     ["revenue", "sales", "amount", "price", "margin", "profit", "income",
