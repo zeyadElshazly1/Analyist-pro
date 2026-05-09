@@ -10,7 +10,7 @@ Key normalization applied here:
   - confidence  : 0–100 (pipeline) → 0.0–1.0 (schema)
   - insight_id  : deterministic md5 hash of (category + sorted columns + title);
                   globally unique within a run via _deduplicate_ids post-pass
-  - columns_used: consolidated from col_a/col_b + title-pattern extraction
+  - columns_used: col_a/col_b + title patterns + optional plan-aware text scan
   - method_used : category → method lookup + evidence string parsing
   - report_safe : severity/confidence/category gate
   - caveats     : per-category lookup table + BH-FDR flag from evidence
@@ -22,7 +22,13 @@ import hashlib
 import json
 import re
 
+from app.schemas.analysis_plan import AnalysisPlan
 from app.schemas.insight import InsightResult
+from app.services.analysis.column_matching import (
+    _extract_known_columns_from_text_fields,
+    _known_columns_from_plan,
+    _norm_col_name,
+)
 
 # ── Lookup tables ─────────────────────────────────────────────────────────────
 
@@ -96,18 +102,25 @@ def _evidence_to_text(evidence: object) -> str:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def build_insight_results(raw_insights: list[dict]) -> list[InsightResult]:
+def build_insight_results(
+    raw_insights: list[dict],
+    analysis_plan: AnalysisPlan | None = None,
+) -> list[InsightResult]:
     """Convert a list of raw pipeline insight dicts to canonical InsightResult objects.
 
     Every insight_id in the returned list is guaranteed to be unique within the
     run via _deduplicate_ids post-pass.  This prevents React "duplicate key"
     warnings on the frontend and ensures Report Builder selections are stable.
+
+    When ``analysis_plan`` is set (same plan used by analysis_plan_hygiene),
+    ``columns_used`` also includes verbatim known column names found in insight
+    text fields (finding, recommendation, …).
     """
-    results = [build_insight_result(ins) for ins in raw_insights]
+    results = [build_insight_result(ins, analysis_plan=analysis_plan) for ins in raw_insights]
     return _deduplicate_ids(results)
 
 
-def build_insight_result(ins: dict) -> InsightResult:
+def build_insight_result(ins: dict, analysis_plan: AnalysisPlan | None = None) -> InsightResult:
     """
     Map one raw insight dict to a canonical InsightResult.
 
@@ -124,7 +137,7 @@ def build_insight_result(ins: dict) -> InsightResult:
     confidence = round(raw_conf / 100.0, 4)
 
     title        = ins.get("title", "")
-    columns_used = _extract_columns(ins)
+    columns_used = _extract_columns(ins, analysis_plan)
     insight_id   = _make_id(category, columns_used, title)
     raw_evidence = ins.get("evidence", "")
     evidence_text = _evidence_to_text(raw_evidence)
@@ -190,7 +203,10 @@ def _deduplicate_ids(results: list[InsightResult]) -> list[InsightResult]:
     return out
 
 
-def _extract_columns(ins: dict) -> list[str]:
+def _extract_columns(
+    ins: dict,
+    analysis_plan: AnalysisPlan | None = None,
+) -> list[str]:
     """
     Consolidate column references into a stable list.
 
@@ -202,7 +218,23 @@ def _extract_columns(ins: dict) -> list[str]:
     5. "linked to" pattern (missing_pattern: "miss linked to num")
     6. " in " after known prefix (anomalies, concentration, data_quality)
     7. ":" split fallback (most remaining types)
+    8. When ``analysis_plan`` is provided: appendix from plan-aware text scan
+       (finding, recommendation, …) for known identifiers only — no hallucination.
     """
+    base = _extract_columns_from_structured_and_title(ins)
+    if not analysis_plan:
+        return base
+    known = _known_columns_from_plan(analysis_plan)
+    if not known:
+        return base
+    exclude = {_norm_col_name(c) for c in base}
+    extra = _extract_known_columns_from_text_fields(
+        ins, known, exclude_normalized=exclude
+    )
+    return base + extra
+
+
+def _extract_columns_from_structured_and_title(ins: dict) -> list[str]:
     # 1. Explicit fields
     cols: list[str] = []
     for field in ("col_a", "col_b"):

@@ -165,7 +165,7 @@ def run_analysis(
         _plan = build_analysis_plan(columns=df_clean.columns.tolist(), dtypes=_dtypes)
         insights = apply_analysis_plan_hygiene(insights, _plan)
 
-        insight_results = [r.model_dump() for r in build_insight_results(insights)]
+        insight_results = [r.model_dump() for r in build_insight_results(insights, analysis_plan=_plan)]
         executive_panel = generate_executive_panel(insights)
 
         set_run_status(db, run, "insights_complete")

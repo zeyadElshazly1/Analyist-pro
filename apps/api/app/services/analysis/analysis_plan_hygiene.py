@@ -20,6 +20,11 @@ from __future__ import annotations
 import re
 
 from app.schemas.analysis_plan import AnalysisPlan
+from app.services.analysis.column_matching import (
+    _extract_known_columns_from_text_fields,
+    _known_columns_from_plan,
+    _norm_col_name,
+)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -42,64 +47,7 @@ _REAL_DATE_FRAGMENTS = re.compile(
     re.IGNORECASE,
 )
 
-# Suffixes appended to plan time_columns to form known noisy date-part features.
-_DATE_PART_VARIANT_SUFFIXES: tuple[str, ...] = (
-    "month",
-    "quarter",
-    "year",
-    "week",
-    "weekday",
-    "day",
-    "dayofweek",
-    "weekend",
-    "is_weekend",
-    "wday",
-)
-
-# Free-text insight fields scanned for verbatim known column identifiers.
-_INSIGHT_TEXT_COLUMN_FIELDS: tuple[str, ...] = (
-    "title",
-    "finding",
-    "explanation",
-    "description",
-    "evidence",
-    "recommendation",
-    "action",
-)
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _norm_col_name(value: str) -> str:
-    """Normalize a column-ish token: spaces/hyphens → underscores; lowercased."""
-    return re.sub(r"[\s\-]+", "_", value.strip().lower())
-
-
-def _norm_text_blob_for_column_scan(blob: str) -> str:
-    """Normalize prose so (^|_)known_column(_|$) matches token boundaries."""
-    s = _norm_col_name(blob)
-    s = re.sub(r"[^a-z0-9_]+", "_", s)
-    return re.sub(r"_+", "_", s).strip("_")
-
-
-def _known_columns_from_plan(analysis_plan: AnalysisPlan) -> set[str]:
-    """All normalized plan columns plus derived date-part variants for time columns."""
-    out: set[str] = set()
-    for key in (
-        "target_metrics",
-        "important_dimensions",
-        "time_columns",
-        "columns_to_ignore",
-    ):
-        for x in getattr(analysis_plan, key, None) or []:
-            if x:
-                out.add(_norm_col_name(str(x)))
-    bases = {_norm_col_name(str(tc)) for tc in (analysis_plan.time_columns or []) if tc}
-    bases.discard("")
-    for base in bases:
-        for suf in _DATE_PART_VARIANT_SUFFIXES:
-            out.add(f"{base}_{suf}")
-    return out
 
 
 def _cols_from_insight(
@@ -132,20 +80,11 @@ def _cols_from_insight(
                     add_name(str(c))
 
     if known_columns:
-        chunks: list[str] = []
-        for f in _INSIGHT_TEXT_COLUMN_FIELDS:
-            v = ins.get(f)
-            if v:
-                chunks.append(str(v))
-        norm_text = _norm_text_blob_for_column_scan(" ".join(chunks))
-        if norm_text:
-            for known in sorted(known_columns):
-                if known in seen_norm:
-                    continue
-                pattern = rf"(?:^|_){re.escape(known)}(?:_|$)"
-                if re.search(pattern, norm_text):
-                    seen_norm.add(known)
-                    cols.append(known)
+        cols.extend(
+            _extract_known_columns_from_text_fields(
+                ins, known_columns, exclude_normalized=seen_norm
+            )
+        )
 
     return cols
 
