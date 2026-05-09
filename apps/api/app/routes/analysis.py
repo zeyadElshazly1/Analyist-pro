@@ -24,6 +24,7 @@ from app.services.access_guards import (
 from app.services.run_resolver import build_run_detail, resolve_latest_run
 from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
 from app.services.analysis.analysis_planner import build_analysis_plan
+from app.services.analysis.analysis_plan_hygiene import apply_analysis_plan_hygiene
 from app.services.analysis.large_dataset_mode import (
     LARGE_DATASET_NARRATIVE_NOTE,
     attach_large_dataset_meta,
@@ -158,6 +159,12 @@ def run_analysis(
         insights, narrative = analyze_dataset(df_analysis)
         if ld_meta["large_dataset_mode"]:
             narrative = narrative + LARGE_DATASET_NARRATIVE_NOTE
+
+        # ── Dataset Intelligence Layer — hygiene before ranking/adapter ───────
+        _dtypes = {c: str(t) for c, t in df_clean.dtypes.items()}
+        _plan = build_analysis_plan(columns=df_clean.columns.tolist(), dtypes=_dtypes)
+        insights = apply_analysis_plan_hygiene(insights, _plan)
+
         insight_results = [r.model_dump() for r in build_insight_results(insights)]
         executive_panel = generate_executive_panel(insights)
 
@@ -169,12 +176,6 @@ def run_analysis(
         # frontend renders a clean empty state on reopen.
         intake_result = build_intake_for_project(
             db, project_id, file_path=file_path, file_hash=_file_hash
-        )
-
-        _dtypes = {c: str(t) for c, t in df_clean.dtypes.items()}
-        _plan = build_analysis_plan(
-            columns=df_clean.columns.tolist(),
-            dtypes=_dtypes,
         )
 
         result = {
