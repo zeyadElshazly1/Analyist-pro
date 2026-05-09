@@ -25,7 +25,7 @@
 | 2 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | — | Date-derived findings dominate ranking: `effective_date_month`, `effective_date_quarter`, `effective_date_year`, weekend flag findings ranked above business-relevant correlations | No | No | Yes | No | P2 | **IMPROVED by 86E** — `apply_analysis_plan_hygiene()` penalised 3/13 findings (×0.35 confidence) — date-part noise dropped from positions #2, #4, #7 to bottom of ranking; top findings now business-relevant (`frequency × severity`, genuine trends) | **Partially resolved** — 86E reduces date-part over-ranking for insurance. Full fix deferred: second file confirmation before broadening |
 | 3 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | — | Spreadsheet artifact columns not removed: `avg S`, `avg P`, `Unnamed: X`, `severity per payment` — these are helper/formula columns, not data columns | No | Yes | No | No | P2 | **PARTIALLY IMPROVED by 86E** — artifact columns (`avg_S`, `Unnamed: 14`, etc.) now listed in `columns_to_ignore`; findings where ALL columns are artifacts are penalised ×0.40. Cleaning-stage removal still open. | Defer — cleaning-stage removal still needed; schedule when second file shows artifact columns |
 | 4 | auto_insurance_data.xlsx | Auto insurance / risk | ~1k | ~20 | Excel | Charts render and export without error | Chart selection is technically valid but does not surface the strongest business story; distributions are generic rather than focused on high-signal numeric fields (e.g. claim amount vs premium vs risk tier) | No | No | No | Yes | P2/P3 | Improve generic chart ranking to prioritise numeric fields that correlate with a likely target variable; deprioritise uniform or near-constant distributions | Defer — P3 polish; 86E did not affect chart selection; revisit after findings-ranker improvement is in place |
-| 5 | yahoo_finance_global_markets_2026.csv | Finance / market data | ~500 | ~40 | CSV | Upload, analysis pipeline completed without error | Planner date regex false positive: financial columns `daylow`, `dayhigh`, `fiftytwoweeklow`, `fiftytwoweekhigh`, `fiftydayaverage`, `twohundreddayaverage` classified as `time_columns` by `_REAL_DATE_FRAGMENTS` regex (matches `day`). Result: 0/15 findings penalised; hygiene did not apply. Also: `ticker`/`symbol` not caught by ID regex — `columns_to_ignore` empty. | No | No | Yes | No | P2 | Fix planner column classification for finance domain: tighten date regex to require word boundaries or `date`/`time` substring (not bare `day`); add `ticker`/`symbol` to ID pattern | Defer — schedule when second finance file confirms same false-positive pattern |
+| 5 | yahoo_finance_global_markets_2026.csv | Finance / market data | ~451 | ~131 | CSV | Upload, analysis pipeline completed without error | **RESOLVED by 86G** — `dayLow`, `dayHigh`, `fiftyDayAverage`, `twoHundredDayAverage`, `averageVolume10days`, `fiftyTwoWeekLow`, `fiftyTwoWeekHigh`, `priceToSalesTrailing12Months`, `earningsQuarterlyGrowth` are all correctly excluded from `time_columns` after tightening `_DATE_PATTERN`. Real date columns (`price_date`, `build_timestamp`, `exDividendDate`) still detected. `ticker`/`symbol` now in `columns_to_ignore`. | No | No | No | No | P2 | **Done** — backend planner fix 86G (2026-05-09) |
 
 ---
 
@@ -83,6 +83,49 @@
 
 ---
 
+## Issue #5 — 86G Fix Verification (86H, 2026-05-09)
+
+**Method:** Programmatic re-test — `yahoo_finance_global_markets_2026.csv` (451 rows × 131 columns) run through updated planner and hygiene layer.
+
+### Results
+
+**`time_columns` after fix (3 columns — all genuine date/timestamp fields):**
+| Column | Verdict |
+|--------|---------|
+| `exDividendDate` | ✓ Real date column (contains `date`) |
+| `price_date` | ✓ Real date column (contains `date`) |
+| `build_timestamp` | ✓ Real timestamp (contains `timestamp`) |
+
+**Finance metric columns no longer misclassified:**
+| Column | Before 86G | After 86G |
+|--------|-----------|-----------|
+| `dayLow` | In time_cols ✗ | NOT in time_cols ✓ |
+| `dayHigh` | In time_cols ✗ | NOT in time_cols ✓ |
+| `fiftyDayAverage` | In time_cols ✗ | NOT in time_cols ✓ |
+| `twoHundredDayAverage` | In time_cols ✗ | NOT in time_cols ✓ |
+| `averageVolume10days` | In time_cols ✗ | NOT in time_cols ✓ |
+| `fiftyTwoWeekLow` | In time_cols ✗ | NOT in time_cols ✓ |
+| `fiftyTwoWeekHigh` | In time_cols ✗ | NOT in time_cols ✓ |
+| `priceToSalesTrailing12Months` | In time_cols ✗ | NOT in time_cols ✓ |
+| `earningsQuarterlyGrowth` | In time_cols ✗ | NOT in time_cols ✓ |
+| `lastFiscalYearEnd` | In time_cols ✗ | NOT in time_cols ✓ |
+| `mostRecentQuarter` | In time_cols ✗ | NOT in time_cols ✓ |
+| `nextFiscalYearEnd` | In time_cols ✗ | NOT in time_cols ✓ |
+| `trading_days` | In time_cols ✗ | NOT in time_cols ✓ |
+
+**Entity identifiers:**
+- `ticker`: `columns_to_ignore=True`, `target_metrics=False` ✓
+- `symbol`: `columns_to_ignore=True`, `target_metrics=False` ✓
+
+**Hygiene simulation (synthetic insights on formerly-misclassified columns):**
+- `dayLow vs dayHigh`: conf=80.0, not penalised ✓
+- `fiftyDayAverage vs twoHundredDayAverage`: conf=75.0, not penalised ✓
+- `price_date trend`: conf=85.0, not penalised ✓ (genuine date trend preserved)
+
+**Verdict:** Issue #5 fully resolved. No useful finance findings accidentally suppressed.
+
+---
+
 ## Domain Pack Decision Gate
 
 | Domain | Files tested | Pilot requests | Decision |
@@ -115,10 +158,10 @@
 |----------|---------|-----------------|---------------------|
 | 1 | #1 | ~~85E/85F — backend adapter + UI helpers~~ | **Resolved** (2026-05-08) |
 | 2 | #2 | ~~86E — date-part hygiene penalty~~ | **Partially resolved** (2026-05-09) — insurance file improved; full resolution after second file confirmation |
-| 3 | #5 | Fix planner date regex false positive for finance domain; add ticker/symbol to ID pattern | Second finance file with same misclassification |
+| 3 | #5 | ~~86G — tighten _DATE_PATTERN; add ticker/symbol to _ID_PATTERN~~ | **Resolved** (2026-05-09) — verified on real global markets CSV (86H) |
 | 4 | #3 | Improve helper/mostly-empty column detection in cleaning pipeline | Second file with artifact columns |
 | 5 | #4 | Improve generic chart ranking toward high-signal fields | After findings ranker improvement lands |
 
 ---
 
-*Log started: 2026-05-08 · Last updated: 2026-05-09 (86F re-test)*
+*Log started: 2026-05-08 · Last updated: 2026-05-09 (86H — Issue #5 resolved)*
