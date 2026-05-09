@@ -25,6 +25,7 @@ from app.services.run_resolver import build_run_detail, resolve_latest_run
 from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
 from app.services.analysis.analysis_planner import build_analysis_plan
 from app.services.analysis.analysis_plan_hygiene import apply_analysis_plan_hygiene
+from app.services.analysis.ranking import rerank_after_plan_hygiene
 from app.services.analysis.large_dataset_mode import (
     LARGE_DATASET_NARRATIVE_NOTE,
     attach_large_dataset_meta,
@@ -164,6 +165,7 @@ def run_analysis(
         _dtypes = {c: str(t) for c, t in df_clean.dtypes.items()}
         _plan = build_analysis_plan(columns=df_clean.columns.tolist(), dtypes=_dtypes)
         insights = apply_analysis_plan_hygiene(insights, _plan)
+        insights = rerank_after_plan_hygiene(insights)
 
         insight_results = [r.model_dump() for r in build_insight_results(insights)]
         executive_panel = generate_executive_panel(insights)
