@@ -29,6 +29,7 @@ from fastapi.responses import StreamingResponse
 from app.db import SessionLocal
 from app.models import AnalysisResult
 from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
+from app.services.analysis.analysis_planner import build_analysis_plan
 from app.services.analysis.large_dataset_mode import (
     LARGE_DATASET_NARRATIVE_NOTE,
     attach_large_dataset_meta,
@@ -223,6 +224,15 @@ async def _run_analysis_stream(
                 if intake_snapshot:
                     cached = {**cached, "intake_result": intake_snapshot}
                     set_cached_analysis(project_id, file_hash, cached)
+            # Backfill analysis_plan on cache hits that predate 86C.
+            if not cached.get("analysis_plan"):
+                try:
+                    _cols = list((cached.get("intake_result") or {}).get("columns") or [])
+                    if _cols:
+                        cached = {**cached, "analysis_plan": build_analysis_plan(_cols).model_dump()}
+                        set_cached_analysis(project_id, file_hash, cached)
+                except Exception:
+                    pass
             # Record a new run-history entry for this cache-hit stream so
             # consultants can see that analysis was reopened.
             cache_run = create_run_stub(db, project_id, file_hash, user_id, trigger_source="user")
@@ -331,6 +341,12 @@ async def _run_analysis_stream(
             db, project_id, file_path=info.get("path"), file_hash=file_hash
         )
 
+        _dtypes = {c: str(t) for c, t in df_clean.dtypes.items()}
+        _plan = build_analysis_plan(
+            columns=df_clean.columns.tolist(),
+            dtypes=_dtypes,
+        )
+
         result = {
             "project_id": project_id,
             "run_id": run.id if run else None,
@@ -343,6 +359,7 @@ async def _run_analysis_stream(
             "narrative": narrative,
             "executive_panel": to_jsonable(executive_panel),
             "dataset_summary": get_dataset_summary(df_clean),   # large-dataset transparency metadata
+            "analysis_plan": _plan.model_dump(),                 # Dataset Intelligence Layer (86C)
         }
         attach_large_dataset_meta(result, ld_meta)
 

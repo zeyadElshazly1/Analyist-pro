@@ -87,6 +87,7 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
         attach_large_dataset_meta,
         prepare_analysis_frame,
     )
+    from app.services.analysis.analysis_planner import build_analysis_plan
     from app.db import SessionLocal as _SessionLocal
 
     # ── Step 0: resolve file ──────────────────────────────────────────────────
@@ -200,6 +201,10 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
     finally:
         _db.close()
 
+    # ── Dataset Intelligence Layer (86C) ──────────────────────────────────────
+    _dtypes = {c: str(t) for c, t in df_clean.dtypes.items()}
+    _plan = build_analysis_plan(columns=df_clean.columns.tolist(), dtypes=_dtypes)
+
     # ── Build canonical result ────────────────────────────────────────────────
     result = {
         "project_id": project_id,
@@ -211,6 +216,7 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
         "insight_results": insight_results,                  # canonical V1 (replaces insights)
         "narrative": narrative,
         "executive_panel": to_jsonable(executive_panel),
+        "analysis_plan": _plan.model_dump(),                 # Dataset Intelligence Layer (86C)
     }
     attach_large_dataset_meta(result, ld_meta)
 
