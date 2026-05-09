@@ -34,6 +34,8 @@ for users who need actionable business intelligence first.
 """
 from __future__ import annotations
 
+import re
+
 from app.services.analysis.domain.timeseries_finance import FINANCE_TS_PREMIUM_TITLE_ORDER
 from app.services.dataset_context.schema import (
     CONFIDENCE_THRESHOLD,
@@ -257,45 +259,92 @@ def _snapshot_rank_sort_tuple(ins: dict, ctx: DatasetContext | None) -> tuple[in
     return (3, 0, -score)
 
 
+def _normalise_key_col(value: object) -> str:
+    return str(value).strip().lower()
+
+
+def _column_refs_for_key(ins: dict) -> list[str]:
+    """Extract column references from structured fields, then common title patterns.
+
+    Used only for deduplication keying — no analysis_plan, no hallucination.
+    Conservative: only extracts columns it can deterministically identify.
+    """
+    cols: list[str] = []
+
+    # 1. Explicit structured fields: col_a / col_b
+    for field in ("col_a", "col_b"):
+        v = ins.get(field)
+        if v:
+            cols.append(str(v))
+    if cols:
+        return cols
+
+    # 2. "column" (singular)
+    v = ins.get("column")
+    if v:
+        return [str(v)]
+
+    # 3. "columns" (list)
+    v = ins.get("columns")
+    if isinstance(v, (list, tuple)) and v:
+        return [str(c) for c in v if c]
+    if isinstance(v, str) and v:
+        return [v]
+
+    # 4. Title patterns
+    title = ins.get("title", "")
+
+    # "→" pattern: "Segment gap: cat → metric" / "Leading indicator: c1 → c2"
+    if "→" in title:
+        parts = title.split("→")
+        left  = parts[0].split(":")[-1].strip()
+        right = parts[1].strip().split(" (")[0].strip()
+        return [c for c in (left, right) if c]
+
+    # "×" pattern: "Interaction effect: c1 × c2 moderated by c3"
+    if "×" in title:
+        left_part = title.split("moderated by")[0]
+        pair_str  = left_part.split(":")[-1].strip()
+        parts     = [p.strip() for p in pair_str.split("×")]
+        return [c for c in parts if c]
+
+    # "vs … by" pattern: "Possible Simpson's Paradox: c1 vs c2 by cat"
+    vs_m = re.search(r":\s*(.+?)\s+vs\s+(.+?)\s+by\s+(.+)$", title, re.IGNORECASE)
+    if vs_m:
+        return [c for c in (vs_m.group(1), vs_m.group(2), vs_m.group(3)) if c]
+
+    # "linked to" pattern: "Structural missing data: miss linked to num"
+    lt_m = re.search(r":\s*(.+?)\s+linked to\s+(.+)$", title, re.IGNORECASE)
+    if lt_m:
+        return [c for c in (lt_m.group(1), lt_m.group(2)) if c]
+
+    # " in " pattern (after a prefix word): "Anomalies in col" / "Concentration risk in col"
+    in_m = re.search(r"\bin\s+(\S+)\s*$", title, re.IGNORECASE)
+    if in_m:
+        return [in_m.group(1)]
+
+    # ":" fallback: "Constant column: col" / "High-cardinality column: col"
+    if ":" in title:
+        col_part = title.split(":")[-1].strip().split(" (")[0].strip()
+        if col_part:
+            return [col_part]
+
+    return []
+
+
 def _insight_key(ins: dict) -> tuple:
     """
     Return a hashable semantic deduplication key.
 
-    Prefers (type, frozenset_of_columns) when column references are present;
-    falls back to (type, normalised_title_prefix) otherwise.
+    Prefers (type, frozenset_of_normalised_columns) when column references
+    are present; falls back to (type, normalised_title_prefix) otherwise.
     """
-    itype = ins.get("type", "")
-
-    # Collect all column references present in this insight dict
-    col_refs: list[str] = []
-    for field in ("col_a", "col_b"):
-        v = ins.get(field)
-        if v:
-            col_refs.append(v)
-
-    # Some insight types embed columns in a known pattern in 'title'
-    # e.g. "Segment gap: region → revenue" — extract both sides
-    if not col_refs and itype in {"segment", "concentration", "trend", "distribution", "anomaly"}:
-        title = ins.get("title", "")
-        # "Segment gap: cat → num" / "Rate gap: cat → target"
-        if "→" in title:
-            parts = title.split("→")
-            left = parts[0].split(":")[-1].strip()
-            right = parts[1].strip()
-            col_refs = [left, right]
-        # "Trend detected: col (direction)"
-        elif "Trend detected:" in title:
-            col_part = title.split(":")[-1].strip().split(" (")[0]
-            col_refs = [col_part]
-        # "Anomalies in col" / "Skewed distribution: col" / "Constant column: col"
-        elif ":" in title:
-            col_part = title.split(":")[-1].strip()
-            col_refs = [col_part]
+    itype    = ins.get("type", "")
+    col_refs = _column_refs_for_key(ins)
 
     if col_refs:
-        return (itype, frozenset(col_refs))
+        return (itype, frozenset(_normalise_key_col(c) for c in col_refs if c))
 
-    # Fallback: normalised title prefix (original behaviour)
     return (itype, ins.get("title", "")[:40].lower())
 
 

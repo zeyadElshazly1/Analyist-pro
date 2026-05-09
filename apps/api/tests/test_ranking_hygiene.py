@@ -275,3 +275,90 @@ def test_rank_insights_limit_larger_than_available():
     ranked, total = rank_insights(insights, limit=MAX_INSIGHTS + 10)
     assert len(ranked) == 3
     assert total == 3
+
+
+# ── 88H — Ranking deduplication column extraction ────────────────────────────
+
+from app.services.analysis.ranking import deduplicate_insights
+
+
+def test_deduplicate_uses_single_column_field():
+    insights = [
+        {"type": "data_quality", "column": "customer_id", "title": "High-cardinality column: customer_id"},
+        {"type": "data_quality", "column": "customer_id", "title": "Repeated high-cardinality warning"},
+    ]
+    result = deduplicate_insights(insights)
+    assert len(result) == 1
+
+
+def test_deduplicate_uses_columns_list_field():
+    insights = [
+        {"type": "interaction", "columns": ["region", "revenue"], "title": "Interaction A"},
+        {"type": "interaction", "columns": ["revenue", "region"], "title": "Interaction B"},
+    ]
+    result = deduplicate_insights(insights)
+    assert len(result) == 1
+
+
+def test_deduplicate_preserves_same_columns_different_type():
+    insights = [
+        {"type": "anomaly", "column": "revenue", "title": "Anomalies in revenue"},
+        {"type": "distribution", "column": "revenue", "title": "Skewed distribution: revenue"},
+    ]
+    result = deduplicate_insights(insights)
+    assert len(result) == 2
+
+
+def test_deduplicate_interaction_title_extracts_pair_columns():
+    insights = [
+        {"type": "interaction", "title": "Interaction effect: region × segment moderated by channel"},
+        {"type": "interaction", "title": "Interaction effect: segment × region moderated by channel"},
+    ]
+    result = deduplicate_insights(insights)
+    assert len(result) == 1
+
+
+def test_deduplicate_simpsons_title_extracts_three_columns():
+    insights = [
+        {"type": "simpsons_paradox", "title": "Possible Simpson's Paradox: revenue vs margin by region"},
+        {"type": "simpsons_paradox", "title": "Possible Simpson's Paradox: margin vs revenue by region"},
+    ]
+    result = deduplicate_insights(insights)
+    assert len(result) == 1
+
+
+def test_deduplicate_missing_pattern_linked_to_columns():
+    insights = [
+        {"type": "missing_pattern", "title": "Structural missing data: discount linked to revenue"},
+        {"type": "missing_pattern", "title": "Structural missing data: revenue linked to discount"},
+    ]
+    result = deduplicate_insights(insights)
+    assert len(result) == 1
+
+
+def test_deduplicate_fallback_title_prefix_still_works_without_columns():
+    insights = [
+        {"type": "data_quality", "title": "Duplicate rows detected in uploaded file"},
+        {"type": "data_quality", "title": "Duplicate rows detected in uploaded file again"},
+    ]
+    result = deduplicate_insights(insights)
+    assert len(result) == 1
+
+
+def test_deduplicate_anomaly_in_pattern():
+    insights = [
+        {"type": "anomaly", "title": "Anomalies in revenue"},
+        {"type": "anomaly", "title": "Anomalies in revenue"},
+    ]
+    result = deduplicate_insights(insights)
+    assert len(result) == 1
+
+
+def test_deduplicate_col_a_col_b_order_agnostic():
+    """col_a/col_b are stored in a frozenset so order does not matter."""
+    insights = [
+        {"type": "correlation", "col_a": "price", "col_b": "demand", "title": "Relationship: price & demand"},
+        {"type": "correlation", "col_a": "demand", "col_b": "price", "title": "Relationship: demand & price"},
+    ]
+    result = deduplicate_insights(insights)
+    assert len(result) == 1
