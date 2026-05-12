@@ -27,6 +27,7 @@ from app.services.analysis.analysis_planner import build_analysis_plan
 from app.services.analysis.analysis_plan_hygiene import apply_analysis_plan_hygiene
 from app.services.analysis.ranking import rerank_after_plan_hygiene
 from app.services.analysis.narrative import generate_narrative
+from app.services.analysis.finalize_insights import final_cap_with_candidate_count
 from app.config import MAX_INSIGHTS
 from app.services.analysis.large_dataset_mode import (
     LARGE_DATASET_NARRATIVE_NOTE,
@@ -166,8 +167,8 @@ def run_analysis(
         _plan = build_analysis_plan(columns=df_clean.columns.tolist(), dtypes=_dtypes)
         insights = apply_analysis_plan_hygiene(insights, _plan)
         insights = rerank_after_plan_hygiene(insights)
-        insights = insights[:MAX_INSIGHTS]
-        narrative = generate_narrative(insights, df_analysis, total_found=len(insights))
+        insights, post_hygiene_candidate_count = final_cap_with_candidate_count(insights)
+        narrative = generate_narrative(insights, df_analysis, total_found=post_hygiene_candidate_count)
         if ld_meta["large_dataset_mode"]:
             narrative = narrative + LARGE_DATASET_NARRATIVE_NOTE
 
