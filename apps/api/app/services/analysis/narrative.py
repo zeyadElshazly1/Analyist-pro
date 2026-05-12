@@ -9,6 +9,7 @@ generate_narrative: 3-paragraph executive summary.
 import pandas as pd
 
 from app.services.analysis.confidence import safe_confidence_from_insight
+from app.services.analysis.trust_filters import is_summary_eligible
 
 
 # ── Contextual lookup tables ──────────────────────────────────────────────────
@@ -174,12 +175,7 @@ def _raw_confidence(ins: dict) -> float:
 
 
 def _is_narrative_eligible(ins: dict) -> bool:
-    """Return True when an insight is trustworthy enough to mention in the narrative."""
-    if ins.get("suppressed_by_plan") is True:
-        return False
-    if _raw_confidence(ins) < 50.0:
-        return False
-    return True
+    return is_summary_eligible(ins)
 
 
 # ── Narrative builder ─────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from app.services.analysis.confidence import safe_confidence_from_insight
+from app.services.analysis.trust_filters import is_summary_eligible
 
 from app.services.dataset_context import (
     CONFIDENCE_THRESHOLD,
@@ -176,16 +177,8 @@ def _raw_confidence(ins: dict) -> float:
 
 
 def _is_executive_panel_eligible(ins: dict) -> bool:
-    """Whether an insight may appear in opportunities, risks, or action_plan.
-
-    Plan-suppressed and low-confidence findings remain in the main insight list
-    but are omitted from the executive summary (88C).
-    """
-    if ins.get("suppressed_by_plan") is True:
-        return False
-    if _raw_confidence(ins) < 50.0:
-        return False
-    return True
+    """Whether an insight may appear in opportunities, risks, or action_plan."""
+    return is_summary_eligible(ins)
 
 
 def generate_executive_panel(insights: list[dict]) -> dict:
