@@ -93,3 +93,31 @@ def test_build_insight_selection_meta_does_not_mutate_inputs():
 
     assert candidates == before_candidates
     assert capped == before_capped
+
+
+# ── 88T — summary eligibility counts in insight_selection_meta ───────────────
+
+def test_build_insight_selection_meta_counts_summary_eligible_visible():
+    candidates = [
+        {"title": "good", "confidence": 80},
+        {"title": "low confidence", "confidence": 20},
+        {"title": "suppressed", "confidence": 90, "suppressed_by_plan": True},
+    ]
+    capped = list(candidates)
+
+    meta = build_insight_selection_meta(candidates, capped)
+
+    assert meta["summary_eligible_visible_count"] == 1
+    assert meta["summary_ineligible_visible_count"] == 2
+
+
+def test_build_insight_selection_meta_uses_shared_summary_filter():
+    candidates = [
+        {"title": "invalid confidence", "confidence": "unknown"},
+        {"title": "negative confidence", "confidence": -10},
+    ]
+
+    meta = build_insight_selection_meta(candidates, candidates)
+
+    assert meta["summary_eligible_visible_count"] == 1
+    assert meta["summary_ineligible_visible_count"] == 1
