@@ -165,3 +165,51 @@ class TestCacheHitRunHistory:
         r = client.get(f"/analysis/history/{pid}", headers=headers)
         assert r.status_code == 200
         assert len(r.json()) >= 2
+
+
+# ── 88U — cache-hit backfills insight_selection_meta ─────────────────────────
+
+def test_cache_hit_backfills_insight_selection_meta_when_missing(
+    client, monkeypatch
+):
+    """Cache hit must return insight_selection_meta when older cached payload lacks it."""
+    import app.routes.analysis as analysis_mod
+    from app.state import PROJECT_FILES
+
+    headers = _consultant_headers(client)
+    pid, _ = _upload_and_first_run(client, headers)
+
+    # Seed a fake cache with a legacy payload that has NO insight_selection_meta.
+    _cache: dict[str, dict] = {}
+    fh = (PROJECT_FILES.get(pid) or {}).get("file_hash")
+    assert fh, "Upload should have populated PROJECT_FILES with a file hash"
+    _cache[f"{pid}:{fh}"] = {
+        "project_id": pid,
+        "cleaning_summary": {"steps": 0},
+        "cleaning_result": {},
+        "profile_result": [],
+        "health_result": {"some": "value"},
+        "insight_results": [
+            {"title": "Revenue trend", "confidence": 0.8, "suppressed_by_plan": False},
+        ],
+        "narrative": "legacy narrative",
+        "executive_panel": {},
+        "analysis_plan": {},
+    }
+
+    def fake_get(project_id, file_hash):
+        return _cache.get(f"{project_id}:{file_hash}")
+
+    def fake_set(project_id, file_hash, result):
+        _cache[f"{project_id}:{file_hash}"] = result
+
+    monkeypatch.setattr(analysis_mod, "get_cached_analysis", fake_get)
+    monkeypatch.setattr(analysis_mod, "set_cached_analysis", fake_set)
+
+    r = client.post("/analysis/run", json={"project_id": pid}, headers=headers)
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    assert body["insight_selection_meta"] is not None
+    assert body["insight_selection_meta"]["backfilled_from_cache"] is True
+    assert body["insight_selection_meta"]["visible_insight_count"] == len(body["insight_results"])

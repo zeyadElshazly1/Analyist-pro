@@ -36,3 +36,52 @@ def build_insight_selection_meta(
         "suppressed_visible_count": suppressed_visible_count,
         "final_cap": final_cap,
     }
+
+
+def _canonical_to_raw_summary_view(ins: dict) -> dict:
+    """Return a copy of a canonical insight with confidence scaled back to 0–100.
+
+    Canonical InsightResult confidence is stored as 0.0–1.0; is_summary_eligible
+    expects raw 0–100, so we rescale before the check.
+    """
+    out = dict(ins)
+    conf = out.get("confidence")
+    if isinstance(conf, (int, float)) and 0 <= conf <= 1:
+        out["confidence"] = conf * 100
+    return out
+
+
+def build_cached_insight_selection_meta(result: dict) -> dict | None:
+    """Build a best-effort insight_selection_meta block from a cached result.
+
+    Returns None when the cached payload has no usable insight_results list.
+    The returned dict includes backfilled_from_cache=True so callers can
+    distinguish it from a freshly computed block.
+    """
+    if not isinstance(result, dict):
+        return None
+
+    insights = result.get("insight_results")
+    if not isinstance(insights, list):
+        return None
+
+    visible = [i for i in insights if isinstance(i, dict)]
+    suppressed_visible = sum(
+        1 for ins in visible
+        if ins.get("suppressed_by_plan") is True
+    )
+    summary_eligible_visible = sum(
+        1 for ins in visible
+        if is_summary_eligible(_canonical_to_raw_summary_view(ins))
+    )
+
+    return {
+        "post_hygiene_candidate_count": len(visible),
+        "visible_insight_count": len(visible),
+        "summary_eligible_visible_count": summary_eligible_visible,
+        "summary_ineligible_visible_count": len(visible) - summary_eligible_visible,
+        "suppressed_candidate_count": suppressed_visible,
+        "suppressed_visible_count": suppressed_visible,
+        "final_cap": MAX_INSIGHTS,
+        "backfilled_from_cache": True,
+    }
