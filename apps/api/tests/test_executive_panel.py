@@ -1,7 +1,7 @@
 """88C — Executive panel respects plan hygiene and confidence gating."""
 from __future__ import annotations
 
-from app.services.analysis.orchestrator import generate_executive_panel
+from app.services.analysis.orchestrator import generate_executive_panel, _is_executive_panel_eligible
 
 
 def test_suppressed_plan_finding_excluded_from_risks():
@@ -95,3 +95,38 @@ def test_executive_panel_filter_does_not_mutate_input():
     generate_executive_panel([insight])
 
     assert insight == before
+
+
+# ── 88N — Executive panel confidence clamping ────────────────────────────────
+
+def test_executive_panel_negative_confidence_clamps_to_zero_not_eligible():
+    ins = {"type": "trend", "severity": "medium", "confidence": -10}
+    assert _is_executive_panel_eligible(ins) is False
+
+
+def test_executive_panel_confidence_above_100_clamps_and_is_eligible():
+    ins = {"type": "trend", "severity": "medium", "confidence": 999}
+    assert _is_executive_panel_eligible(ins) is True
+
+
+def test_executive_panel_none_confidence_defaults_to_50_eligible():
+    ins = {"type": "trend", "severity": "medium", "confidence": None}
+    assert _is_executive_panel_eligible(ins) is True
+
+
+def test_executive_panel_negative_confidence_finding_excluded():
+    insights = [
+        {
+            "type": "segment",
+            "severity": "medium",
+            "confidence": -10,
+            "title": "Bad confidence segment",
+            "finding": "Should not appear.",
+            "action": "Should not appear.",
+        }
+    ]
+
+    panel = generate_executive_panel(insights)
+
+    assert panel["opportunities"] == []
+    assert panel["action_plan"] == []

@@ -169,9 +169,14 @@ def _enrich_insight(insight: dict) -> dict:
 
 def _raw_confidence(ins: dict) -> float:
     try:
-        return float(ins.get("confidence", 50.0))
+        value = float(ins.get("confidence", 50.0))
     except (TypeError, ValueError):
         return 50.0
+    if value < 0:
+        return 0.0
+    if value > 100:
+        return 100.0
+    return value
 
 
 def _is_narrative_eligible(ins: dict) -> bool:

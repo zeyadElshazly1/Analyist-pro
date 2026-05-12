@@ -213,3 +213,20 @@ def test_narrative_reports_showing_top_when_total_found_exceeds_visible():
     narrative = generate_narrative(insights, df, total_found=5)
 
     assert "showing top 1 of 5" in narrative
+
+
+# ── 88N — Narrative confidence clamping ──────────────────────────────────────
+
+def test_narrative_negative_confidence_clamps_to_zero_not_eligible():
+    ins = {"type": "trend", "severity": "medium", "confidence": -10}
+    assert _is_narrative_eligible(ins) is False
+
+
+def test_narrative_confidence_above_100_clamps_and_is_eligible():
+    ins = {"type": "trend", "severity": "medium", "confidence": 999}
+    assert _is_narrative_eligible(ins) is True
+
+
+def test_narrative_none_confidence_defaults_to_50_eligible():
+    ins = {"type": "trend", "severity": "medium", "confidence": None}
+    assert _is_narrative_eligible(ins) is True
