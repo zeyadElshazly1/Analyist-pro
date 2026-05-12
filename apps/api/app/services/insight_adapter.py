@@ -86,6 +86,18 @@ _PLAN_SUPPRESSED_CAVEAT = (
 _UNSAFE_CATEGORIES: frozenset[str] = frozenset({"data_quality"})
 
 
+def _safe_confidence_0_100(ins: dict) -> float:
+    try:
+        value = float(ins.get("confidence", 50.0))
+    except (TypeError, ValueError):
+        return 50.0
+    if value < 0:
+        return 0.0
+    if value > 100:
+        return 100.0
+    return value
+
+
 # ── Evidence normalization ─────────────────────────────────────────────────────
 
 
@@ -136,7 +148,7 @@ def build_insight_result(ins: dict, analysis_plan: AnalysisPlan | None = None) -
     """
     category  = ins.get("type", "data_quality")
     severity  = ins.get("severity", "low")
-    raw_conf  = float(ins.get("confidence", 50.0))
+    raw_conf = _safe_confidence_0_100(ins)
     confidence = round(raw_conf / 100.0, 4)
 
     suppressed_by_plan  = ins.get("suppressed_by_plan") is True

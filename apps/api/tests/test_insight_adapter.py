@@ -491,3 +491,135 @@ class TestPlanHygieneMetadata:
         result = build_insight_result(raw)
 
         assert result.plan_penalty_reason is None
+
+
+# ── 88J — Hardened confidence parsing in adapter ─────────────────────────────
+
+def test_adapter_missing_confidence_defaults_to_50_percent():
+    raw = {
+        "type": "trend",
+        "severity": "medium",
+        "title": "Missing confidence",
+        "finding": "Finding.",
+    }
+
+    result = build_insight_result(raw)
+
+    assert result.confidence == 0.5
+
+
+def test_adapter_invalid_confidence_defaults_to_50_percent():
+    raw = {
+        "type": "trend",
+        "severity": "medium",
+        "confidence": "unknown",
+        "title": "Invalid confidence",
+        "finding": "Finding.",
+    }
+
+    result = build_insight_result(raw)
+
+    assert result.confidence == 0.5
+
+
+def test_adapter_none_confidence_defaults_to_50_percent():
+    raw = {
+        "type": "trend",
+        "severity": "medium",
+        "confidence": None,
+        "title": "None confidence",
+        "finding": "Finding.",
+    }
+
+    result = build_insight_result(raw)
+
+    assert result.confidence == 0.5
+
+
+def test_adapter_negative_confidence_clamps_to_zero():
+    raw = {
+        "type": "trend",
+        "severity": "medium",
+        "confidence": -20,
+        "title": "Negative confidence",
+        "finding": "Finding.",
+    }
+
+    result = build_insight_result(raw)
+
+    assert result.confidence == 0.0
+
+
+def test_adapter_confidence_above_100_clamps_to_one():
+    raw = {
+        "type": "trend",
+        "severity": "medium",
+        "confidence": 999,
+        "title": "Huge confidence",
+        "finding": "Finding.",
+    }
+
+    result = build_insight_result(raw)
+
+    assert result.confidence == 1.0
+
+
+def test_build_insight_results_survives_mixed_malformed_confidence():
+    raws = [
+        {
+            "type": "trend",
+            "severity": "medium",
+            "confidence": "bad",
+            "title": "Bad confidence",
+            "finding": "Finding 1.",
+        },
+        {
+            "type": "segment",
+            "severity": "medium",
+            "confidence": None,
+            "title": "None confidence",
+            "finding": "Finding 2.",
+        },
+        {
+            "type": "anomaly",
+            "severity": "high",
+            "confidence": 90,
+            "title": "Good confidence",
+            "finding": "Finding 3.",
+        },
+    ]
+
+    result = build_insight_results(raws)
+
+    assert len(result) == 3
+    assert [r.confidence for r in result] == [0.5, 0.5, 0.9]
+
+
+def test_report_safe_uses_clamped_confidence():
+    raw = {
+        "type": "trend",
+        "severity": "high",
+        "confidence": 999,
+        "title": "Clamped high confidence",
+        "finding": "Finding.",
+    }
+
+    result = build_insight_result(raw)
+
+    assert result.confidence == 1.0
+    assert result.report_safe is True
+
+
+def test_report_safe_false_when_invalid_confidence_defaults_below_threshold():
+    raw = {
+        "type": "trend",
+        "severity": "high",
+        "confidence": "unknown",
+        "title": "Invalid confidence",
+        "finding": "Finding.",
+    }
+
+    result = build_insight_result(raw)
+
+    assert result.confidence == 0.5
+    assert result.report_safe is False
