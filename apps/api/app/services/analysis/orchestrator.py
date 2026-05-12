@@ -14,6 +14,8 @@ import logging
 import numpy as np
 import pandas as pd
 
+from app.services.analysis.confidence import safe_confidence_from_insight
+
 from app.services.dataset_context import (
     CONFIDENCE_THRESHOLD,
     FINANCIAL_MARKETS_SNAPSHOT,
@@ -170,15 +172,7 @@ def analyze_dataset(df: pd.DataFrame) -> tuple[list[dict], str]:
 
 
 def _raw_confidence(ins: dict) -> float:
-    try:
-        value = float(ins.get("confidence", 50.0))
-    except (TypeError, ValueError):
-        return 50.0
-    if value < 0:
-        return 0.0
-    if value > 100:
-        return 100.0
-    return value
+    return safe_confidence_from_insight(ins)
 
 
 def _is_executive_panel_eligible(ins: dict) -> bool:
