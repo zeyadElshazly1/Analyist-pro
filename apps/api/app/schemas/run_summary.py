@@ -63,6 +63,7 @@ class RunResults(BaseModel):
     cleaning_result: Optional[dict[str, Any]]   # CleaningResult model dump
     health_result: Optional[dict[str, Any]]     # HealthResult model dump
     insight_results: Optional[list[Any]]        # list of InsightResult model dumps
+    insight_selection_meta: Optional[dict[str, Any]] = None  # 88M candidate-pool transparency
     profile_result: Optional[list[Any]]         # list of column profile dicts
     executive_panel: Optional[dict[str, Any]]   # high-level summary panel
     narrative: Optional[str]                    # plain-text narrative
