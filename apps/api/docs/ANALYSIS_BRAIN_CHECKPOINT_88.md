@@ -92,9 +92,9 @@ The `RunResults` schema (88O) exposes `insight_selection_meta` so reopened saved
 | `test_trust_filters.py` + `test_narrative_hygiene.py` + `test_executive_panel.py` | 50 tests — eligibility, narrative, panel |
 | `test_finalize_insights.py` + `test_confidence_utils.py` + `test_analysis_cache_backfill.py` | 28+ tests — metadata, confidence, cache backfill |
 | `test_analysis_plan_finding_hygiene.py` + `test_insight_adapter.py` | 72 tests — hygiene penalties, canonical adapter |
-| Full backend suite | **must be run and green before outreach** |
+| Full backend suite | **1292 passed, 2 skipped, 0 failed** (2026-05-12, after 89A) |
 
-Last confirmed full suite result: **1222+ passed, 0 failed** (run after 88R).
+Last confirmed full suite result: **1292 passed, 2 skipped, 0 failed** (run 2026-05-12 after 88V/88W). One intermittent failure in `test_report_draft_export.py::TestReportBuilderExportParity::test_draft_api_report_result_included_insights_and_charts` was observed in the full run but passes in isolation; it is a pre-existing flaky test unrelated to any 88-series change.
 
 ---
 
