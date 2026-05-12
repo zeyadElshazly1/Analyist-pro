@@ -107,9 +107,21 @@ def _is_date_part_derived(col: str, time_column_bases: set[str]) -> bool:
     return base in time_column_bases
 
 
+def _safe_confidence_0_100(ins: dict) -> float:
+    try:
+        value = float(ins.get("confidence", 50.0))
+    except (TypeError, ValueError):
+        return 50.0
+    if value < 0:
+        return 0.0
+    if value > 100:
+        return 100.0
+    return value
+
+
 def _penalise(ins: dict, factor: float, reason: str) -> dict:
     """Return a shallow copy of ins with confidence multiplied by factor."""
-    new_conf = float(ins.get("confidence", 50.0)) * factor
+    new_conf = _safe_confidence_0_100(ins) * factor
     return {
         **ins,
         "confidence": new_conf,
