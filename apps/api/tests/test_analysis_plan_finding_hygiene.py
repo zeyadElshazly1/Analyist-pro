@@ -351,3 +351,93 @@ class TestTextOnlyNoHallucination:
 
         assert "suppressed_by_plan" not in original
         assert original["confidence"] == 70.0
+
+
+# ── 88K — Hardened confidence parsing in plan hygiene ────────────────────────
+
+def test_hygiene_missing_confidence_defaults_before_penalty():
+    plan = _plan(time_columns=["order_date"])
+    ins = _insight(
+        type="data_quality",
+        confidence=None,
+        title="order_date_month concentration",
+        finding="order_date_month appears concentrated.",
+    )
+    ins.pop("confidence", None)
+
+    result = apply_analysis_plan_hygiene([ins], plan)
+
+    assert result[0]["suppressed_by_plan"] is True
+    assert result[0]["confidence"] == 50.0 * 0.35
+
+
+def test_hygiene_invalid_confidence_defaults_before_penalty():
+    plan = _plan(time_columns=["order_date"])
+    ins = _insight(
+        type="data_quality",
+        confidence="unknown",
+        title="order_date_month concentration",
+        finding="order_date_month appears concentrated.",
+    )
+
+    result = apply_analysis_plan_hygiene([ins], plan)
+
+    assert result[0]["suppressed_by_plan"] is True
+    assert result[0]["confidence"] == 50.0 * 0.35
+
+
+def test_hygiene_none_confidence_defaults_before_penalty():
+    plan = _plan(time_columns=["order_date"])
+    ins = _insight(
+        type="data_quality",
+        confidence=None,
+        title="order_date_month concentration",
+        finding="order_date_month appears concentrated.",
+    )
+
+    result = apply_analysis_plan_hygiene([ins], plan)
+
+    assert result[0]["suppressed_by_plan"] is True
+    assert result[0]["confidence"] == 50.0 * 0.35
+
+
+def test_hygiene_negative_confidence_clamps_to_zero_before_penalty():
+    plan = _plan(time_columns=["order_date"])
+    ins = _insight(
+        type="data_quality",
+        confidence=-20,
+        title="order_date_month concentration",
+        finding="order_date_month appears concentrated.",
+    )
+
+    result = apply_analysis_plan_hygiene([ins], plan)
+
+    assert result[0]["confidence"] == 0.0
+
+
+def test_hygiene_confidence_above_100_clamps_before_penalty():
+    plan = _plan(time_columns=["order_date"])
+    ins = _insight(
+        type="data_quality",
+        confidence=999,
+        title="order_date_month concentration",
+        finding="order_date_month appears concentrated.",
+    )
+
+    result = apply_analysis_plan_hygiene([ins], plan)
+
+    assert result[0]["confidence"] == 100.0 * 0.35
+
+
+def test_hygiene_valid_confidence_penalty_unchanged():
+    plan = _plan(time_columns=["order_date"])
+    ins = _insight(
+        type="data_quality",
+        confidence=80,
+        title="order_date_month concentration",
+        finding="order_date_month appears concentrated.",
+    )
+
+    result = apply_analysis_plan_hygiene([ins], plan)
+
+    assert result[0]["confidence"] == 80.0 * 0.35
