@@ -8,6 +8,8 @@ generate_narrative: 3-paragraph executive summary.
 """
 import pandas as pd
 
+from app.services.analysis.confidence import safe_confidence_from_insight
+
 
 # ── Contextual lookup tables ──────────────────────────────────────────────────
 
@@ -168,15 +170,7 @@ def _enrich_insight(insight: dict) -> dict:
 # ── Narrative trust helpers ───────────────────────────────────────────────────
 
 def _raw_confidence(ins: dict) -> float:
-    try:
-        value = float(ins.get("confidence", 50.0))
-    except (TypeError, ValueError):
-        return 50.0
-    if value < 0:
-        return 0.0
-    if value > 100:
-        return 100.0
-    return value
+    return safe_confidence_from_insight(ins)
 
 
 def _is_narrative_eligible(ins: dict) -> bool:

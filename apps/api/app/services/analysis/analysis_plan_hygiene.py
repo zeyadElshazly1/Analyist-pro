@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 
 from app.schemas.analysis_plan import AnalysisPlan
+from app.services.analysis.confidence import safe_confidence_from_insight
 from app.services.analysis.column_matching import (
     _extract_known_columns_from_text_fields,
     _known_columns_from_plan,
@@ -107,21 +108,9 @@ def _is_date_part_derived(col: str, time_column_bases: set[str]) -> bool:
     return base in time_column_bases
 
 
-def _safe_confidence_0_100(ins: dict) -> float:
-    try:
-        value = float(ins.get("confidence", 50.0))
-    except (TypeError, ValueError):
-        return 50.0
-    if value < 0:
-        return 0.0
-    if value > 100:
-        return 100.0
-    return value
-
-
 def _penalise(ins: dict, factor: float, reason: str) -> dict:
     """Return a shallow copy of ins with confidence multiplied by factor."""
-    new_conf = _safe_confidence_0_100(ins) * factor
+    new_conf = safe_confidence_from_insight(ins) * factor
     return {
         **ins,
         "confidence": new_conf,

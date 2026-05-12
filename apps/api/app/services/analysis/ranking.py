@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import re
 
+from app.services.analysis.confidence import safe_confidence_from_insight
 from app.services.analysis.domain.timeseries_finance import FINANCE_TS_PREMIUM_TITLE_ORDER
 from app.services.dataset_context.schema import (
     CONFIDENCE_THRESHOLD,
@@ -372,17 +373,6 @@ def _correlation_financial_demote_active(ins: dict, ctx: DatasetContext | None) 
     return False
 
 
-def _safe_confidence_0_100(ins: dict) -> float:
-    try:
-        value = float(ins.get("confidence", 50.0))
-    except (TypeError, ValueError):
-        return 50.0
-    if value < 0:
-        return 0.0
-    if value > 100:
-        return 100.0
-    return value
-
 
 def _composite_score(ins: dict, ctx: DatasetContext | None = None) -> float:
     """
@@ -406,7 +396,7 @@ def _composite_score(ins: dict, ctx: DatasetContext | None = None) -> float:
     correlations without overruling strong high-severity generic findings.
     """
     sev   = _SEV_WEIGHT.get(ins.get("severity", "low"), 0.2)
-    conf  = _safe_confidence_0_100(ins) / 100.0
+    conf  = safe_confidence_from_insight(ins) / 100.0
     bonus = _TARGET_DRIVER_BONUS if ins.get("is_target_driver") else 0.0
     base = sev * 0.50 + conf * 0.25 + bonus * 0.25
     score = min(1.0, base + _financial_domain_rank_bonus(ins, ctx))
