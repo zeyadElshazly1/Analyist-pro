@@ -461,7 +461,7 @@ def rank_insights(
         total_found = len(deduped)
         return ordered[:cap], total_found
 
-    insights.sort(key=lambda x: _snapshot_rank_sort_tuple(x, ctx))
-    deduped = deduplicate_insights(insights)
+    ordered = sorted(insights, key=lambda x: _snapshot_rank_sort_tuple(x, ctx))
+    deduped = deduplicate_insights(ordered)
     total_found = len(deduped)
     return deduped[:cap], total_found

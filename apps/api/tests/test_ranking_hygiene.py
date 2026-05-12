@@ -452,3 +452,42 @@ def test_rank_insights_survives_malformed_confidence_values():
 
     assert len(ranked) == 3
     assert total == 3
+
+
+# ── 88Q — rank_insights non-mutating generic branch ──────────────────────────
+
+def test_rank_insights_generic_branch_does_not_reorder_input_list():
+    insights = [
+        {"type": "trend", "severity": "low", "confidence": 10, "title": "Low trend"},
+        {"type": "anomaly", "severity": "high", "confidence": 95, "title": "High anomaly"},
+    ]
+    before = list(insights)
+
+    ranked, total = rank_insights(insights)
+
+    assert insights == before
+    assert ranked[0]["title"] == "High anomaly"
+    assert total == 2
+
+
+def test_rank_insights_generic_branch_does_not_mutate_dicts():
+    first = {"type": "trend", "severity": "low", "confidence": 10, "title": "Low trend"}
+    second = {"type": "anomaly", "severity": "high", "confidence": 95, "title": "High anomaly"}
+    before_first = dict(first)
+    before_second = dict(second)
+
+    rank_insights([first, second])
+
+    assert first == before_first
+    assert second == before_second
+
+
+def test_rank_insights_non_mutating_change_preserves_output_order():
+    insights = [
+        {"type": "trend", "severity": "low", "confidence": 10, "title": "Low trend"},
+        {"type": "anomaly", "severity": "high", "confidence": 95, "title": "High anomaly"},
+    ]
+
+    ranked, _ = rank_insights(insights)
+
+    assert [i["title"] for i in ranked] == ["High anomaly", "Low trend"]
