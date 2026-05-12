@@ -121,3 +121,43 @@ def test_build_insight_selection_meta_uses_shared_summary_filter():
 
     assert meta["summary_eligible_visible_count"] == 1
     assert meta["summary_ineligible_visible_count"] == 1
+
+
+# ── 88U — build_cached_insight_selection_meta ────────────────────────────────
+
+from app.services.analysis.finalize_insights import build_cached_insight_selection_meta
+
+
+def test_build_cached_insight_selection_meta_from_canonical_insights():
+    result = {
+        "insight_results": [
+            {"title": "good", "confidence": 0.8, "suppressed_by_plan": False},
+            {"title": "low", "confidence": 0.2},
+            {"title": "suppressed", "confidence": 0.9, "suppressed_by_plan": True},
+        ]
+    }
+
+    meta = build_cached_insight_selection_meta(result)
+
+    assert meta["visible_insight_count"] == 3
+    assert meta["summary_eligible_visible_count"] == 1
+    assert meta["summary_ineligible_visible_count"] == 2
+    assert meta["suppressed_visible_count"] == 1
+    assert meta["backfilled_from_cache"] is True
+
+
+def test_build_cached_insight_selection_meta_returns_none_without_insights():
+    assert build_cached_insight_selection_meta({}) is None
+
+
+def test_build_cached_insight_selection_meta_does_not_mutate_result():
+    result = {
+        "insight_results": [
+            {"title": "good", "confidence": 0.8}
+        ]
+    }
+    before = {"insight_results": [dict(result["insight_results"][0])]}
+
+    build_cached_insight_selection_meta(result)
+
+    assert result == before
