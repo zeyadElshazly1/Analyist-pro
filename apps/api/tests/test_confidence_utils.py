@@ -39,3 +39,28 @@ def test_safe_confidence_from_insight_defaults_for_missing_key():
 
 def test_safe_confidence_from_insight_defaults_for_non_dict():
     assert safe_confidence_from_insight(None) == 50.0
+
+
+# ── 88R — NaN and infinity handling ──────────────────────────────────────────
+
+import math
+
+
+def test_safe_confidence_nan_defaults_to_50():
+    assert safe_confidence_0_100(float("nan")) == 50.0
+
+
+def test_safe_confidence_string_nan_defaults_to_50():
+    assert safe_confidence_0_100("nan") == 50.0
+
+
+def test_safe_confidence_positive_infinity_clamps_to_100():
+    assert safe_confidence_0_100(float("inf")) == 100.0
+
+
+def test_safe_confidence_negative_infinity_clamps_to_zero():
+    assert safe_confidence_0_100(float("-inf")) == 0.0
+
+
+def test_safe_confidence_from_insight_nan_defaults_to_50():
+    assert safe_confidence_from_insight({"confidence": float("nan")}) == 50.0
