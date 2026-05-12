@@ -194,3 +194,22 @@ class TestNarrativeHygiene:
         narrative = generate_narrative([], df, total_found=0)
         assert isinstance(narrative, str)
         assert len(narrative) > 0
+
+
+# ── 88L — Narrative reports showing top when candidate count exceeds cap ──────
+
+def test_narrative_reports_showing_top_when_total_found_exceeds_visible():
+    df = pd.DataFrame({"revenue": [1, 2, 3]})
+    insights = [
+        {
+            "type": "trend",
+            "severity": "medium",
+            "confidence": 80,
+            "title": "Revenue trend",
+            "finding": "Revenue increased over time.",
+        }
+    ]
+
+    narrative = generate_narrative(insights, df, total_found=5)
+
+    assert "showing top 1 of 5" in narrative
