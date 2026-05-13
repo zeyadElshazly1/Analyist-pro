@@ -256,7 +256,8 @@ async def _run_analysis_stream(
             if not cached.get("pre_analysis_profile"):
                 try:
                     _df_back = load_dataset(info["path"])
-                    _profile = build_pre_analysis_profile(_df_back)
+                    _df_back_clean, _, _ = clean_dataset(_df_back)
+                    _profile = build_pre_analysis_profile(_df_back_clean)
                     cached = {**cached, "pre_analysis_profile": _profile.model_dump()}
                     set_cached_analysis(project_id, file_hash, cached)
                 except Exception:
