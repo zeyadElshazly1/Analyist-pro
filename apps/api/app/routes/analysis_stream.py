@@ -39,6 +39,7 @@ from app.services.analysis.finalize_insights import (
     build_cached_insight_selection_meta,
 )
 from app.services.analysis.pre_analysis import build_pre_analysis_profile
+from app.services.analysis.profile_hygiene import apply_pre_analysis_profile_hygiene
 from app.config import MAX_INSIGHTS
 from app.services.analysis.large_dataset_mode import (
     LARGE_DATASET_NARRATIVE_NOTE,
@@ -350,11 +351,22 @@ async def _run_analysis_stream(
         yield _heartbeat()
         yield emit("Finding key patterns", 70, "Running correlation, anomaly, and trend analysis...")
         try:
+            from app.config import PRE_ANALYSIS_PROFILE_HYGIENE_ENABLED
             insights, _pre_hygiene_narrative = analyze_dataset(df_analysis)
+            # Pre-Analysis V2 profile — built before hygiene so it can be used (90K)
+            try:
+                _pre_analysis_profile = build_pre_analysis_profile(df_clean).model_dump()
+            except Exception:
+                _pre_analysis_profile = None
             # Dataset Intelligence Layer — hygiene before adapter/ranking
             _dtypes = {c: str(t) for c, t in df_clean.dtypes.items()}
             _plan = build_analysis_plan(columns=df_clean.columns.tolist(), dtypes=_dtypes)
             insights = apply_analysis_plan_hygiene(insights, _plan)
+            insights = apply_pre_analysis_profile_hygiene(
+                insights,
+                _pre_analysis_profile,
+                enabled=PRE_ANALYSIS_PROFILE_HYGIENE_ENABLED,
+            )
             insights = rerank_after_plan_hygiene(insights)
             post_hygiene_candidates = list(insights)
             insights, post_hygiene_candidate_count = final_cap_with_candidate_count(insights)
@@ -378,12 +390,6 @@ async def _run_analysis_stream(
         intake_result = build_intake_for_project(
             db, project_id, file_path=info.get("path"), file_hash=file_hash
         )
-
-        # ── Pre-Analysis Intelligence V2 (90G) — best-effort ─────────────────
-        try:
-            _pre_analysis_profile = build_pre_analysis_profile(df_clean).model_dump()
-        except Exception:
-            _pre_analysis_profile = None
 
         result = {
             "project_id": project_id,

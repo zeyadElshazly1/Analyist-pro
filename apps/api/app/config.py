@@ -83,3 +83,8 @@ RFM_QUINTILES = 5              # Number of RFM scoring buckets
 # ── Report ────────────────────────────────────────────────────────────────────
 REPORT_MAX_INSIGHTS = 10       # Insights shown in exported report
 REPORT_MAX_PROFILE_COLS = 20   # Columns profiled in exported report
+
+# ── Pre-Analysis V2 — profile-aware hygiene (90J/90K) ────────────────────────
+# Disabled by default until the 90I regression baseline is explicitly updated.
+# Flip to True only in a dedicated PR that also revises the baseline assertions.
+PRE_ANALYSIS_PROFILE_HYGIENE_ENABLED = False
