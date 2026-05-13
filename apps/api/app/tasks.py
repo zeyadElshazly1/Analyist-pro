@@ -92,6 +92,7 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
     from app.services.analysis.ranking import rerank_after_plan_hygiene
     from app.services.analysis.narrative import generate_narrative
     from app.services.analysis.finalize_insights import final_cap_with_candidate_count, build_insight_selection_meta
+    from app.services.analysis.pre_analysis import build_pre_analysis_profile
     from app.config import MAX_INSIGHTS
     from app.db import SessionLocal as _SessionLocal
 
@@ -138,6 +139,15 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
                 if meta:
                     cached = {**cached, "insight_selection_meta": meta}
                     set_cached_analysis(project_id, file_hash, cached)
+            except Exception:
+                pass
+        # Backfill pre_analysis_profile on cache hits that predate 90G.
+        if not cached.get("pre_analysis_profile"):
+            try:
+                _df_back = load_dataset(info["path"])
+                _profile = build_pre_analysis_profile(_df_back)
+                cached = {**cached, "pre_analysis_profile": _profile.model_dump()}
+                set_cached_analysis(project_id, file_hash, cached)
             except Exception:
                 pass
         # Record a run-history entry for this cache-hit invocation.
@@ -245,6 +255,12 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
     finally:
         _db.close()
 
+    # ── Pre-Analysis Intelligence V2 (90G) — best-effort ─────────────────────
+    try:
+        _pre_analysis_profile = build_pre_analysis_profile(df_clean).model_dump()
+    except Exception:
+        _pre_analysis_profile = None
+
     # ── Build canonical result ────────────────────────────────────────────────
     result = {
         "project_id": project_id,
@@ -259,6 +275,7 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
         "dataset_summary": get_dataset_summary(df_analysis), # large-dataset transparency metadata
         "analysis_plan": _plan.model_dump(),                 # Dataset Intelligence Layer (86C)
         "insight_selection_meta": insight_selection_meta,   # 88M — candidate-pool transparency
+        "pre_analysis_profile": _pre_analysis_profile,      # 90G — V2 dataset understanding
     }
     attach_large_dataset_meta(result, ld_meta)
 

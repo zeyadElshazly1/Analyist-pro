@@ -38,6 +38,7 @@ from app.services.analysis.finalize_insights import (
     build_insight_selection_meta,
     build_cached_insight_selection_meta,
 )
+from app.services.analysis.pre_analysis import build_pre_analysis_profile
 from app.config import MAX_INSIGHTS
 from app.services.analysis.large_dataset_mode import (
     LARGE_DATASET_NARRATIVE_NOTE,
@@ -251,6 +252,15 @@ async def _run_analysis_stream(
                         set_cached_analysis(project_id, file_hash, cached)
                 except Exception:
                     pass
+            # Backfill pre_analysis_profile on cache hits that predate 90G.
+            if not cached.get("pre_analysis_profile"):
+                try:
+                    _df_back = load_dataset(info["path"])
+                    _profile = build_pre_analysis_profile(_df_back)
+                    cached = {**cached, "pre_analysis_profile": _profile.model_dump()}
+                    set_cached_analysis(project_id, file_hash, cached)
+                except Exception:
+                    pass
             # Record a new run-history entry for this cache-hit stream so
             # consultants can see that analysis was reopened.
             cache_run = create_run_stub(db, project_id, file_hash, user_id, trigger_source="user")
@@ -368,6 +378,12 @@ async def _run_analysis_stream(
             db, project_id, file_path=info.get("path"), file_hash=file_hash
         )
 
+        # ── Pre-Analysis Intelligence V2 (90G) — best-effort ─────────────────
+        try:
+            _pre_analysis_profile = build_pre_analysis_profile(df_clean).model_dump()
+        except Exception:
+            _pre_analysis_profile = None
+
         result = {
             "project_id": project_id,
             "run_id": run.id if run else None,
@@ -382,6 +398,7 @@ async def _run_analysis_stream(
             "dataset_summary": get_dataset_summary(df_clean),   # large-dataset transparency metadata
             "analysis_plan": _plan.model_dump(),                 # Dataset Intelligence Layer (86C)
             "insight_selection_meta": insight_selection_meta,   # 88M — candidate-pool transparency
+            "pre_analysis_profile": _pre_analysis_profile,      # 90G — V2 dataset understanding
         }
         attach_large_dataset_meta(result, ld_meta)
 

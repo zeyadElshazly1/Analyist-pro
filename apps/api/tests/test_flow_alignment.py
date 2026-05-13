@@ -39,6 +39,7 @@ CANONICAL_RESULT_KEYS = frozenset({
     "dataset_summary",
     "analysis_plan",
     "insight_selection_meta",
+    "pre_analysis_profile",
 })
 
 

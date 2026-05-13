@@ -73,6 +73,9 @@ class RunResults(BaseModel):
     # used as the left-hand side of a compare.
     compare_result: Optional[dict[str, Any]] = None
 
+    # Pre-Analysis Intelligence V2 profile — omitted on legacy runs
+    pre_analysis_profile: Optional[dict[str, Any]] = None
+
     # Large dataset sampling transparency (Task 77C/77D) — omitted on legacy runs
     large_dataset_mode: Optional[bool] = None
     full_rows: Optional[int] = None

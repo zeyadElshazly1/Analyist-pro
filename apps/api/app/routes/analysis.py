@@ -32,6 +32,7 @@ from app.services.analysis.finalize_insights import (
     build_insight_selection_meta,
     build_cached_insight_selection_meta,
 )
+from app.services.analysis.pre_analysis import build_pre_analysis_profile
 from app.config import MAX_INSIGHTS
 from app.services.analysis.large_dataset_mode import (
     LARGE_DATASET_NARRATIVE_NOTE,
@@ -109,6 +110,15 @@ def run_analysis(
                 if meta:
                     cached = {**cached, "insight_selection_meta": meta}
                     set_cached_analysis(project_id, _file_hash, cached)
+            except Exception:
+                pass
+        # Backfill pre_analysis_profile on cache hits that predate 90G.
+        if not cached.get("pre_analysis_profile"):
+            try:
+                _df_back = load_dataset(file_path)
+                _profile = build_pre_analysis_profile(_df_back)
+                cached = {**cached, "pre_analysis_profile": _profile.model_dump()}
+                set_cached_analysis(project_id, _file_hash, cached)
             except Exception:
                 pass
         # Record a new run-history entry for this cache-hit invocation so
@@ -200,6 +210,12 @@ def run_analysis(
             db, project_id, file_path=file_path, file_hash=_file_hash
         )
 
+        # ── Pre-Analysis Intelligence V2 (90G) — best-effort ─────────────────
+        try:
+            _pre_analysis_profile = build_pre_analysis_profile(df_clean).model_dump()
+        except Exception:
+            _pre_analysis_profile = None
+
         result = {
             "project_id": project_id,
             "run_id": run.id if run else None,
@@ -214,6 +230,7 @@ def run_analysis(
             "dataset_summary": get_dataset_summary(df_clean),   # large-dataset transparency metadata
             "analysis_plan": _plan.model_dump(),                 # Dataset Intelligence Layer (86C)
             "insight_selection_meta": insight_selection_meta,   # 88M — candidate-pool transparency
+            "pre_analysis_profile": _pre_analysis_profile,      # 90G — V2 dataset understanding
         }
         attach_large_dataset_meta(result, ld_meta)
 
@@ -436,6 +453,7 @@ def get_run_results(
             narrative=None,
             story_result=None,
             compare_result=None,
+            pre_analysis_profile=None,
         )
 
     # Parse result_json once; extract canonical blocks only.
@@ -492,6 +510,7 @@ def get_run_results(
         # compare_result is written separately by /explore/multifile and is None
         # for runs that were never paired against another project.
         compare_result=_block("compare_result"),
+        pre_analysis_profile=_block("pre_analysis_profile"),
         large_dataset_mode=True if large_active else None,
         full_rows=_opt_int("full_rows"),
         full_columns=_opt_int("full_columns"),
