@@ -2,10 +2,10 @@
 90K — Profile-hygiene wiring tests.
 
 Verifies:
-  1. Default flag (False) → no insight_results contain suppressed_by_profile.
+  1. Default flag (True since 90O) → suppressed insights have valid confidence.
   2. Monkeypatched flag (True) + spy → pipeline invokes apply_pre_analysis_profile_hygiene
      with enabled=True and a non-None profile.
-  3. 90I regression baseline unchanged (ordering guard re-checked here).
+  3. 90O re-locked regression baseline (ordering guard re-checked here).
 """
 from __future__ import annotations
 
@@ -43,9 +43,10 @@ def _make_csv() -> bytes:
 _CSV = _make_csv()
 
 _BASELINE_TOP5 = [
-    ("trend",       "high"),
+    # Re-locked at 90O: hygiene active by default, anomaly moves to rank 2.
     ("trend",       "high"),
     ("anomaly",     "high"),
+    ("trend",       "high"),
     ("trend",       "medium"),
     ("correlation", "high"),
 ]
@@ -85,21 +86,29 @@ def _run_analysis(client) -> dict:
     return r.json()
 
 
-# ── Test 1: default flag → no suppressed_by_profile in insight_results ────────
+# ── Test 1: default flag (True since 90O) → suppressed insights are valid ─────
 
-def test_default_flag_false_no_suppressed_by_profile_in_results(client):
-    """With PRE_ANALYSIS_PROFILE_HYGIENE_ENABLED=False (default), no insight should
-    carry suppressed_by_profile=True in the serialised result."""
+def test_default_flag_true_suppressed_insights_have_valid_confidence(client):
+    """With PRE_ANALYSIS_PROFILE_HYGIENE_ENABLED=True (default since 90O),
+    any insight carrying suppressed_by_profile=True must still have a valid
+    numeric confidence in [0, 100].  The pipeline must not zero out or NaN
+    any confidence value during hygiene application."""
     body = _run_analysis(client)
     insight_results = body.get("insight_results") or []
     assert insight_results, "Expected at least one insight from the fixed dataset"
 
-    flagged = [i for i in insight_results if i.get("suppressed_by_profile")]
-    assert not flagged, (
-        f"Found {len(flagged)} insight(s) with suppressed_by_profile=True "
-        f"even though PRE_ANALYSIS_PROFILE_HYGIENE_ENABLED defaults to False.\n"
-        f"First offender: {flagged[0]}"
-    )
+    for ins in insight_results:
+        if ins.get("suppressed_by_profile"):
+            conf = ins.get("confidence")
+            assert conf is not None, (
+                f"Suppressed insight has no confidence field: {ins.get('title')}"
+            )
+            assert isinstance(conf, (int, float)), (
+                f"confidence is not numeric on suppressed insight: {conf}"
+            )
+            assert 0.0 <= conf <= 100.0, (
+                f"confidence {conf} out of [0,100] on suppressed insight: {ins.get('title')}"
+            )
 
 
 # ── Test 2: monkeypatch flag True + spy confirms pipeline calls helper ────────
