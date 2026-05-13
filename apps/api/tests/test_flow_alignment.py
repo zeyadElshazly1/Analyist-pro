@@ -40,6 +40,7 @@ CANONICAL_RESULT_KEYS = frozenset({
     "analysis_plan",
     "insight_selection_meta",
     "pre_analysis_profile",
+    "profile_hygiene_shadow_meta",
 })
 
 

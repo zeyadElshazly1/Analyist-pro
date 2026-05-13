@@ -34,6 +34,7 @@ from app.services.analysis.finalize_insights import (
 )
 from app.services.analysis.pre_analysis import build_pre_analysis_profile
 from app.services.analysis.profile_hygiene import apply_pre_analysis_profile_hygiene
+from app.services.analysis.profile_hygiene_shadow import evaluate_profile_hygiene_shadow
 from app.config import MAX_INSIGHTS, PRE_ANALYSIS_PROFILE_HYGIENE_ENABLED
 from app.services.analysis.large_dataset_mode import (
     LARGE_DATASET_NARRATIVE_NOTE,
@@ -198,6 +199,7 @@ def run_analysis(
         _dtypes = {c: str(t) for c, t in df_clean.dtypes.items()}
         _plan = build_analysis_plan(columns=df_clean.columns.tolist(), dtypes=_dtypes)
         insights = apply_analysis_plan_hygiene(insights, _plan)
+        profile_hygiene_shadow_meta = evaluate_profile_hygiene_shadow(insights, _pre_analysis_profile)
         insights = apply_pre_analysis_profile_hygiene(
             insights,
             _pre_analysis_profile,
@@ -237,8 +239,9 @@ def run_analysis(
             "executive_panel": to_jsonable(executive_panel),
             "dataset_summary": get_dataset_summary(df_clean),   # large-dataset transparency metadata
             "analysis_plan": _plan.model_dump(),                 # Dataset Intelligence Layer (86C)
-            "insight_selection_meta": insight_selection_meta,   # 88M — candidate-pool transparency
-            "pre_analysis_profile": _pre_analysis_profile,      # 90G — V2 dataset understanding
+            "insight_selection_meta": insight_selection_meta,       # 88M — candidate-pool transparency
+            "pre_analysis_profile": _pre_analysis_profile,          # 90G — V2 dataset understanding
+            "profile_hygiene_shadow_meta": profile_hygiene_shadow_meta,  # 90M — shadow impact
         }
         attach_large_dataset_meta(result, ld_meta)
 
@@ -462,6 +465,7 @@ def get_run_results(
             story_result=None,
             compare_result=None,
             pre_analysis_profile=None,
+            profile_hygiene_shadow_meta=None,
         )
 
     # Parse result_json once; extract canonical blocks only.
@@ -519,6 +523,7 @@ def get_run_results(
         # for runs that were never paired against another project.
         compare_result=_block("compare_result"),
         pre_analysis_profile=_block("pre_analysis_profile"),
+        profile_hygiene_shadow_meta=_block("profile_hygiene_shadow_meta"),
         large_dataset_mode=True if large_active else None,
         full_rows=_opt_int("full_rows"),
         full_columns=_opt_int("full_columns"),

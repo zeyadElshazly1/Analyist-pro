@@ -75,6 +75,8 @@ class RunResults(BaseModel):
 
     # Pre-Analysis Intelligence V2 profile — omitted on legacy runs
     pre_analysis_profile: Optional[dict[str, Any]] = None
+    # Shadow-mode hygiene impact report — omitted on legacy runs
+    profile_hygiene_shadow_meta: Optional[dict[str, Any]] = None
 
     # Large dataset sampling transparency (Task 77C/77D) — omitted on legacy runs
     large_dataset_mode: Optional[bool] = None
