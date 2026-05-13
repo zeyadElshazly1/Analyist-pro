@@ -33,7 +33,11 @@ from app.services.analysis.analysis_planner import build_analysis_plan
 from app.services.analysis.analysis_plan_hygiene import apply_analysis_plan_hygiene
 from app.services.analysis.ranking import rerank_after_plan_hygiene
 from app.services.analysis.narrative import generate_narrative
-from app.services.analysis.finalize_insights import final_cap_with_candidate_count, build_insight_selection_meta
+from app.services.analysis.finalize_insights import (
+    final_cap_with_candidate_count,
+    build_insight_selection_meta,
+    build_cached_insight_selection_meta,
+)
 from app.config import MAX_INSIGHTS
 from app.services.analysis.large_dataset_mode import (
     LARGE_DATASET_NARRATIVE_NOTE,
@@ -235,6 +239,15 @@ async def _run_analysis_stream(
                     _cols = list((cached.get("intake_result") or {}).get("columns") or [])
                     if _cols:
                         cached = {**cached, "analysis_plan": build_analysis_plan(_cols).model_dump()}
+                        set_cached_analysis(project_id, file_hash, cached)
+                except Exception:
+                    pass
+            # Backfill insight_selection_meta on cache hits that predate 88M.
+            if not cached.get("insight_selection_meta"):
+                try:
+                    meta = build_cached_insight_selection_meta(cached)
+                    if meta:
+                        cached = {**cached, "insight_selection_meta": meta}
                         set_cached_analysis(project_id, file_hash, cached)
                 except Exception:
                     pass
