@@ -76,7 +76,7 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
     from app.services.file_loader import load_dataset
     from app.services.cleaner import clean_dataset
     from app.services.profiler import profile_dataset, calculate_health_score
-    from app.services.analyzer import analyze_dataset, generate_executive_panel
+    from app.services.analyzer import analyze_dataset, generate_executive_panel, get_dataset_summary
     from app.services.cleaning_adapter import build_cleaning_result
     from app.services.health_adapter import build_health_result
     from app.services.insight_adapter import build_insight_results
@@ -121,8 +121,38 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
             if intake_snapshot:
                 cached = {**cached, "intake_result": intake_snapshot}
                 set_cached_analysis(project_id, file_hash, cached)
+        # Backfill analysis_plan on cache hits that predate 86C.
+        if not cached.get("analysis_plan"):
+            try:
+                _cols = list((cached.get("intake_result") or {}).get("columns") or [])
+                if _cols:
+                    cached = {**cached, "analysis_plan": build_analysis_plan(_cols).model_dump()}
+                    set_cached_analysis(project_id, file_hash, cached)
+            except Exception:
+                pass
+        # Backfill insight_selection_meta on cache hits that predate 88M.
+        if not cached.get("insight_selection_meta"):
+            try:
+                from app.services.analysis.finalize_insights import build_cached_insight_selection_meta
+                meta = build_cached_insight_selection_meta(cached)
+                if meta:
+                    cached = {**cached, "insight_selection_meta": meta}
+                    set_cached_analysis(project_id, file_hash, cached)
+            except Exception:
+                pass
+        # Record a run-history entry for this cache-hit invocation.
+        from app.services.run_tracker import create_run_stub, finalise_run as _finalise_run
+        _cache_db = _SessionLocal()
+        try:
+            cache_run = create_run_stub(_cache_db, project_id, file_hash, None, trigger_source="user")
+            cache_result = {**cached, "run_id": cache_run.id if cache_run else cached.get("run_id")}
+            _finalise_run(_cache_db, cache_run, json.dumps(cache_result, default=str))
+        except Exception:
+            cache_result = cached
+        finally:
+            _cache_db.close()
         emit("Complete", 100, "Loaded from cache")
-        _publish(r, run_key, {"__done__": True, "result": cached, "from_cache": True})
+        _publish(r, run_key, {"__done__": True, "result": cache_result, "from_cache": True})
         return
 
     # ── Step 1: load ──────────────────────────────────────────────────────────
@@ -226,28 +256,24 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
         "insight_results": insight_results,                  # canonical V1 (replaces insights)
         "narrative": narrative,
         "executive_panel": to_jsonable(executive_panel),
+        "dataset_summary": get_dataset_summary(df_analysis), # large-dataset transparency metadata
         "analysis_plan": _plan.model_dump(),                 # Dataset Intelligence Layer (86C)
         "insight_selection_meta": insight_selection_meta,   # 88M — candidate-pool transparency
     }
     attach_large_dataset_meta(result, ld_meta)
 
-    # ── Persist to DB ─────────────────────────────────────────────────────────
+    # ── Persist to DB via run_tracker ─────────────────────────────────────────
     from app.db import SessionLocal
-    from app.models import AnalysisResult, Project as ProjectModel
+    from app.models import Project as ProjectModel
     from app.services.audit import log_event
+    from app.services.run_tracker import create_run_stub, finalise_run
 
-    analysis_id = None
     db = SessionLocal()
     try:
-        analysis = AnalysisResult(
-            project_id=project_id,
-            file_hash=file_hash,
-            result_json=json.dumps(result, default=str),
-        )
-        db.add(analysis)
-        db.commit()
-        db.refresh(analysis)
-        analysis_id = analysis.id
+        run = create_run_stub(db, project_id, file_hash, None, trigger_source="user")
+        result["run_id"] = run.id if run else None
+        result_json_str = json.dumps(result, default=str)
+        finalise_run(db, run, result_json_str)
         proj = db.query(ProjectModel).filter(ProjectModel.id == project_id).first()
         log_event(
             db,
@@ -266,16 +292,13 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
     finally:
         db.close()
 
-    # ── Cache and finalise ────────────────────────────────────────────────────
+    # ── Cache (run_id now in result) ──────────────────────────────────────────
     set_cached_analysis(project_id, file_hash, result)
 
     from app.state import PROJECT_FILES
     PROJECT_FILES.setdefault(project_id, {})["last_insights"] = [
         i.get("finding", "") for i in insights[:5]
     ]
-
-    if analysis_id:
-        result["run_id"] = analysis_id
 
     emit("Complete", 100, "Analysis finished")
     _publish(r, run_key, {"__done__": True, "result": result})
