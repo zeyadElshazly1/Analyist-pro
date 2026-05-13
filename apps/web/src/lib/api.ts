@@ -808,6 +808,15 @@ export interface RunResultsResponse {
   compare_result?: CompareResult | null;
   /** Dataset Intelligence Layer — 86C */
   analysis_plan?: AnalysisPlan | null;
+  /** 88M — candidate-pool transparency */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  insight_selection_meta?: Record<string, any> | null;
+  /** 90G — Pre-Analysis Intelligence V2 dataset profile */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pre_analysis_profile?: Record<string, any> | null;
+  /** 90M — shadow-mode hygiene impact report */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  profile_hygiene_shadow_meta?: Record<string, any> | null;
   /** Present when the API sampled rows for expensive detectors while preserving full-shape stats */
   large_dataset_mode?: boolean | null;
   full_rows?: number | null;

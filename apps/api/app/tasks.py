@@ -94,6 +94,7 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
     from app.services.analysis.finalize_insights import final_cap_with_candidate_count, build_insight_selection_meta
     from app.services.analysis.pre_analysis import build_pre_analysis_profile
     from app.services.analysis.profile_hygiene import apply_pre_analysis_profile_hygiene
+    from app.services.analysis.profile_hygiene_shadow import evaluate_profile_hygiene_shadow
     from app.config import MAX_INSIGHTS, PRE_ANALYSIS_PROFILE_HYGIENE_ENABLED
     from app.db import SessionLocal as _SessionLocal
 
@@ -235,6 +236,7 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
         _dtypes = {c: str(t) for c, t in df_clean.dtypes.items()}
         _plan = build_analysis_plan(columns=df_clean.columns.tolist(), dtypes=_dtypes)
         insights = apply_analysis_plan_hygiene(insights, _plan)
+        profile_hygiene_shadow_meta = evaluate_profile_hygiene_shadow(insights, _pre_analysis_profile)
         insights = apply_pre_analysis_profile_hygiene(
             insights,
             _pre_analysis_profile,
@@ -280,8 +282,9 @@ def _run_pipeline(project_id: int, run_key: str, r, emit) -> None:
         "executive_panel": to_jsonable(executive_panel),
         "dataset_summary": get_dataset_summary(df_analysis), # large-dataset transparency metadata
         "analysis_plan": _plan.model_dump(),                 # Dataset Intelligence Layer (86C)
-        "insight_selection_meta": insight_selection_meta,   # 88M — candidate-pool transparency
-        "pre_analysis_profile": _pre_analysis_profile,      # 90G — V2 dataset understanding
+        "insight_selection_meta": insight_selection_meta,    # 88M — candidate-pool transparency
+        "pre_analysis_profile": _pre_analysis_profile,       # 90G — V2 dataset understanding
+        "profile_hygiene_shadow_meta": profile_hygiene_shadow_meta,  # 90M — shadow impact
     }
     attach_large_dataset_meta(result, ld_meta)
 

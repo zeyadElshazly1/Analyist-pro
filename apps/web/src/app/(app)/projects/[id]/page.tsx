@@ -105,6 +105,10 @@ function adaptStoredResults(stored: RunResultsResponse): AnalysisResult {
     // compare_result: rehydrate the Compare tab and Report Builder context on
     // reopened runs (null when this run was never paired against another file).
     compare_result: stored.compare_result ?? null,
+    analysis_plan: stored.analysis_plan ?? null,
+    insight_selection_meta: stored.insight_selection_meta ?? null,
+    pre_analysis_profile: stored.pre_analysis_profile ?? null,
+    profile_hygiene_shadow_meta: stored.profile_hygiene_shadow_meta ?? null,
     large_dataset_mode: stored.large_dataset_mode === true ? true : undefined,
     full_rows: typeof stored.full_rows === "number" ? stored.full_rows : undefined,
     full_columns: typeof stored.full_columns === "number" ? stored.full_columns : undefined,

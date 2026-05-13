@@ -127,6 +127,9 @@ export type AnalysisResult = {
     deductions?: string[];
   } | null;
   analysis_plan?: import("@/lib/api").AnalysisPlan | null;  // Dataset Intelligence Layer (86C)
+  insight_selection_meta?: Record<string, unknown> | null;  // 88M candidate-pool transparency
+  pre_analysis_profile?: Record<string, unknown> | null;    // 90G V2 dataset profile
+  profile_hygiene_shadow_meta?: Record<string, unknown> | null;  // 90M shadow impact
   intake_result?: Record<string, unknown> | null;    // canonical IntakeResult block
   cleaning_summary?: Record<string, unknown> | null;
   cleaning_result?: Record<string, unknown> | null;  // canonical CleaningResult block
