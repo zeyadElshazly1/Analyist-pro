@@ -135,6 +135,37 @@ _TARGET_DRIVER_BONUS = 0.30
 # Pull generic correlations down when ranking mixed pools for market snapshots.
 _CORRELATION_SNAPSHOT_DEMOTE = 0.52
 
+# ── Strategy-aligned ranking boost (90P) ──────────────────────────────────────
+# Small additive adjustments so insights aligned with the dataset's recommended
+# analysis types rank slightly above unaligned findings of equal composite score.
+_BOOST_STRATEGY_ALIGNED    = 0.05
+_BOOST_STRATEGY_DEPRIORITY = -0.03
+
+_STRATEGY_TO_CATEGORIES: dict[str, frozenset[str]] = {
+    "trend_analysis":        frozenset({"trend"}),
+    "segment_comparison":    frozenset({"segment"}),
+    "correlation_analysis":  frozenset({"correlation", "multicollinearity", "interaction"}),
+    "anomaly_detection":     frozenset({"anomaly"}),
+    "distribution_analysis": frozenset({"distribution", "concentration", "simpsons_paradox"}),
+    "target_analysis":       frozenset({"trend", "correlation", "leading_indicator"}),
+}
+
+
+def _strategy_alignment_boost(
+    category: str | None,
+    recommended_types: list[str],
+    deprioritised_types: list[str],
+) -> float:
+    if not category:
+        return 0.0
+    for stype in recommended_types:
+        if category in _STRATEGY_TO_CATEGORIES.get(stype, frozenset()):
+            return _BOOST_STRATEGY_ALIGNED
+    for stype in deprioritised_types:
+        if category in _STRATEGY_TO_CATEGORIES.get(stype, frozenset()):
+            return _BOOST_STRATEGY_DEPRIORITY
+    return 0.0
+
 
 def _snapshot_rank_active(ctx: DatasetContext | None) -> bool:
     return (
@@ -374,7 +405,12 @@ def _correlation_financial_demote_active(ins: dict, ctx: DatasetContext | None) 
 
 
 
-def _composite_score(ins: dict, ctx: DatasetContext | None = None) -> float:
+def _composite_score(
+    ins: dict,
+    ctx: DatasetContext | None = None,
+    recommended_types: list[str] | None = None,
+    deprioritised_types: list[str] | None = None,
+) -> float:
     """
     Composite ranking score for a single insight.
 
@@ -399,13 +435,22 @@ def _composite_score(ins: dict, ctx: DatasetContext | None = None) -> float:
     conf  = safe_confidence_from_insight(ins) / 100.0
     bonus = _TARGET_DRIVER_BONUS if ins.get("is_target_driver") else 0.0
     base = sev * 0.50 + conf * 0.25 + bonus * 0.25
-    score = min(1.0, base + _financial_domain_rank_bonus(ins, ctx))
+    strategy_boost = _strategy_alignment_boost(
+        ins.get("category") or ins.get("type"),
+        recommended_types or [],
+        deprioritised_types or [],
+    )
+    score = min(1.0, base + _financial_domain_rank_bonus(ins, ctx) + strategy_boost)
     if _correlation_financial_demote_active(ins, ctx):
         score *= _CORRELATION_SNAPSHOT_DEMOTE
     return score
 
 
-def rerank_after_plan_hygiene(insights: list[dict]) -> list[dict]:
+def rerank_after_plan_hygiene(
+    insights: list[dict],
+    recommended_types: list[str] | None = None,
+    deprioritised_types: list[str] | None = None,
+) -> list[dict]:
     """Re-sort insights so suppressed findings fall below clean findings.
 
     Called after apply_analysis_plan_hygiene() has penalised confidence and
@@ -413,17 +458,22 @@ def rerank_after_plan_hygiene(insights: list[dict]) -> list[dict]:
     ran before hygiene, so post-penalty ordering may still reflect pre-penalty
     positions.  This helper fixes that without deduplicating or capping again.
 
+    ``recommended_types`` / ``deprioritised_types`` are forwarded to
+    ``_composite_score`` so strategy-aligned insights receive a small boost.
+
     Sort key: (suppressed, -composite_score, original_index)
     The original_index tiebreaker gives stable ordering for equal-score pairs.
     """
     indexed = list(enumerate(insights))
+    rec = recommended_types or []
+    dep = deprioritised_types or []
 
     def _key(pair: tuple[int, dict]) -> tuple:
         idx, ins = pair
         suppressed = ins.get("suppressed_by_plan") is True
         return (
             1 if suppressed else 0,
-            -_composite_score(ins, None),
+            -_composite_score(ins, None, rec, dep),
             idx,
         )
 

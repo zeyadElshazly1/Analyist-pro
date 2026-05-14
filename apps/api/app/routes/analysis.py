@@ -205,7 +205,12 @@ def run_analysis(
             _pre_analysis_profile,
             enabled=PRE_ANALYSIS_PROFILE_HYGIENE_ENABLED,
         )
-        insights = rerank_after_plan_hygiene(insights)
+        _strategy = (_pre_analysis_profile or {}).get("strategy") or {}
+        insights = rerank_after_plan_hygiene(
+            insights,
+            recommended_types=_strategy.get("recommended_analysis_types") or [],
+            deprioritised_types=_strategy.get("deprioritised_analysis_types") or [],
+        )
         post_hygiene_candidates = list(insights)
         insights, post_hygiene_candidate_count = final_cap_with_candidate_count(insights)
         insight_selection_meta = build_insight_selection_meta(post_hygiene_candidates, insights)
