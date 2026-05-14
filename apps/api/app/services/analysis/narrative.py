@@ -178,18 +178,76 @@ def _is_narrative_eligible(ins: dict) -> bool:
     return is_summary_eligible(ins)
 
 
+# ── Grain-aware context sentence (90Q) ───────────────────────────────────────
+
+_GRAIN_LABELS: dict[str, str] = {
+    "order":       "transaction-level",
+    "transaction": "transaction-level",
+    "customer":    "customer-level",
+    "time_period": "time-series",
+    "product":     "product-level",
+    "employee":    "employee-level",
+    "session":     "session-level",
+    "event":       "event-level",
+}
+
+_STRATEGY_LABELS: dict[str, str] = {
+    "trend_analysis":        "trend analysis",
+    "segment_comparison":    "segment comparison",
+    "correlation_analysis":  "correlation analysis",
+    "anomaly_detection":     "anomaly detection",
+    "distribution_analysis": "distribution analysis",
+    "target_analysis":       "target-driver analysis",
+}
+
+
+def _build_grain_context_sentence(profile: dict) -> str:
+    """Return a one-sentence dataset context string, or '' if profile is unusable."""
+    grain = profile.get("grain_label") or "unknown"
+    grain_phrase = _GRAIN_LABELS.get(grain)
+
+    fp = profile.get("fingerprint") or {}
+    row_count = fp.get("row_count")
+    date_range = fp.get("date_range")
+
+    rec_types = (profile.get("strategy") or {}).get("recommended_analysis_types") or []
+    type_labels = [_STRATEGY_LABELS[t] for t in rec_types[:2] if t in _STRATEGY_LABELS]
+
+    date_phrase = ""
+    if isinstance(date_range, dict) and date_range.get("min") and date_range.get("max"):
+        date_phrase = f", {date_range['min']}–{date_range['max']}"
+
+    row_phrase = f" ({row_count:,} records{date_phrase})" if row_count else ""
+
+    type_phrase = ""
+    if type_labels:
+        joined = " and ".join(type_labels)
+        verb = "are" if len(type_labels) > 1 else "is"
+        type_phrase = f" {joined.capitalize()} {verb} the primary lens for this data structure."
+
+    if grain_phrase:
+        return f"This is a {grain_phrase} dataset{row_phrase}.{type_phrase}"
+    if row_phrase or type_phrase:
+        return f"This dataset contains{row_phrase} records.{type_phrase}"
+    return ""
+
+
 # ── Narrative builder ─────────────────────────────────────────────────────────
 
 def generate_narrative(
     insights: list[dict],
     df: pd.DataFrame,
     total_found: int = 0,
+    pre_analysis_profile: dict | None = None,
 ) -> str:
     """
     Generate a 3-paragraph executive summary connecting the top insights.
 
     ``total_found`` is the full count before the MAX_INSIGHTS cap so the
     summary can tell users how many findings are available.
+
+    ``pre_analysis_profile`` is optional — when supplied, a grain-aware
+    context sentence is prepended to paragraph 1.
 
     Plan-suppressed and low-confidence insights are excluded from the
     narrative text. The input list is not mutated.
@@ -215,6 +273,13 @@ def generate_narrative(
         else ""
     )
 
+    context_sentence = ""
+    if pre_analysis_profile:
+        try:
+            context_sentence = _build_grain_context_sentence(pre_analysis_profile)
+        except Exception:
+            context_sentence = ""
+
     # ── Paragraph 1: Data quality + scope ────────────────────────────────────
     quality = (
         f"has {missing_pct}% missing values, which may limit the reliability of some findings"
@@ -236,11 +301,12 @@ def generate_narrative(
         )
     counts_str = ": " + ", ".join(type_counts) if type_counts else ""
     n_insights = len(eligible_insights)
-    para1 = (
+    scope_sentence = (
         f"The dataset ({n_rows:,} rows × {n_cols} columns) {quality}. "
         f"Analysis surfaced {n_insights} insight{'s' if n_insights != 1 else ''}"
         f"{shown_str}{counts_str}."
     )
+    para1 = f"{context_sentence}  {scope_sentence}" if context_sentence else scope_sentence
 
     # ── Paragraph 2: Strongest finding per category ───────────────────────────
     def _first_sentence(text: str) -> str:

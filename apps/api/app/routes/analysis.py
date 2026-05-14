@@ -214,7 +214,12 @@ def run_analysis(
         post_hygiene_candidates = list(insights)
         insights, post_hygiene_candidate_count = final_cap_with_candidate_count(insights)
         insight_selection_meta = build_insight_selection_meta(post_hygiene_candidates, insights)
-        narrative = generate_narrative(insights, df_analysis, total_found=post_hygiene_candidate_count)
+        narrative = generate_narrative(
+            insights,
+            df_analysis,
+            total_found=post_hygiene_candidate_count,
+            pre_analysis_profile=_pre_analysis_profile,
+        )
         if ld_meta["large_dataset_mode"]:
             narrative = narrative + LARGE_DATASET_NARRATIVE_NOTE
 
