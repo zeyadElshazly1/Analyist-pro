@@ -84,7 +84,11 @@ RFM_QUINTILES = 5              # Number of RFM scoring buckets
 REPORT_MAX_INSIGHTS = 10       # Insights shown in exported report
 REPORT_MAX_PROFILE_COLS = 20   # Columns profiled in exported report
 
-# ── Pre-Analysis V2 — profile-aware hygiene (90J/90K) ────────────────────────
-# Disabled by default until the 90I regression baseline is explicitly updated.
-# Flip to True only in a dedicated PR that also revises the baseline assertions.
-PRE_ANALYSIS_PROFILE_HYGIENE_ENABLED = False
+# ── Pre-Analysis V2 — profile-aware hygiene (90J/90K/90O) ────────────────────
+# Activated in 90O after shadow gate validation confirmed safe activation:
+#   - penalised fraction 82% < 90% catastrophic threshold
+#   - max confidence drop 86.8 pts < 90 pt catastrophic threshold
+#   - top-5 ordering preserved (same 5 insights; one positional swap at rank 2-3)
+# Baseline re-locked in test_pre_analysis_downstream_baseline.py and
+# test_profile_hygiene_wiring.py to reflect hygiene-on ordering.
+PRE_ANALYSIS_PROFILE_HYGIENE_ENABLED = True

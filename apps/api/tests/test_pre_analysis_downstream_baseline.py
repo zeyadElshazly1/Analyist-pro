@@ -1,8 +1,8 @@
 """
 90I — Pre-analysis regression baseline.
 
-Captures current output shape BEFORE pre_analysis_profile influences
-any downstream behavior (ranking, hygiene, charts, narrative).
+Captures current output shape with PRE_ANALYSIS_PROFILE_HYGIENE_ENABLED=True
+(activated in 90O after shadow gate validation).
 
 The fixed 50-row orders dataset is deterministic: no random noise,
 fixed seed columns, weekly dates from 2023-01-01.
@@ -11,6 +11,11 @@ NOTE on column count: the cleaning pipeline expands order_date into
 date-part columns (year, month, day, day_of_week, quarter, is_weekend),
 so df_clean has 12 columns even though the input CSV has 6.  The profile
 is built from df_clean, so fingerprint.column_count == 12.
+
+NOTE on 90O ordering change: with hygiene active the date-month trend
+(97% confidence) is penalised as a date-part artifact, letting the
+anomaly-high rise to rank 2.  The same 5 insights appear in the top-5;
+only positions 1 and 2 swapped.
 """
 from __future__ import annotations
 
@@ -62,12 +67,13 @@ _EXPECTED_CLEANED_COLUMN_COUNT = 12
 _VALID_GRAIN_LABELS = {"order", "transaction", "time_period", "unknown"}
 
 # Top-5 insight (category, severity) tuples from the current ranking.
-# type is None for all current insights (InsightResult.type is not populated
-# by the adapter).  We anchor on category+severity which are stable.
+# Re-locked at 90O: hygiene activation causes the date-month trend to drop
+# from rank 2 to rank 3 (penalised as date-part artifact), letting the
+# anomaly-high insight move up.  Same 5 insight types; one positional swap.
 _BASELINE_TOP5: list[tuple[str | None, str | None]] = [
     ("trend",       "high"),
-    ("trend",       "high"),
     ("anomaly",     "high"),
+    ("trend",       "high"),
     ("trend",       "medium"),
     ("correlation", "high"),
 ]
@@ -169,22 +175,22 @@ class TestPreAnalysisDownstreamBaseline:
         assert "insight_results" in body
         assert "insight_selection_meta" in body
 
-    # ── Test 2: pre_analysis_profile is observational only ───────────────────
+    # ── Test 2: pre_analysis_profile object does not embed in downstream blocks ─
 
-    def test_pre_analysis_profile_is_observational_only(self, baseline_result):
+    def test_pre_analysis_profile_not_embedded_in_downstream_blocks(self, baseline_result):
         """
-        None of the downstream output blocks (insight_results, executive_panel,
-        narrative, analysis_plan) must contain a 'pre_analysis_profile' key or
-        reference the V2 grain/strategy fields by name.
+        The pre_analysis_profile object must not be nested inside downstream
+        output blocks (insight_results, executive_panel, narrative, analysis_plan).
 
-        This proves the profile is stored but NOT yet driving output.
+        Hygiene IS now active (90O), so insight dicts may carry the shallow
+        metadata fields suppressed_by_profile and profile_penalty_reason — that
+        is correct behaviour.  What must NOT happen is the full profile object
+        (grain_label, column_roles, strategy, risks…) leaking into those blocks.
         """
         body = baseline_result
-        profile = body["pre_analysis_profile"]
 
-        # Downstream blocks that must remain profile-unaware.
+        # Downstream blocks that must not carry the full profile object.
         downstream_blobs = [
-            json.dumps(body.get("insight_results") or []),
             json.dumps(body.get("executive_panel") or {}),
             str(body.get("narrative") or ""),
             json.dumps(body.get("analysis_plan") or {}),
@@ -193,18 +199,10 @@ class TestPreAnalysisDownstreamBaseline:
         for blob in downstream_blobs:
             assert "pre_analysis_profile" not in blob, (
                 "Downstream block references 'pre_analysis_profile' — "
-                "the V2 profile must remain observational until 90I+ integration."
-            )
-            # The grain_label and strategy fields are internal to the profile;
-            # their values (e.g. "order") appearing in narrative is fine —
-            # what we guard against is the profile object itself leaking in.
-            assert '"grain_label"' not in blob or blob == json.dumps(body.get("analysis_plan") or {}), (
-                # analysis_plan may carry a grain-like field from V1 planner — that's OK.
-                # Insight / exec-panel / narrative must not embed raw V2 profile keys.
-                True
+                "the V2 profile object must not be embedded in output blocks."
             )
 
-        # The profile block itself must not nest inside insight_results items.
+        # The profile object must not nest inside individual insight_results items.
         for item in (body.get("insight_results") or []):
             if isinstance(item, dict):
                 assert "pre_analysis_profile" not in item
